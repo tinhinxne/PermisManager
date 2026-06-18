@@ -1,0 +1,1084 @@
+const { app, BrowserWindow, ipcMain } = require('electron');
+const path = require('path');
+const db = require('./db');
+// ── SÉCURISATION FORCE DE LA BASE DE DONNÉES ───────────────────────────────
+db.query(`
+  ALTER TABLE Candidat 
+  MODIFY COLUMN categoriePermis VARCHAR(10) NOT NULL DEFAULT 'B'
+`, (err) => {
+  if (err) {
+    db.query(`ALTER TABLE Candidat ADD COLUMN categoriePermis VARCHAR(10) NOT NULL DEFAULT 'B'`, (err2) => {
+      if (err2) {
+        console.log("ℹ️ Structure de la table Candidat déjà en place ou gérée.");
+      } else {
+        console.log("✅ Colonne 'categoriePermis' ajoutée avec succès à la table Candidat !");
+      }
+    });
+  } else {
+    console.log("✅ Structure de la colonne 'categoriePermis' synchronisée avec succès !");
+  }
+});
+// ── SÉCURISATION : colonne categories_habilitees pour les moniteurs ────────
+db.query(`
+  ALTER TABLE Moniteur 
+  ADD COLUMN categories_habilitees VARCHAR(100) NOT NULL DEFAULT 'B'
+`, (err) => {
+  if (err) {
+    console.log("ℹ️ Colonne 'categories_habilitees' déjà présente sur Moniteur (ou erreur ignorée) :", err.code || err.message);
+  } else {
+    console.log("✅ Colonne 'categories_habilitees' ajoutée avec succès à la table Moniteur !");
+  }
+});
+// ──────────────────────────────────────────────────────────────────────────
+const nodemailer = require("nodemailer");
+const crypto = require("crypto");
+const { registerMoniteurHandlers } = require('./moniteurHandlers');
+const { registerAdminHandlers } = require('./adminHandlers');
+
+
+
+
+// ── CONFIG EMAIL ─────────────────────────────────────────────────────────────
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: 'tinhinanethequeen@gmail.com',
+    pass: 'gjgw vqfa qzkp wbfa',
+  },
+});
+
+function buildSeanceEmailHtml({ prenomCandidat, nomCandidat, prenomMoniteur, nomMoniteur, date, heure, duree, type }) {
+  const typeLabel = type === "code" ? "Code" : type === "circulation" ? "Circulation" : "Créneau";
+  const [h, m] = heure.split(":");
+  const startH = parseInt(h) + parseInt(m) / 60;
+  const endH   = startH + parseFloat(duree);
+  const endHH  = String(Math.floor(endH)).padStart(2, "0");
+  const endMM  = String(Math.round((endH % 1) * 60)).padStart(2, "0");
+
+  return `
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;">
+      <div style="background:#2563eb;padding:24px;text-align:center;">
+        <h1 style="color:#fff;margin:0;font-size:20px;">🚗 Auto-École</h1>
+      </div>
+      <div style="padding:28px;">
+        <h2 style="color:#0F172A;margin-bottom:8px;">Nouvelle séance planifiée !</h2>
+        <p style="color:#475569;margin-bottom:20px;">
+          Bonjour <strong>${prenomCandidat} ${nomCandidat}</strong>, une nouvelle séance vous a été assignée.
+        </p>
+        <div style="background:#F1F5F9;border-radius:8px;padding:16px;margin-bottom:20px;">
+          <p style="margin:6px 0;color:#475569;">
+            <strong>📅 Date :</strong> ${new Date(date + "T12:00:00").toLocaleDateString("fr-FR", { weekday:"long", day:"numeric", month:"long", year:"numeric" })}
+          </p>
+          <p style="margin:6px 0;color:#475569;">
+            <strong>🕐 Heure :</strong> ${heure} – ${endHH}:${endMM}
+          </p>
+          <p style="margin:6px 0;color:#475569;">
+            <strong>⏱ Durée :</strong> ${parseFloat(duree) === 0.5 ? "30 min" : parseFloat(duree) === 0.75 ? "45 min" : parseFloat(duree) === 1 ? "1h" : parseFloat(duree) === 1.5 ? "1h30" : parseFloat(duree) + "h"}
+          </p>
+          <p style="margin:6px 0;color:#475569;">
+            <strong>📋 Type :</strong> ${typeLabel}
+          </p>
+          <p style="margin:6px 0;color:#475569;">
+            <strong>👤 Moniteur :</strong> ${prenomMoniteur} ${nomMoniteur}
+          </p>
+        </div>
+        <p style="color:#94A3B8;font-size:12px;">
+          Merci d'être présent(e) à l'heure. En cas d'empêchement, contactez votre auto-école.
+        </p>
+      </div>
+    </div>
+  `;
+}
+
+function generatePassword(length = 10) {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  return Array.from(crypto.randomBytes(length))
+    .map((b) => chars[b % chars.length])
+    .join("");
+}
+
+function buildEmailHtml({ prenom, nom, email, password, isReset = false }) {
+  return `
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;">
+      <div style="background:#4E96E1;padding:24px;text-align:center;">
+        <h1 style="color:#fff;margin:0;font-size:20px;">🚗 Auto-École</h1>
+      </div>
+      <div style="padding:28px;">
+        <h2 style="color:#0F172A;margin-bottom:8px;">
+          ${isReset ? "Réinitialisation de votre mot de passe" : `Bienvenue, ${prenom} !`}
+        </h2>
+        <p style="color:#475569;margin-bottom:20px;">
+          ${isReset
+            ? "Votre mot de passe a été réinitialisé par l'administrateur."
+            : 'Votre compte moniteur vient d\'être créé. Voici vos identifiants de connexion :'}
+        </p>
+        <div style="background:#F1F5F9;border-radius:8px;padding:16px;margin-bottom:20px;">
+          <p style="margin:4px 0;color:#475569;"><strong>Nom :</strong> ${prenom} ${nom}</p>
+          <p style="margin:4px 0;color:#475569;"><strong>Email :</strong> ${email}</p>
+          <p style="margin:8px 0 4px;color:#0F172A;font-size:15px;">
+            <strong>Mot de passe :</strong>
+            <span style="background:#4E96E1;color:#fff;padding:3px 10px;border-radius:6px;font-family:monospace;font-size:16px;margin-left:8px;">${password}</span>
+          </p>
+        </div>
+        <p style="color:#94A3B8;font-size:12px;">Pensez à changer votre mot de passe après votre première connexion.</p>
+      </div>
+    </div>
+  `;
+}
+
+// ── FENÊTRE ──────────────────────────────────────────────────────────────────
+function createWindow() {
+  const mainWindow = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    webPreferences: {
+      preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+}
+app.whenReady().then(() => {
+  createWindow();
+  registerMoniteurHandlers(db); 
+  registerAdminHandlers(db); 
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") app.quit();
+});
+
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  IPC HANDLERS
+// ══════════════════════════════════════════════════════════════════════════════
+// Map temporaire : email → { code, expiry }
+const otpStore = new Map();
+
+// Étape 1 : envoyer le code OTP
+ipcMain.handle("forgot-password-send-otp", async (event, { email }) => {
+  return new Promise((resolve) => {
+    db.query(
+      "SELECT id, nom, prenom, type_utilisateur, recovery_email FROM Utilisateur WHERE mail = ?",
+      [email],
+      async (err, res) => {
+        if (err || !res.length)
+          return resolve({ success: false, message: "Aucun compte trouvé avec cet email." });
+
+        const user = res[0];
+        const isAdmin = user.type_utilisateur === 'administrateur';
+
+        if (isAdmin && !user.recovery_email)
+          return resolve({ success: false, message: "Aucun email de récupération configuré." });
+
+        const sendTo = isAdmin ? user.recovery_email : email;
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiry = Date.now() + 10 * 60 * 1000;
+        otpStore.set(email, { code, expiry });
+
+        try {
+          await transporter.sendMail({
+            from: '"Auto-École 🚗" <tinhinanethequeen@gmail.com>',
+            to: sendTo,
+            subject: "Code de réinitialisation – Auto-École",
+            html: `
+              <div style="font-family:sans-serif;max-width:480px;margin:auto;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;">
+                <div style="background:#4E96E1;padding:24px;text-align:center;">
+                  <h1 style="color:#fff;margin:0;font-size:20px;">🚗 Auto-École</h1>
+                </div>
+                <div style="padding:28px;">
+                  <h2 style="color:#0F172A;">Bonjour ${user.prenom} !</h2>
+                  <p style="color:#475569;margin-bottom:20px;">Votre code de réinitialisation (valable 10 min) :</p>
+                  <div style="font-size:32px;font-weight:700;letter-spacing:8px;color:#4E96E1;text-align:center;padding:16px;background:#F1F5F9;border-radius:8px;margin:20px 0;">${code}</div>
+                  <p style="color:#94A3B8;font-size:12px;">Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.</p>
+                </div>
+              </div>`,
+          });
+          resolve({ success: true, isAdmin, recoveryEmail: sendTo });
+        } catch (emailErr) {
+          resolve({ success: false, message: "Erreur lors de l'envoi de l'email." });
+        }
+      }
+    );
+  });
+});
+
+// Étape 2 : vérifier le code OTP
+ipcMain.handle("forgot-password-verify-otp", async (event, { email, code }) => {
+  const entry = otpStore.get(email);
+  if (!entry) return { success: false, message: "Aucun code demandé pour cet email." };
+  if (Date.now() > entry.expiry) { otpStore.delete(email); return { success: false, message: "Code expiré. Veuillez recommencer." }; }
+  if (entry.code !== code) return { success: false, message: "Code incorrect." };
+  return { success: true };
+});
+
+// Étape 3 : mettre à jour le mot de passe
+ipcMain.handle("forgot-password-reset", async (event, { email, newPassword }) => {
+  const entry = otpStore.get(email);
+  if (!entry) return { success: false, message: "Session expirée." };
+
+  return new Promise((resolve) => {
+    db.query(
+      "UPDATE Utilisateur SET mot_de_passe = ? WHERE mail = ?",
+      [newPassword, email],
+      (err, result) => {
+        if (err)
+          return resolve({ success: false, message: "Erreur base de données." });
+
+        if (result.affectedRows === 0)
+          return resolve({ success: false, message: "Aucun compte trouvé avec cet email." });
+
+        otpStore.delete(email);
+        resolve({ success: true });
+      }
+    );
+  });
+});
+
+// 1. LOGIN
+ipcMain.handle("login", async (event, credentials) => {
+  const { email, password } = credentials;
+
+  const sql = `
+  SELECT u.id, u.nom, u.prenom, u.type_utilisateur, m.actif
+  FROM Utilisateur u
+  LEFT JOIN Moniteur m ON u.id = m.id
+  WHERE u.mail = ? AND u.mot_de_passe = ?
+  AND u.deleted_at IS NULL
+`;
+
+  return new Promise((resolve) => {
+    db.query(sql, [email, password], (err, result) => {
+      if (err) return resolve({ success: false, message: "Erreur Base de données" });
+
+      if (result && result.length > 0) {
+        const user = result[0];
+
+        if (user.type_utilisateur === 'moniteur' && user.actif === 0) {
+          return resolve({ success: false, inactive: true });
+        }
+
+        resolve({ success: true, user });
+      } else {
+        resolve({ success: false, message: "Identifiants incorrects" });
+      }
+    });
+  });
+});
+
+// 2. CANDIDATS
+ipcMain.handle("get-candidats", async () => {
+  return new Promise((resolve) => {
+    const sql = `
+      SELECT 
+    c.*, 
+    MAX(p.montantTotal) AS montantTotal, 
+    MAX(p.montantRestant) AS montantRestant, 
+    MAX(p.statutPaiement) AS statutPaiement,
+    GROUP_CONCAT(s.idSeance) AS seanceIds,
+    GROUP_CONCAT(CONCAT(s.date, ' ', s.heure)) AS seanceDates
+    FROM Candidat c
+    LEFT JOIN Paiement p ON c.idCandidat = p.idCandidat
+    LEFT JOIN CandidatSeance cs ON c.idCandidat = cs.idCandidat
+    LEFT JOIN Seance s ON cs.idSeance = s.idSeance
+    WHERE c.deleted_at IS NULL
+    GROUP BY c.idCandidat
+    ORDER BY c.idCandidat DESC`;
+
+    db.query(sql, (err, res) => {
+      if (err) {
+        console.error(err);
+        resolve([]);
+      } else {
+        const formattedRes = res.map(row => ({
+          ...row,
+          seanceIds: row.seanceIds ? row.seanceIds.split(',').map(Number) : [],
+          seanceDates: row.seanceDates ? row.seanceDates.split(',') : []
+        }));
+        resolve(formattedRes);
+      }
+    });
+  });
+});
+
+ipcMain.handle("add-candidat", async (event, data) => {
+  const { nom, prenom, telephone, date_naissance, sexe, photo, statut, email } = data;
+  
+  let categoriePermis = 'B';
+  if (data.categoriePermis && data.categoriePermis.trim() !== "") {
+    categoriePermis = data.categoriePermis.trim().toUpperCase();
+  }
+
+  let photoBuffer = null;
+  if (photo && photo.startsWith("data:image")) {
+    photoBuffer = Buffer.from(photo.split(",")[1], "base64");
+  }
+
+  const sql = `
+    INSERT INTO Candidat (nom, prenom, telephone, date_naissance, date_inscription, sexe, photo, statut, email, categoriePermis)
+    VALUES (?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?)
+  `;
+  return new Promise((resolve) => {
+    db.query(sql, [nom, prenom, telephone, date_naissance || null, sexe, photoBuffer, statut, email || null, categoriePermis], (err) => {
+      if (err) { console.error('add-candidat error:', err); resolve(false); }
+      else resolve(true);
+    });
+  });
+});
+
+ipcMain.handle("update-candidat", async (event, c) => {
+  console.log("📝 update-candidat reçu:", c);
+  return new Promise((resolve) => {
+    
+    let categorieNettoyee = 'B';
+    if (c.categoriePermis && String(c.categoriePermis).trim() !== "") {
+      categorieNettoyee = String(c.categoriePermis).trim().toUpperCase();
+    }
+
+    const sql = `UPDATE Candidat 
+      SET nom=?, prenom=?, telephone=?, date_naissance=?, sexe=?, photo=?, statut=?, email=?, categoriePermis=?
+      WHERE idCandidat=?`;
+    db.query(sql, [
+      c.nom,
+      c.prenom,
+      c.telephone     || null,
+      c.date_naissance && c.date_naissance !== "" ? c.date_naissance : null,
+      c.sexe,
+      c.photo         || null,
+      c.statut,
+      c.email         || null,
+      categorieNettoyee,
+      c.idCandidat,
+    ], (err) => {
+      if (err) {
+        console.error("❌ update-candidat error:", err.message);
+        resolve({ success: false, error: err.message });
+      } else {
+        console.log("✅ update-candidat OK en BDD avec Categorie:", categorieNettoyee);
+        resolve({ success: true });
+      }
+    });
+  });
+});
+
+ipcMain.handle("delete-candidat", async (event, id) => {
+  return new Promise((resolve) => {
+    db.query(
+      `UPDATE Candidat SET deleted_at = NOW() WHERE idCandidat = ?`,
+      [id],
+      (err) => {
+        if (err) resolve({ success: false, error: err.message });
+        else resolve({ success: true });
+      }
+    );
+  });
+});
+
+// 3. MONITEURS
+ipcMain.handle("get-moniteurs", async () => {
+  return new Promise((resolve) => {
+    const sql = `
+  SELECT u.id, u.nom, u.prenom, u.mail as email, m.numeroTelephone as telephone, 
+         m.photo, IF(m.actif, 'actif', 'inactif') as statut,
+         m.categories_habilitees
+  FROM Utilisateur u
+  JOIN Moniteur m ON u.id = m.id
+  WHERE u.deleted_at IS NULL
+  ORDER BY u.nom ASC`;
+    db.query(sql, (err, res) => {
+      if (err) resolve([]);
+      else resolve(res);
+    });
+  });
+});
+
+ipcMain.handle("add-moniteur", async (event, m) => {
+  const password = generatePassword();
+
+  // ── Nettoyage des catégories ─────────────────────────────────────────────
+  const categoriesHabilitees = (m.categories_habilitees && m.categories_habilitees.trim() !== "")
+    ? m.categories_habilitees.trim()
+    : 'B';
+
+  return new Promise((resolve) => {
+    const sqlUser = `
+      INSERT INTO Utilisateur (nom, prenom, mail, mot_de_passe, type_utilisateur)
+      VALUES (?, ?, ?, ?, 'moniteur')
+    `;
+
+    db.query(sqlUser, [m.nom, m.prenom, m.email, password], (err, res) => {
+      if (err) {
+        console.error("User Insert Error:", err.message);
+        return resolve({ success: false, error: err.message });
+      }
+
+      const newId = res.insertId;
+
+      // ✅ categories_habilitees est maintenant inclus dans l'INSERT
+      const sqlMoniteur = `
+        INSERT INTO Moniteur (id, numeroTelephone, actif, photo, categories_habilitees)
+        VALUES (?, ?, ?, ?, ?)
+      `;
+
+      db.query(
+        sqlMoniteur,
+        [newId, m.telephone, m.statut === "actif" ? 1 : 0, m.photo, categoriesHabilitees],
+        async (err2) => {
+          if (err2) {
+            console.error("Moniteur Insert Error:", err2.message);
+            return resolve({ success: false, error: err2.message });
+          }
+
+          console.log("✅ Moniteur créé avec catégories:", categoriesHabilitees);
+
+          let emailSent = false;
+          try {
+            await transporter.sendMail({
+              from: '"Auto-École 🚗" <tinhinanethequeen@gmail.com>',
+              to: m.email,
+              subject: "Vos identifiants de connexion – Auto-École",
+              html: buildEmailHtml({
+                prenom: m.prenom,
+                nom: m.nom,
+                email: m.email,
+                password,
+              }),
+            });
+            emailSent = true;
+          } catch (emailErr) {
+            console.error("Erreur envoi email:", emailErr.message);
+          }
+
+          resolve({ success: true, id: newId, password, emailSent });
+        }
+      );
+    });
+  });
+});
+
+ipcMain.handle("reset-moniteur-password", async (event, data) => {
+  const { id, email, prenom, nom } = data;
+  const newPassword = generatePassword();
+  return new Promise((resolve) => {
+    db.query(
+      'UPDATE Utilisateur SET mot_de_passe = ? WHERE id = ?',
+      [newPassword, id],
+      async (err) => {
+        if (err) return resolve({ success: false });
+        try {
+          await transporter.sendMail({
+            from: '"Auto-École 🚗" <tinhinanethequeen@gmail.com>',
+            to: email,
+            subject: "Réinitialisation de votre mot de passe – Auto-École",
+            html: buildEmailHtml({ prenom, nom, email, password: newPassword, isReset: true }),
+          });
+        } catch (emailErr) {
+          console.error("Erreur envoi email reset:", emailErr.message);
+        }
+        resolve({ success: true });
+      }
+    );
+  });
+});
+
+ipcMain.handle("update-moniteur", async (event, m) => {
+  // ── Nettoyage des catégories ─────────────────────────────────────────────
+  const categoriesHabilitees = (m.categories_habilitees && m.categories_habilitees.trim() !== "")
+    ? m.categories_habilitees.trim()
+    : 'B';
+
+  return new Promise((resolve) => {
+    const sqlUser = `UPDATE Utilisateur SET nom=?, prenom=?, mail=? WHERE id=?`;
+    db.query(sqlUser, [m.nom, m.prenom, m.email, m.id], (err) => {
+      if (err) return resolve({ success: false });
+
+      // ✅ categories_habilitees est maintenant inclus dans l'UPDATE
+      const sqlMon = `UPDATE Moniteur SET numeroTelephone=?, actif=?, photo=?, categories_habilitees=? WHERE id=?`;
+      db.query(sqlMon, [
+        m.telephone,
+        m.statut === 'actif' ? 1 : 0,
+        m.photo || null,
+        categoriesHabilitees,
+        m.id
+      ], (err2) => {
+        if (err2) {
+          console.error("❌ update-moniteur error:", err2.message);
+          resolve({ success: false });
+        } else {
+          console.log("✅ Moniteur mis à jour avec catégories:", categoriesHabilitees);
+          resolve({ success: true });
+        }
+      });
+    });
+  });
+});
+
+ipcMain.handle("delete-moniteur", async (event, id) => {
+  return new Promise((resolve) => {
+    db.query(
+      `UPDATE Utilisateur SET deleted_at = NOW() WHERE id = ?`,
+      [id],
+      (err) => {
+        if (err) resolve({ success: false });
+        else resolve({ success: true });
+      }
+    );
+  });
+});
+
+// 4. DASHBOARD
+ipcMain.handle("get-dashboard-stats", async () => {
+  return new Promise((resolve) => {
+    db.query('SELECT COUNT(*) as total FROM Candidat', (err1, res1) => {
+      if (err1) return resolve({ totalCandidats: 0, sessionsToday: 0, revenuMois: 0 });
+
+      const totalCandidats = res1[0].total;
+
+      db.query('SELECT COUNT(*) as total FROM Seance WHERE date = CURDATE()', (err2, res2) => {
+        if (err2) return resolve({ totalCandidats, sessionsToday: 0, revenuMois: 0 });
+
+        const sessionsToday = res2[0].total;
+
+        db.query(
+          `SELECT COALESCE(SUM(montant), 0) as total 
+           FROM Versement 
+           WHERE MONTH(dateVersement) = MONTH(CURDATE()) 
+           AND YEAR(dateVersement) = YEAR(CURDATE())`,
+          (err3, res3) => {
+            const revenuMois = err3 ? 0 : res3[0].total;
+            resolve({ totalCandidats, sessionsToday, revenuMois });
+          }
+        );
+      });
+    });
+  });
+});
+
+// 5. PAIEMENTS
+ipcMain.handle('add-payment', async (event, data) => {
+  const { idCandidat, montant, methode, dateVersement, remarque, typeVersement } = data;
+  const PRIX_PERMIS = 30000;
+  const versement = parseFloat(montant);
+
+  return new Promise((resolve) => {
+    db.query('SELECT * FROM Paiement WHERE idCandidat = ? LIMIT 1', [idCandidat], (err, rows) => {
+      if (err) return resolve({ success: false, message: "Erreur DB: " + err.message });
+
+      const enregistrer = (idPaiement, restantActuel, numeroTranche) => {
+        if (restantActuel <= 0) {
+          return resolve({ success: false, message: "Action bloquée : ce candidat a déjà soldé son compte." });
+        }
+        if (versement > restantActuel) {
+          return resolve({ success: false, message: `Le montant (${versement} DA) dépasse le reste à payer (${restantActuel} DA).` });
+        }
+        const nouveauRestant = Math.max(0, restantActuel - versement);
+        const nouveauStatut = nouveauRestant <= 0 ? 'payé' : 'en_cours';
+
+        db.query('UPDATE Paiement SET montantRestant = ?, statutPaiement = ? WHERE idPaiement = ?',
+          [nouveauRestant, nouveauStatut, idPaiement], (err2) => {
+            if (err2) return resolve({ success: false, message: "Erreur Update: " + err2.message });
+            db.query(
+              `INSERT INTO Versement (montant, typeVersement, datePaiement, methode, numeroTranche, remarque, dateVersement, idPaiement)
+               VALUES (?, ?, NOW(), ?, ?, ?, ?, ?)`,
+              [versement, typeVersement || 'seance', methode, numeroTranche, remarque || null, dateVersement, idPaiement],
+              (err3) => {
+                if (err3) return resolve({ success: false, message: "Erreur Versement: " + err3.message });
+                resolve({ success: true, montantRestant: nouveauRestant });
+              }
+            );
+          }
+        );
+      };
+
+      if (rows && rows.length > 0) {
+        const p = rows[0];
+        db.query('SELECT COUNT(*) as nb FROM Versement WHERE idPaiement = ?', [p.idPaiement], (errTranche, countRes) => {
+          const tranche = (countRes?.[0]?.nb || 0) + 1;
+          enregistrer(p.idPaiement, parseFloat(p.montantRestant), tranche);
+        });
+      } else {
+        const typePaiement = versement >= PRIX_PERMIS ? 'complet' : 'tranche';
+        db.query(
+          `INSERT INTO Paiement (montantTotal, montantRestant, typePaiement, statutPaiement, idCandidat)
+           VALUES (?, ?, ?, 'en_cours', ?)`,
+          [PRIX_PERMIS, PRIX_PERMIS, typePaiement, idCandidat],
+          (errInsert, resInsert) => {
+            if (errInsert) return resolve({ success: false, message: "Erreur Création Paiement" });
+            enregistrer(resInsert.insertId, PRIX_PERMIS, 1);
+          }
+        );
+      }
+    });
+  });
+});
+
+ipcMain.handle("get-payments", async () => {
+  return new Promise((resolve) => {
+    const sql = `
+      SELECT 
+        v.idVersement, v.montant, v.methode, v.dateVersement,
+        v.remarque, v.typeVersement, v.numeroTranche,
+        c.nom, c.prenom, c.idCandidat,
+        p.montantTotal, p.montantRestant, p.statutPaiement, p.idPaiement
+      FROM Versement v
+      JOIN Paiement p ON v.idPaiement = p.idPaiement
+      JOIN Candidat c ON p.idCandidat = c.idCandidat
+      ORDER BY v.dateVersement DESC
+    `;
+    db.query(sql, (err, res) => {
+      if (err) resolve([]);
+      else resolve(res);
+    });
+  });
+});
+
+ipcMain.handle('get-candidats-debiteurs', async () => {
+  return new Promise((resolve) => {
+    console.log("Calling this guy!")
+    const sql = `
+      SELECT 
+        c.idCandidat, 
+        c.nom, 
+        c.prenom, 
+        c.telephone,
+        MAX(COALESCE(p.montantTotal, 30000)) AS montantTotal,
+        MAX(COALESCE(p.montantRestant, 30000)) AS montantRestant,
+        MAX(COALESCE(p.statutPaiement, 'en_attente')) AS statutPaiement,
+        GROUP_CONCAT(s.idSeance) AS seanceIds,
+        GROUP_CONCAT(CONCAT(s.date, ' à ', s.heure)) AS seanceDetails
+      FROM Candidat c
+      LEFT JOIN Paiement p ON c.idCandidat = p.idCandidat
+      LEFT JOIN CandidatSeance cs ON c.idCandidat = cs.idCandidat
+      LEFT JOIN Seance s ON cs.idSeance = s.idSeance
+      WHERE p.idPaiement IS NULL OR p.montantRestant > 0
+      GROUP BY c.idCandidat
+      ORDER BY c.nom ASC
+    `;
+
+    db.query(sql, (err, res) => {
+      if (err) { 
+        console.error('get-candidats-debiteurs error:', err); 
+        resolve([]); 
+      } else {
+        const formattedRes = res.map(row => ({
+          ...row,
+          seanceIds: row.seanceIds ? row.seanceIds.split(',').map(Number) : [],
+          seanceDetails: row.seanceDetails ? row.seanceDetails.split(',') : []
+        }));
+        resolve(formattedRes);
+        console.log(formattedRes)
+      }
+    });
+  });
+});
+
+// 6. SÉANCES
+ipcMain.handle("get-seances", async () => {
+  return new Promise((resolve) => {
+    const sql = `
+  SELECT 
+    s.idSeance, s.date, s.heure, s.duree, s.type, s.statut, s.moniteur_id,
+    CONCAT(u.prenom, ' ', u.nom) AS moniteurNom,
+    GROUP_CONCAT(CONCAT(c.prenom, ' ', c.nom) SEPARATOR ', ') AS candidatsNoms,
+    GROUP_CONCAT(c.idCandidat SEPARATOR ',') AS candidatsIds
+  FROM Seance s
+  JOIN Moniteur m ON s.moniteur_id = m.id
+  JOIN Utilisateur u ON m.id = u.id
+  LEFT JOIN CandidatSeance cs ON s.idSeance = cs.idSeance
+  LEFT JOIN Candidat c ON cs.idCandidat = c.idCandidat
+  GROUP BY s.idSeance
+  ORDER BY s.date DESC, s.heure ASC`;
+    db.query(sql, (err, res) => {
+      if (err) resolve([]);
+      else resolve(res);
+    });
+  });
+});
+
+ipcMain.handle("add-seance", async (event, seanceData) => {
+  const { date, heure, type, statut, moniteur_id, candidatIds, duree } = seanceData;
+  return new Promise((resolve) => {
+    const sqlSeance = `INSERT INTO Seance (date, heure, type, statut, moniteur_id, duree) VALUES (?, ?, ?, ?, ?, ?)`;
+    db.query(sqlSeance, [date, heure, type, statut || 'planifiée', moniteur_id, duree || 1], (err, res) => {
+      if (err) { console.error("❌ Erreur INSERT Seance:", err); return resolve({ success: false }); }
+      
+      const newSeanceId = res.insertId;
+      console.log("✅ Séance créée ID:", newSeanceId);
+
+      if (!candidatIds || candidatIds.length === 0) {
+        console.log("⚠️ Aucun candidat — mail non envoyé");
+        return resolve({ success: true, id: newSeanceId });
+      }
+
+      const values = candidatIds.map(cid => [cid, newSeanceId]);
+      db.query(`INSERT INTO CandidatSeance (idCandidat, idSeance) VALUES ?`, [values], async (err2) => {
+        if (err2) { console.error("❌ Erreur INSERT CandidatSeance:", err2); return resolve({ success: false, id: newSeanceId }); }
+
+        console.log("✅ CandidatSeance inséré, candidatIds:", candidatIds);
+
+        // ── ENVOI MAIL ──────────────────────────────────────────────────
+        try {
+          const candidatId = candidatIds[0];
+          console.log("📧 Recherche candidat ID:", candidatId);
+
+          const candidatRows = await new Promise((res, rej) =>
+            db.query(
+              `SELECT nom, prenom, email FROM Candidat WHERE idCandidat = ?`,
+              [candidatId],
+              (e, r) => e ? rej(e) : res(r)
+            )
+          );
+          const candidat = candidatRows?.[0];
+          console.log("📧 Candidat trouvé:", candidat);
+
+          const moniteurRows = await new Promise((res, rej) =>
+            db.query(
+              `SELECT u.nom, u.prenom FROM Utilisateur u WHERE u.id = ?`,
+              [moniteur_id],
+              (e, r) => e ? rej(e) : res(r)
+            )
+          );
+          const moniteur = moniteurRows?.[0];
+          console.log("📧 Moniteur trouvé:", moniteur);
+
+          if (!candidat?.email) {
+            console.log("⚠️ Pas d'email pour ce candidat — mail non envoyé");
+          } else {
+            console.log("📤 Envoi mail à:", candidat.email);
+            await transporter.sendMail({
+              from: '"Auto-École 🚗" <tinhinanethequeen@gmail.com>',
+              to: candidat.email,
+              subject: "Nouvelle séance planifiée – Auto-École",
+              html: buildSeanceEmailHtml({
+                prenomCandidat: candidat.prenom,
+                nomCandidat:    candidat.nom,
+                prenomMoniteur: moniteur?.prenom || "",
+                nomMoniteur:    moniteur?.nom    || "",
+                date,
+                heure,
+                duree,
+                type,
+              }),
+            });
+            console.log("✅ Mail envoyé avec succès à:", candidat.email);
+          }
+        } catch (mailErr) {
+          console.error("❌ Erreur envoi mail:", mailErr.message);
+        }
+        // ────────────────────────────────────────────────────────────────
+
+        resolve({ success: true, id: newSeanceId });
+      });
+    });
+  });
+});
+
+ipcMain.handle("delete-seance", async (event, id) => {
+  return new Promise((resolve) => {
+    db.query("DELETE FROM Seance WHERE idSeance = ?", [id], (err) => {
+      resolve(!err);
+    });
+  });
+});
+
+ipcMain.handle("update-seance", async (event, data) => {
+  const { id, date, heure, type, statut, moniteur_id, duree, candidatId } = data;
+  return new Promise((resolve) => {
+    db.query(
+      "UPDATE Seance SET date=?, heure=?, type=?, statut=?, moniteur_id=?, duree=? WHERE idSeance=?",
+      [date, heure, type, statut, moniteur_id, duree || 1, id],
+      (err) => {
+        if (err) return resolve(false);
+        if (!candidatId) return resolve(true);
+        db.query('DELETE FROM CandidatSeance WHERE idSeance = ?', [id], (err2) => {
+          if (err2) return resolve(false);
+          db.query('INSERT INTO CandidatSeance (idCandidat, idSeance) VALUES (?, ?)', [parseInt(candidatId), id], (err3) => {
+            resolve(!err3);
+          });
+        });
+      }
+    );
+  });
+});
+
+
+// NOUVEAU : Paiements filtrés par moniteur_id
+ipcMain.handle('get-payments-by-moniteur', async (event, moniteurId) => {
+  return new Promise((resolve) => {
+    const sql = `
+      SELECT 
+        v.idVersement, v.montant, v.methode, v.dateVersement,
+        v.remarque, v.typeVersement, v.numeroTranche,
+        c.nom, c.prenom, c.idCandidat,
+        p.montantTotal, p.montantRestant, p.statutPaiement, p.idPaiement
+      FROM Versement v
+      JOIN Paiement p     ON v.idPaiement     = p.idPaiement
+      JOIN Candidat c     ON p.idCandidat      = c.idCandidat
+      JOIN CandidatSeance cs ON cs.idCandidat  = c.idCandidat
+      JOIN Seance s        ON cs.idSeance       = s.idSeance
+      WHERE s.moniteur_id = ?
+      GROUP BY v.idVersement
+      ORDER BY v.dateVersement DESC
+    `;
+    db.query(sql, [moniteurId], (err, res) => {
+      if (err) { console.error('get-payments-by-moniteur:', err); resolve([]); }
+      else resolve(res);
+    });
+  });
+});
+
+// NOUVEAU : Candidats débiteurs du moniteur uniquement
+ipcMain.handle('get-candidats-debiteurs-moniteur', async (event, moniteurId) => {
+  return new Promise((resolve) => {
+    const sql = `
+      SELECT DISTINCT
+        c.idCandidat, c.nom, c.prenom, c.telephone,
+        COALESCE(p.montantTotal,  30000) AS montantTotal,
+        COALESCE(p.montantRestant, 30000) AS montantRestant,
+        COALESCE(p.statutPaiement, 'en_attente') AS statutPaiement
+      FROM Candidat c
+      JOIN CandidatSeance cs ON cs.idCandidat = c.idCandidat
+      JOIN Seance s           ON cs.idSeance   = s.idSeance
+      LEFT JOIN Paiement p   ON p.idCandidat   = c.idCandidat
+      WHERE s.moniteur_id = ?
+        AND (p.idPaiement IS NULL OR p.montantRestant > 0)
+      ORDER BY c.nom ASC
+    `;
+    db.query(sql, [moniteurId], (err, res) => {
+      if (err) { console.error('get-candidats-debiteurs-moniteur:', err); resolve([]); }
+      else resolve(res);
+    });
+  });
+});
+
+// MONITEUR : récupérer ses infos personnelles
+ipcMain.handle('get-moniteur-profile', async (event, moniteurId) => {
+  return new Promise((resolve) => {
+    const sql = `
+      SELECT u.id, u.nom, u.prenom, u.mail as email,
+             m.numeroTelephone as telephone, m.photo,
+             IF(m.actif, 'actif', 'inactif') as statut,
+             m.categories_habilitees
+      FROM Utilisateur u
+      JOIN Moniteur m ON u.id = m.id
+      WHERE u.id = ?
+    `;
+    db.query(sql, [moniteurId], (err, res) => {
+      if (err || !res.length) resolve(null);
+      else resolve(res[0]);
+    });
+  });
+});
+
+// MONITEUR : modifier son mot de passe
+ipcMain.handle('update-moniteur-password', async (event, { moniteurId, oldPassword, newPassword }) => {
+  return new Promise((resolve) => {
+    db.query(
+      'SELECT id FROM Utilisateur WHERE id = ? AND mot_de_passe = ?',
+      [moniteurId, oldPassword],
+      (err, res) => {
+        if (err) return resolve({ success: false, message: "Erreur base de données." });
+        if (!res.length) return resolve({ success: false, message: "Ancien mot de passe incorrect." });
+
+        db.query(
+          'UPDATE Utilisateur SET mot_de_passe = ? WHERE id = ?',
+          [newPassword, moniteurId],
+          (err2) => {
+            if (err2) resolve({ success: false, message: "Erreur lors de la mise à jour." });
+            else resolve({ success: true });
+          }
+        );
+      }
+    );
+  });
+});
+
+ipcMain.handle("send-examen-notification", async (event, { email, candidat, type, date, heure, lieu }) => {
+  const dateFormatee = new Date(date + "T12:00:00").toLocaleDateString("fr-FR", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric"
+  });
+
+  const typeColors = {
+    Code:        { bg: "#e8f5e9", color: "#2e7d32" },
+    Créneau:     { bg: "#fff3e0", color: "#e65100" },
+    Circulation: { bg: "#fce4ec", color: "#c62828" },
+  };
+  const tc = typeColors[type] || { bg: "#eee", color: "#333" };
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:500px;margin:auto;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;">
+      <div style="background:#2b537e;padding:24px;text-align:center;">
+        <h1 style="color:#fff;margin:0;font-size:20px;">🚗 Auto-École</h1>
+        <p style="color:#c7d7f0;margin:6px 0 0;font-size:13px;">Convocation à l'examen</p>
+      </div>
+      <div style="padding:28px;">
+        <p style="color:#475569;font-size:15px;margin-bottom:20px;">
+          Bonjour <strong>${candidat}</strong>,<br/>
+          Vous êtes convoqué(e) à votre prochain examen. Voici les détails :
+        </p>
+        <div style="background:#F8FAFC;border-radius:10px;padding:20px;margin-bottom:20px;">
+          <table style="width:100%;border-collapse:collapse;">
+            <tr>
+              <td style="padding:8px 0;color:#64748b;font-size:13px;width:40%;">📋 Type d'examen</td>
+              <td style="padding:8px 0;">
+                <span style="background:${tc.bg};color:${tc.color};padding:3px 12px;border-radius:6px;font-size:13px;font-weight:700;">
+                  ${type}
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 0;color:#64748b;font-size:13px;">📅 Date</td>
+              <td style="padding:8px 0;color:#0F172A;font-size:13px;font-weight:600;">${dateFormatee}</td>
+            </tr>
+            <tr>
+              <td style="padding:8px 0;color:#64748b;font-size:13px;">🕐 Heure</td>
+              <td style="padding:8px 0;color:#0F172A;font-size:13px;font-weight:600;">${heure}</td>
+            </tr>
+            <tr>
+              <td style="padding:8px 0;color:#64748b;font-size:13px;">📍 Lieu</td>
+              <td style="padding:8px 0;color:#0F172A;font-size:13px;font-weight:600;">${lieu}</td>
+            </tr>
+          </table>
+        </div>
+        <p style="color:#94A3B8;font-size:12px;">
+          Veuillez vous présenter 15 minutes avant l'heure indiquée avec votre pièce d'identité.<br/>
+          En cas d'empêchement, contactez votre auto-école dès que possible.
+        </p>
+      </div>
+      <div style="background:#F1F5F9;padding:14px 28px;text-align:center;">
+        <p style="color:#94A3B8;font-size:11px;margin:0;">Auto-École — Ce message est envoyé automatiquement, merci de ne pas y répondre.</p>
+      </div>
+    </div>
+  `;
+
+  try {
+    await transporter.sendMail({
+      from: '"Auto-École 🚗" <tinhinanethequeen@gmail.com>',
+      to: email,
+      subject: `Convocation examen ${type} – Auto-École`,
+      html,
+    });
+    return { success: true };
+  } catch (err) {
+    console.error("Erreur envoi notif examen:", err.message);
+    return { success: false };
+  }
+});
+
+ipcMain.handle("send-candidat-message", async (event, { email, nomCandidat, sujet, message }) => {
+  const html = `
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;">
+      <div style="background:#2b537e;padding:24px;text-align:center;">
+        <h1 style="color:#fff;margin:0;font-size:20px;">🚗 Auto-École</h1>
+      </div>
+      <div style="padding:28px;">
+        <p style="color:#475569;font-size:15px;margin-bottom:16px;">
+          Bonjour <strong>${nomCandidat}</strong>,
+        </p>
+        <div style="background:#F8FAFC;border-radius:10px;padding:20px;color:#1e293b;font-size:14px;line-height:1.7;white-space:pre-wrap;">${message}</div>
+        <p style="color:#94A3B8;font-size:12px;margin-top:20px;">
+          Ce message vous a été envoyé par votre auto-école. Merci de ne pas y répondre directement.
+        </p>
+      </div>
+    </div>
+  `;
+  try {
+    await transporter.sendMail({
+      from: '"Auto-École 🚗" <tinhinanethequeen@gmail.com>',
+      to: email,
+      subject: sujet || "Message de votre auto-école",
+      html,
+    });
+    return { success: true };
+  } catch (err) {
+    console.error("Erreur envoi message candidat:", err.message);
+    return { success: false, message: err.message };
+  }
+});
+
+// ── CONGÉS MONITEURS ─────────────────────────────────────────────────────────
+
+ipcMain.handle("get-all-conges", async () => {
+  return new Promise((resolve) => {
+    db.query("SELECT * FROM CongeMoniteur", (err, res) => {
+      if (err) { console.error("get-all-conges:", err); resolve([]); }
+      else resolve(res);
+    });
+  });
+});
+
+ipcMain.handle("get-conges-moniteur", async (event, moniteurId) => {
+  return new Promise((resolve) => {
+    db.query(
+      "SELECT * FROM CongeMoniteur WHERE moniteur_id = ? ORDER BY dateDebut DESC",
+      [moniteurId],
+      (err, res) => {
+        if (err) { console.error("get-conges-moniteur:", err); resolve([]); }
+        else resolve(res);
+      }
+    );
+  });
+});
+
+ipcMain.handle("add-conge-moniteur", async (event, data) => {
+  const { moniteurId, dateDebut, dateFin, raison, precision } = data;
+  return new Promise((resolve) => {
+    db.query(
+      "INSERT INTO CongeMoniteur (moniteur_id, dateDebut, dateFin, raison, `precision`) VALUES (?, ?, ?, ?, ?)",
+      [moniteurId, dateDebut, dateFin, raison || "autre", precision || null],
+      (err, res) => {
+        if (err) { console.error("add-conge-moniteur:", err); resolve({ success: false, error: err.message }); }
+        else resolve({ success: true, id: res.insertId });
+      }
+    );
+  });
+});
+
+ipcMain.handle("remove-conge-moniteur", async (event, congeId) => {
+  return new Promise((resolve) => {
+    db.query(
+      "DELETE FROM CongeMoniteur WHERE id = ?",
+      [congeId],
+      (err) => {
+        if (err) resolve({ success: false });
+        else resolve({ success: true });
+      }
+    );
+  });
+});
+// ── CONGÉ ANNUEL AUTO-ÉCOLE ───────────────────────────────────────────────────
+
+ipcMain.handle("get-conge-annuel", async () => {
+  return new Promise((resolve) => {
+    db.query(
+      "SELECT valeurParametre FROM ConfigurationSysteme WHERE cleParametre = 'CONGE_ANNUEL'",
+      (err, res) => {
+        if (err || !res.length) return resolve(null);
+        try { resolve(JSON.parse(res[0].valeurParametre)); }
+        catch { resolve(null); }
+      }
+    );
+  });
+});
+
+ipcMain.handle("set-conge-annuel", async (event, data) => {
+  // data = { actif: bool, dateDebut: "YYYY-MM-DD", dateFin: "YYYY-MM-DD" } | null
+  const val = JSON.stringify(data);
+  return new Promise((resolve) => {
+    db.query(
+      `INSERT INTO ConfigurationSysteme (cleParametre, valeurParametre)
+       VALUES ('CONGE_ANNUEL', ?)
+       ON DUPLICATE KEY UPDATE valeurParametre = ?`,
+      [val, val],
+      (err) => {
+        if (err) { console.error("set-conge-annuel:", err); resolve({ success: false }); }
+        else resolve({ success: true });
+      }
+    );
+  });
+});

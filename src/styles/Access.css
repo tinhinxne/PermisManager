@@ -1,0 +1,186 @@
+/* ============================================
+   Access.css — correspond à l'image 4
+   Fond : image auto-école avec overlay bleuté
+   Cartes : blanches, opaques, sans cadre global
+   ============================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* ── Page plein écran avec image de fond ── */
+.access-page {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Outfit', sans-serif;
+  overflow: hidden;
+  position: relative;
+
+  /* Même image de fond que SignIn */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Overlay bleuté léger comme dans l'image 4 */
+.access-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(180, 200, 230, 0.35);
+  z-index: 0;
+}
+
+/* ── Titre au-dessus des cartes ── */
+.access-title {
+  position: relative;
+  z-index: 10;
+  font-size: 22px;
+  font-weight: 700;
+  color: #1a2332;
+  margin-bottom: 28px;
+  text-align: center;
+}
+
+/* ── Grille des 2 cartes de rôle ── */
+.role-grid {
+  position: relative;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 28px;
+}
+
+/* ── Carte rôle : blanche, opaque, arrondie ── */
+.role-card {
+  background: #ffffff;
+  border: 2px solid transparent;
+  border-radius: 16px;
+  padding: 32px 28px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  text-align: center;
+  width: 220px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.role-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.role-card.selected.admin {
+  border-color: #1e88e5;
+  box-shadow: 0 0 0 3px rgba(30, 136, 229, 0.15);
+}
+
+.role-card.selected.moniteur {
+  border-color: #26a69a;
+  box-shadow: 0 0 0 3px rgba(38, 166, 154, 0.15);
+}
+
+/* ── Icône rôle ── */
+.role-icon-wrap {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  font-size: 24px;
+}
+
+.role-card.admin .role-icon-wrap {
+  background: #1e88e5;
+}
+
+.role-card.moniteur .role-icon-wrap {
+  background: #26a69a;
+}
+
+/* SVG icons blanc */
+.role-icon-wrap svg {
+  width: 28px;
+  height: 28px;
+  color: #ffffff;
+  fill: #ffffff;
+}
+
+.role-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1a2332;
+  margin-bottom: 8px;
+}
+
+.role-desc {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+/* ── Bouton confirmer ── */
+.access-btn {
+  position: relative;
+  z-index: 10;
+  width: 460px;
+  padding: 14px;
+  background: #1e88e5;
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  font-family: 'Outfit', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease;
+  margin-bottom: 14px;
+}
+
+.access-btn:hover:not(:disabled) {
+  background: #1565c0;
+  transform: translateY(-1px);
+}
+
+.access-btn:disabled {
+  background: #90caf9;
+  cursor: not-allowed;
+}
+
+/* ── Lien retour ── */
+.access-back {
+  position: relative;
+  z-index: 10;
+  font-size: 13px;
+  color: #4b5563;
+  text-align: center;
+}
+
+.access-back a {
+  color: #4b5563;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.access-back a:hover {
+  color: #1e88e5;
+}
+
+/* ── Éléments cachés du design précédent ── */
+.access-card,
+.access-logo,
+.access-logo-icon,
+.access-logo-text,
+.access-subtitle {
+  display: none;
+}

@@ -1,0 +1,284 @@
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+.modal {
+  background: white;
+  border-radius: 14px;
+  width: 500px;
+  max-width: 95vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+}
+
+/* Header */
+.modal__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.modal__title {
+  margin: 0;
+  font-size: 18px;
+  color: #1a1a2e;
+}
+
+.modal__subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #888;
+}
+
+.modal__close-btn {
+  background: #f5f5f5;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #555;
+  font-size: 14px;
+  transition: background 0.2s;
+}
+
+.modal__close-btn:hover {
+  background: #e0e0e0;
+}
+
+/* Section générique */
+.modal__section {
+  padding: 14px 24px;
+}
+
+/* Candidat */
+.modal__avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.modal__avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: #e8f3fd;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.modal__candidat-name {
+  font-weight: 700;
+  font-size: 16px;
+  color: #1a1a2e;
+}
+
+.modal__candidat-role {
+  font-size: 13px;
+  color: #888;
+  margin-top: 2px;
+}
+
+/* Meta (dossier + moniteur) */
+.modal__section--meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 12px;
+  padding-bottom: 4px;
+}
+
+.modal__meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.modal__meta-label {
+  font-weight: 700;
+  color: #1a1a2e;
+  white-space: nowrap;
+}
+
+.modal__meta-value {
+  color: #444;
+}
+
+/* Contact */
+.modal__section--contact {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+  padding-bottom: 12px;
+  font-size: 13px;
+}
+
+.modal__contact-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.modal__contact-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #444;
+  font-size: 13px;
+}
+
+/* Récap badges */
+.modal__section--recap {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.modal__recap-badge {
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.modal__recap-badge--total {
+  background: #e8f3fd;
+  color: #1565c0;
+  border: 1.5px solid #b3d4f5;
+}
+
+.modal__recap-badge--passed {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1.5px solid #a5d6a7;
+}
+
+.modal__recap-badge--failed {
+  background: #ffebee;
+  color: #c62828;
+  border: 1.5px solid #ef9a9a;
+}
+
+/* Tableau historique */
+.modal__historique-wrap {
+  margin: 0 0 4px;
+  overflow: hidden;
+}
+
+.modal__historique-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.modal__historique-table thead tr {
+  background: #4e96e1;
+}
+
+.modal__historique-table th {
+  color: white;
+  padding: 10px 16px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.modal__historique-table td {
+  padding: 10px 16px;
+  font-size: 13px;
+  color: #333;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.modal__historique-row--even td {
+  background: #f0f5fc;
+}
+
+/* Divider */
+.modal__divider {
+  height: 1px;
+  background: #f0f0f0;
+  margin: 0 24px;
+}
+
+/* Info grid */
+.modal__info-grid {
+  padding: 14px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal__icon-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Footer */
+.modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 24px;
+  border-top: 1px solid #f0f0f0;
+}
+
+/* Shared badge */
+.badge {
+  padding: 3px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Shared buttons */
+.btn {
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  display: flex;
+  align-items: center;
+}
+
+.btn:hover {
+  opacity: 0.85;
+}
+
+.btn--secondary {
+  border: 1.5px solid #d0d7e3;
+  background: white;
+  color: #333;
+}
+
+.btn--primary {
+  border: none;
+  background: #4e96e1;
+  color: white;
+  font-weight: 600;
+}

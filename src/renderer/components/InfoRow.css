@@ -1,0 +1,17 @@
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.info-row__label {
+  font-size: 13px;
+  color: #888;
+  font-weight: 500;
+}
+
+.info-row__value {
+  font-size: 13px;
+  color: #1a1a2e;
+  font-weight: 500;
+}
