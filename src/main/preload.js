@@ -1,5 +1,4 @@
   const { contextBridge, ipcRenderer } = require('electron');
-
   contextBridge.exposeInMainWorld('electron', {
   // Auth
   login: (creds) => ipcRenderer.invoke('login', creds),
@@ -59,4 +58,7 @@
   setCongeAnnuel: (data) => ipcRenderer.invoke("set-conge-annuel", data),
 
   sendRappelPaiement: (data) => ipcRenderer.invoke("send-rappel-paiement", data),
+  generateListeCandidatsPDF: (data) =>
+    ipcRenderer.invoke("generate-liste-candidats-pdf", data),
+
 });
