@@ -57,4 +57,6 @@
   // Congé annuel
   getCongeAnnuel: ()     => ipcRenderer.invoke("get-conge-annuel"),
   setCongeAnnuel: (data) => ipcRenderer.invoke("set-conge-annuel", data),
+
+  sendRappelPaiement: (data) => ipcRenderer.invoke("send-rappel-paiement", data),
 });

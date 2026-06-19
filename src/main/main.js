@@ -7,6 +7,8 @@ db.query(`
   MODIFY COLUMN categoriePermis VARCHAR(10) NOT NULL DEFAULT 'B'
 `, (err) => {
   if (err) {
+    // Si MODIFY échoue (par exemple si la colonne s'appelait différemment), 
+    // on essaie de l'ajouter proprement au cas où.
     db.query(`ALTER TABLE Candidat ADD COLUMN categoriePermis VARCHAR(10) NOT NULL DEFAULT 'B'`, (err2) => {
       if (err2) {
         console.log("ℹ️ Structure de la table Candidat déjà en place ou gérée.");
@@ -21,7 +23,7 @@ db.query(`
 // ── SÉCURISATION : colonne categories_habilitees pour les moniteurs ────────
 db.query(`
   ALTER TABLE Moniteur 
-  ADD COLUMN categories_habilitees VARCHAR(100) NOT NULL DEFAULT 'B'
+  ADD COLUMN categories_habilitees VARCHAR(50) NOT NULL DEFAULT 'B'
 `, (err) => {
   if (err) {
     console.log("ℹ️ Colonne 'categories_habilitees' déjà présente sur Moniteur (ou erreur ignorée) :", err.code || err.message);
@@ -46,7 +48,7 @@ const transporter = nodemailer.createTransport({
     pass: 'gjgw vqfa qzkp wbfa',
   },
 });
-
+// Ajouter cette fonction avec les autres templates email en haut du fichier
 function buildSeanceEmailHtml({ prenomCandidat, nomCandidat, prenomMoniteur, nomMoniteur, date, heure, duree, type }) {
   const typeLabel = type === "code" ? "Code" : type === "circulation" ? "Circulation" : "Créneau";
   const [h, m] = heure.split(":");
@@ -89,7 +91,6 @@ function buildSeanceEmailHtml({ prenomCandidat, nomCandidat, prenomMoniteur, nom
     </div>
   `;
 }
-
 function generatePassword(length = 10) {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
   return Array.from(crypto.randomBytes(length))
@@ -161,6 +162,7 @@ app.on("window-all-closed", () => {
 const otpStore = new Map();
 
 // Étape 1 : envoyer le code OTP
+
 ipcMain.handle("forgot-password-send-otp", async (event, { email }) => {
   return new Promise((resolve) => {
     db.query(
@@ -230,20 +232,22 @@ ipcMain.handle("forgot-password-reset", async (event, { email, newPassword }) =>
         if (err)
           return resolve({ success: false, message: "Erreur base de données." });
 
+        // affectedRows = 0 → email introuvable en BDD
         if (result.affectedRows === 0)
           return resolve({ success: false, message: "Aucun compte trouvé avec cet email." });
 
+        // ✅ Supprimer l'OTP seulement après succès confirmé
         otpStore.delete(email);
         resolve({ success: true });
       }
     );
   });
 });
-
 // 1. LOGIN
 ipcMain.handle("login", async (event, credentials) => {
   const { email, password } = credentials;
 
+  // JOIN with Moniteur to also fetch the `actif` flag when applicable
   const sql = `
   SELECT u.id, u.nom, u.prenom, u.type_utilisateur, m.actif
   FROM Utilisateur u
@@ -259,6 +263,7 @@ ipcMain.handle("login", async (event, credentials) => {
       if (result && result.length > 0) {
         const user = result[0];
 
+        // Block inactive moniteurs
         if (user.type_utilisateur === 'moniteur' && user.actif === 0) {
           return resolve({ success: false, inactive: true });
         }
@@ -295,6 +300,7 @@ ipcMain.handle("get-candidats", async () => {
         console.error(err);
         resolve([]);
       } else {
+        // Optional: Convert the comma-separated strings back into arrays
         const formattedRes = res.map(row => ({
           ...row,
           seanceIds: row.seanceIds ? row.seanceIds.split(',').map(Number) : [],
@@ -305,8 +311,8 @@ ipcMain.handle("get-candidats", async () => {
     });
   });
 });
-
 ipcMain.handle("add-candidat", async (event, data) => {
+  // 💡 SÉCURISATION : On extrait et on nettoie la catégorie immédiatement
   const { nom, prenom, telephone, date_naissance, sexe, photo, statut, email } = data;
   
   let categoriePermis = 'B';
@@ -330,11 +336,11 @@ ipcMain.handle("add-candidat", async (event, data) => {
     });
   });
 });
-
 ipcMain.handle("update-candidat", async (event, c) => {
   console.log("📝 update-candidat reçu:", c);
   return new Promise((resolve) => {
     
+    // 💡 SÉCURISATION : On s'assure que la catégorie reçue n'est pas une chaîne vide
     let categorieNettoyee = 'B';
     if (c.categoriePermis && String(c.categoriePermis).trim() !== "") {
       categorieNettoyee = String(c.categoriePermis).trim().toUpperCase();
@@ -352,7 +358,7 @@ ipcMain.handle("update-candidat", async (event, c) => {
       c.photo         || null,
       c.statut,
       c.email         || null,
-      categorieNettoyee,
+      categorieNettoyee, // 💡 On utilise la valeur nettoyée et validée ici
       c.idCandidat,
     ], (err) => {
       if (err) {
@@ -384,8 +390,7 @@ ipcMain.handle("get-moniteurs", async () => {
   return new Promise((resolve) => {
     const sql = `
   SELECT u.id, u.nom, u.prenom, u.mail as email, m.numeroTelephone as telephone, 
-         m.photo, IF(m.actif, 'actif', 'inactif') as statut,
-         m.categories_habilitees
+         m.photo, IF(m.actif, 'actif', 'inactif') as statut
   FROM Utilisateur u
   JOIN Moniteur m ON u.id = m.id
   WHERE u.deleted_at IS NULL
@@ -399,12 +404,6 @@ ipcMain.handle("get-moniteurs", async () => {
 
 ipcMain.handle("add-moniteur", async (event, m) => {
   const password = generatePassword();
-
-  // ── Nettoyage des catégories ─────────────────────────────────────────────
-  const categoriesHabilitees = (m.categories_habilitees && m.categories_habilitees.trim() !== "")
-    ? m.categories_habilitees.trim()
-    : 'B';
-
   return new Promise((resolve) => {
     const sqlUser = `
       INSERT INTO Utilisateur (nom, prenom, mail, mot_de_passe, type_utilisateur)
@@ -419,22 +418,19 @@ ipcMain.handle("add-moniteur", async (event, m) => {
 
       const newId = res.insertId;
 
-      // ✅ categories_habilitees est maintenant inclus dans l'INSERT
       const sqlMoniteur = `
-        INSERT INTO Moniteur (id, numeroTelephone, actif, photo, categories_habilitees)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO Moniteur (id, numeroTelephone, actif, photo)
+        VALUES (?, ?, ?, ?)
       `;
 
       db.query(
         sqlMoniteur,
-        [newId, m.telephone, m.statut === "actif" ? 1 : 0, m.photo, categoriesHabilitees],
+        [newId, m.telephone, m.statut === "actif" ? 1 : 0, m.photo],
         async (err2) => {
           if (err2) {
             console.error("Moniteur Insert Error:", err2.message);
             return resolve({ success: false, error: err2.message });
           }
-
-          console.log("✅ Moniteur créé avec catégories:", categoriesHabilitees);
 
           let emailSent = false;
           try {
@@ -487,32 +483,14 @@ ipcMain.handle("reset-moniteur-password", async (event, data) => {
 });
 
 ipcMain.handle("update-moniteur", async (event, m) => {
-  // ── Nettoyage des catégories ─────────────────────────────────────────────
-  const categoriesHabilitees = (m.categories_habilitees && m.categories_habilitees.trim() !== "")
-    ? m.categories_habilitees.trim()
-    : 'B';
-
   return new Promise((resolve) => {
     const sqlUser = `UPDATE Utilisateur SET nom=?, prenom=?, mail=? WHERE id=?`;
     db.query(sqlUser, [m.nom, m.prenom, m.email, m.id], (err) => {
       if (err) return resolve({ success: false });
-
-      // ✅ categories_habilitees est maintenant inclus dans l'UPDATE
-      const sqlMon = `UPDATE Moniteur SET numeroTelephone=?, actif=?, photo=?, categories_habilitees=? WHERE id=?`;
-      db.query(sqlMon, [
-        m.telephone,
-        m.statut === 'actif' ? 1 : 0,
-        m.photo || null,
-        categoriesHabilitees,
-        m.id
-      ], (err2) => {
-        if (err2) {
-          console.error("❌ update-moniteur error:", err2.message);
-          resolve({ success: false });
-        } else {
-          console.log("✅ Moniteur mis à jour avec catégories:", categoriesHabilitees);
-          resolve({ success: true });
-        }
+      const sqlMon = `UPDATE Moniteur SET numeroTelephone=?, actif=?, photo=? WHERE id=?`;
+      db.query(sqlMon, [m.telephone, m.statut === 'actif' ? 1 : 0, m.photo || null, m.id], (err2) => {
+        if (err2) resolve({ success: false });
+        else resolve({ success: true });
       });
     });
   });
@@ -646,6 +624,7 @@ ipcMain.handle('get-candidats-debiteurs', async () => {
         c.nom, 
         c.prenom, 
         c.telephone,
+        c.email,
         MAX(COALESCE(p.montantTotal, 30000)) AS montantTotal,
         MAX(COALESCE(p.montantRestant, 30000)) AS montantRestant,
         MAX(COALESCE(p.statutPaiement, 'en_attente')) AS statutPaiement,
@@ -665,6 +644,7 @@ ipcMain.handle('get-candidats-debiteurs', async () => {
         console.error('get-candidats-debiteurs error:', err); 
         resolve([]); 
       } else {
+        // Clean up the strings into arrays for React
         const formattedRes = res.map(row => ({
           ...row,
           seanceIds: row.seanceIds ? row.seanceIds.split(',').map(Number) : [],
@@ -837,7 +817,7 @@ ipcMain.handle('get-candidats-debiteurs-moniteur', async (event, moniteurId) => 
   return new Promise((resolve) => {
     const sql = `
       SELECT DISTINCT
-        c.idCandidat, c.nom, c.prenom, c.telephone,
+        c.idCandidat, c.nom, c.prenom, c.telephone, c.email,
         COALESCE(p.montantTotal,  30000) AS montantTotal,
         COALESCE(p.montantRestant, 30000) AS montantRestant,
         COALESCE(p.statutPaiement, 'en_attente') AS statutPaiement
@@ -855,15 +835,13 @@ ipcMain.handle('get-candidats-debiteurs-moniteur', async (event, moniteurId) => 
     });
   });
 });
-
 // MONITEUR : récupérer ses infos personnelles
 ipcMain.handle('get-moniteur-profile', async (event, moniteurId) => {
   return new Promise((resolve) => {
     const sql = `
       SELECT u.id, u.nom, u.prenom, u.mail as email,
              m.numeroTelephone as telephone, m.photo,
-             IF(m.actif, 'actif', 'inactif') as statut,
-             m.categories_habilitees
+             IF(m.actif, 'actif', 'inactif') as statut
       FROM Utilisateur u
       JOIN Moniteur m ON u.id = m.id
       WHERE u.id = ?
@@ -878,6 +856,7 @@ ipcMain.handle('get-moniteur-profile', async (event, moniteurId) => {
 // MONITEUR : modifier son mot de passe
 ipcMain.handle('update-moniteur-password', async (event, { moniteurId, oldPassword, newPassword }) => {
   return new Promise((resolve) => {
+    // Vérifier l'ancien mot de passe
     db.query(
       'SELECT id FROM Utilisateur WHERE id = ? AND mot_de_passe = ?',
       [moniteurId, oldPassword],
@@ -885,6 +864,7 @@ ipcMain.handle('update-moniteur-password', async (event, { moniteurId, oldPasswo
         if (err) return resolve({ success: false, message: "Erreur base de données." });
         if (!res.length) return resolve({ success: false, message: "Ancien mot de passe incorrect." });
 
+        // Mettre à jour
         db.query(
           'UPDATE Utilisateur SET mot_de_passe = ? WHERE id = ?',
           [newPassword, moniteurId],
@@ -897,6 +877,7 @@ ipcMain.handle('update-moniteur-password', async (event, { moniteurId, oldPasswo
     );
   });
 });
+// ── AJOUTE CE BLOC À LA FIN DE main.js ──────────────────────────────────────
 
 ipcMain.handle("send-examen-notification", async (event, { email, candidat, type, date, heure, lieu }) => {
   const dateFormatee = new Date(date + "T12:00:00").toLocaleDateString("fr-FR", {
@@ -1001,84 +982,98 @@ ipcMain.handle("send-candidat-message", async (event, { email, nomCandidat, suje
   }
 });
 
-// ── CONGÉS MONITEURS ─────────────────────────────────────────────────────────
+ipcMain.handle("send-rappel-paiement", async (event, { email, nomCandidat, montantRestant, montantTotal, telephone, messagePersonnalise }) => {
+  
+  // Message par défaut si rien de personnalisé
+  const corpsMessage = messagePersonnalise
+    ? `<p style="color:#475569;font-size:14px;line-height:1.7;white-space:pre-wrap;">${messagePersonnalise}</p>`
+    : `<p style="color:#475569;font-size:14px;margin-bottom:20px;line-height:1.6;">
+         Nous vous contactons concernant votre dossier de formation au permis de conduire.<br/>
+         Un solde est toujours en attente de règlement.
+       </p>`;
 
-ipcMain.handle("get-all-conges", async () => {
-  return new Promise((resolve) => {
-    db.query("SELECT * FROM CongeMoniteur", (err, res) => {
-      if (err) { console.error("get-all-conges:", err); resolve([]); }
-      else resolve(res);
+  const prixTotal   = montantTotal  || 30000;
+  const dejaPaye    = prixTotal - Number(montantRestant || 0);
+  const pct         = Math.min(100, Math.round((dejaPaye / prixTotal) * 100));
+  const barreColor  = pct >= 100 ? "#166534" : "#4E96E1";
+
+  const html = `
+    <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:520px;margin:auto;border:1px solid #E2E8F0;border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+      
+      <!-- HEADER -->
+      <div style="background:linear-gradient(135deg,#1e3a5f,#2b537e);padding:28px 32px;">
+        <h1 style="color:#fff;margin:0;font-size:20px;font-weight:900;">🚗 Auto-École</h1>
+        <p style="color:rgba(255,255,255,0.7);margin:5px 0 0;font-size:12px;letter-spacing:1px;text-transform:uppercase;">Rappel de paiement</p>
+      </div>
+
+      <!-- BANDEAU ORANGE -->
+      <div style="background:linear-gradient(90deg,#f97316,#fb923c);padding:10px 32px;">
+        <span style="color:#fff;font-weight:800;font-size:13px;">📧 Message de votre auto-école</span>
+      </div>
+
+      <!-- CORPS -->
+      <div style="padding:28px 32px;">
+        <p style="font-size:15px;font-weight:700;color:#1e293b;margin:0 0 14px;">
+          Bonjour <span style="color:#2b537e;">${nomCandidat}</span>,
+        </p>
+
+        ${corpsMessage}
+
+        <!-- CARTE SOLDE -->
+        <div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:18px 22px;margin:20px 0;">
+          <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">
+            Récapitulatif de votre dossier
+          </div>
+          <table style="width:100%;border-collapse:collapse;">
+            <tr>
+              <td style="padding:5px 0;font-size:13px;color:#64748b;">Total formation</td>
+              <td style="text-align:right;font-size:13px;font-weight:700;color:#1e293b;">${Number(prixTotal).toLocaleString("fr-DZ")} DA</td>
+            </tr>
+            <tr>
+              <td style="padding:5px 0;font-size:13px;color:#64748b;">Déjà réglé</td>
+              <td style="text-align:right;font-size:13px;font-weight:700;color:#166534;">${Number(dejaPaye).toLocaleString("fr-DZ")} DA</td>
+            </tr>
+            <tr style="border-top:1px solid #fca5a5;">
+              <td style="padding:10px 0 5px;font-size:14px;font-weight:800;color:#b91c1c;">Solde restant</td>
+              <td style="text-align:right;padding:10px 0 5px;font-size:20px;font-weight:900;color:#b91c1c;">${Number(montantRestant).toLocaleString("fr-DZ")} DA</td>
+            </tr>
+          </table>
+
+          <!-- BARRE DE PROGRESSION -->
+          <div style="background:#e2e8f0;border-radius:6px;height:8px;margin-top:14px;overflow:hidden;">
+            <div style="background:${barreColor};width:${pct}%;height:100%;border-radius:6px;"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:5px;">
+            <span style="font-size:11px;color:#94a3b8;">Progression du paiement</span>
+            <span style="font-size:11px;font-weight:700;color:${barreColor};">${pct}% réglé</span>
+          </div>
+        </div>
+
+        <p style="color:#475569;font-size:13px;line-height:1.7;">
+          Merci de vous rapprocher de notre établissement pour régulariser votre situation.
+          ${telephone ? `<br/>📞 <strong>${telephone}</strong>` : ""}
+        </p>
+      </div>
+
+      <!-- FOOTER -->
+      <div style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:14px 32px;text-align:center;">
+        <p style="color:#94a3b8;font-size:11px;margin:0;">
+          Auto-École — Message automatique, merci de ne pas y répondre directement.
+        </p>
+      </div>
+    </div>
+  `;
+
+  try {
+    await transporter.sendMail({
+      from: '"Auto-École 🚗" <tinhinanethequeen@gmail.com>',
+      to: email,
+      subject: "📧 Rappel de paiement — Auto-École",
+      html,
     });
-  });
-});
-
-ipcMain.handle("get-conges-moniteur", async (event, moniteurId) => {
-  return new Promise((resolve) => {
-    db.query(
-      "SELECT * FROM CongeMoniteur WHERE moniteur_id = ? ORDER BY dateDebut DESC",
-      [moniteurId],
-      (err, res) => {
-        if (err) { console.error("get-conges-moniteur:", err); resolve([]); }
-        else resolve(res);
-      }
-    );
-  });
-});
-
-ipcMain.handle("add-conge-moniteur", async (event, data) => {
-  const { moniteurId, dateDebut, dateFin, raison, precision } = data;
-  return new Promise((resolve) => {
-    db.query(
-      "INSERT INTO CongeMoniteur (moniteur_id, dateDebut, dateFin, raison, `precision`) VALUES (?, ?, ?, ?, ?)",
-      [moniteurId, dateDebut, dateFin, raison || "autre", precision || null],
-      (err, res) => {
-        if (err) { console.error("add-conge-moniteur:", err); resolve({ success: false, error: err.message }); }
-        else resolve({ success: true, id: res.insertId });
-      }
-    );
-  });
-});
-
-ipcMain.handle("remove-conge-moniteur", async (event, congeId) => {
-  return new Promise((resolve) => {
-    db.query(
-      "DELETE FROM CongeMoniteur WHERE id = ?",
-      [congeId],
-      (err) => {
-        if (err) resolve({ success: false });
-        else resolve({ success: true });
-      }
-    );
-  });
-});
-// ── CONGÉ ANNUEL AUTO-ÉCOLE ───────────────────────────────────────────────────
-
-ipcMain.handle("get-conge-annuel", async () => {
-  return new Promise((resolve) => {
-    db.query(
-      "SELECT valeurParametre FROM ConfigurationSysteme WHERE cleParametre = 'CONGE_ANNUEL'",
-      (err, res) => {
-        if (err || !res.length) return resolve(null);
-        try { resolve(JSON.parse(res[0].valeurParametre)); }
-        catch { resolve(null); }
-      }
-    );
-  });
-});
-
-ipcMain.handle("set-conge-annuel", async (event, data) => {
-  // data = { actif: bool, dateDebut: "YYYY-MM-DD", dateFin: "YYYY-MM-DD" } | null
-  const val = JSON.stringify(data);
-  return new Promise((resolve) => {
-    db.query(
-      `INSERT INTO ConfigurationSysteme (cleParametre, valeurParametre)
-       VALUES ('CONGE_ANNUEL', ?)
-       ON DUPLICATE KEY UPDATE valeurParametre = ?`,
-      [val, val],
-      (err) => {
-        if (err) { console.error("set-conge-annuel:", err); resolve({ success: false }); }
-        else resolve({ success: true });
-      }
-    );
-  });
+    return { success: true };
+  } catch (err) {
+    console.error("Erreur send-rappel-paiement:", err.message);
+    return { success: false, error: err.message };
+  }
 });
