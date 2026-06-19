@@ -1,147 +1,183 @@
-// src/renderer/context/CongeContext.jsx
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 
 const CongeContext = createContext(null);
 
-export function CongeProvider({ children }) {
-  const [congesMoniteurs, setCongesMoniteurs] = useState({});
-  const [congeAnnuel,     setCongeAnnuel]     = useState(null);
-  const [loaded,          setLoaded]          = useState(false);
+export const useCongeCtx = () => {
+  const ctx = useContext(CongeContext);
+  if (!ctx) throw new Error("useCongeCtx doit être utilisé à l'intérieur d'un <CongeProvider>");
+  return ctx;
+};
 
-  // Chargement initial
+export const CongeProvider = ({ children }) => {
+  // congesMoniteurs = { [moniteurId]: [conge, ...] }
+  const [congesMoniteurs, setCongesMoniteurs] = useState({});
+  const [congesEnAttente, setCongesEnAttente] = useState([]); // toutes demandes en_attente, tous moniteurs
+  const [congeAnnuel, setCongeAnnuel] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  // ── Chargement initial : congé annuel + toutes les demandes en attente ──
   useEffect(() => {
-    async function loadAll() {
+    (async () => {
       try {
-        const [rows, annuel] = await Promise.all([
-          window.electron.getAllConges(),
-          window.electron.getCongeAnnuel(),
-        ]);
-        const map = {};
-        for (const row of rows) {
-          const mid = String(row.moniteur_id);
-          if (!map[mid]) map[mid] = [];
-          map[mid].push({
-            ...row,
-            dateDebut: row.dateDebut instanceof Date
-              ? row.dateDebut.toISOString().split("T")[0]
-              : String(row.dateDebut).split("T")[0],
-            dateFin: row.dateFin instanceof Date
-              ? row.dateFin.toISOString().split("T")[0]
-              : String(row.dateFin).split("T")[0],
-          });
-        }
-        setCongesMoniteurs(map);
+        const annuel = await window.electron.getCongeAnnuel?.();
         setCongeAnnuel(annuel || null);
-      } catch (err) {
-        console.error("CongeContext loadAll:", err);
-      } finally {
-        setLoaded(true);
-      }
-    }
-    loadAll();
+      } catch (e) { console.error("getCongeAnnuel:", e); }
+      await refreshCongesEnAttente();
+      setLoading(false);
+    })();
   }, []);
 
+  // ── Charge (ou recharge) les congés d'UN moniteur précis ────────────────
   const refreshMoniteur = useCallback(async (moniteurId) => {
     try {
-      const rows = await window.electron.getCongesMoniteur(moniteurId);
-      const normalized = rows.map(row => ({
-        ...row,
-        dateDebut: row.dateDebut instanceof Date
-          ? row.dateDebut.toISOString().split("T")[0]
-          : String(row.dateDebut).split("T")[0],
-        dateFin: row.dateFin instanceof Date
-          ? row.dateFin.toISOString().split("T")[0]
-          : String(row.dateFin).split("T")[0],
-      }));
-      setCongesMoniteurs(prev => ({ ...prev, [String(moniteurId)]: normalized }));
-    } catch (err) {
-      console.error("CongeContext refreshMoniteur:", err);
+      const list = await window.electron.getCongesMoniteur(moniteurId);
+      setCongesMoniteurs(prev => ({ ...prev, [String(moniteurId)]: list || [] }));
+      return list || [];
+    } catch (e) {
+      console.error("refreshMoniteur:", e);
+      return [];
     }
   }, []);
 
-  const addCongeMoniteur = useCallback(async (moniteurId, conge) => {
+  // ── Recharge la liste globale des demandes en attente (vue admin) ───────
+  const refreshCongesEnAttente = useCallback(async () => {
     try {
-      const result = await window.electron.addCongeMoniteur({
-        moniteurId,
-        dateDebut:  conge.dateDebut,
-        dateFin:    conge.dateFin,
-        raison:     conge.raison    || "autre",
-        precision:  conge.precision || null,
-      });
-      if (result?.success) await refreshMoniteur(moniteurId);
-    } catch (err) {
-      console.error("addCongeMoniteur:", err);
+      const list = await window.electron.getCongesEnAttente?.();
+      setCongesEnAttente(list || []);
+      return list || [];
+    } catch (e) {
+      console.error("refreshCongesEnAttente:", e);
+      return [];
     }
-  }, [refreshMoniteur]);
+  }, []);
 
-  const removeCongeMoniteur = useCallback(async (moniteurId, congeId) => {
-    try {
-      await window.electron.removeCongeMoniteur(congeId);
-      await refreshMoniteur(moniteurId);
-    } catch (err) {
-      console.error("removeCongeMoniteur:", err);
-    }
-  }, [refreshMoniteur]);
+  // ── Lecture synchrone depuis le cache local (comme avant) ───────────────
+  const getCongesMoniteur = (moniteurId) => congesMoniteurs[String(moniteurId)] || [];
 
-  const getCongesMoniteur = useCallback((moniteurId) => {
-    return congesMoniteurs[String(moniteurId)] || [];
-  }, [congesMoniteurs]);
+  // ── Un moniteur est "en congé" seulement si son congé est VALIDÉ ────────
+  const isMoniteurEnConge = (moniteurId, date = new Date()) => {
+    const list = getCongesMoniteur(moniteurId);
+    return list.some(c =>
+      c.statut === "validee" &&
+      new Date(c.dateDebut) <= date &&
+      date <= new Date(c.dateFin + "T23:59:59")
+    );
+  };
 
-  const isMoniteurEnConge = useCallback((moniteurId, date = new Date()) => {
-    const d = new Date(date);
-    return (congesMoniteurs[String(moniteurId)] || []).some(c => {
-      const debut = new Date(c.dateDebut); debut.setHours(0, 0, 0, 0);
-      const fin   = new Date(c.dateFin);   fin.setHours(23, 59, 59, 999);
-      return d >= debut && d <= fin;
-    });
-  }, [congesMoniteurs]);
+  const getCongeActifMoniteur = (moniteurId, date = new Date()) => {
+    const list = getCongesMoniteur(moniteurId);
+    return list.find(c =>
+      c.statut === "validee" &&
+      new Date(c.dateDebut) <= date &&
+      date <= new Date(c.dateFin + "T23:59:59")
+    ) || null;
+  };
 
-  const getCongeActifMoniteur = useCallback((moniteurId, date = new Date()) => {
-    const d = new Date(date);
-    return (congesMoniteurs[String(moniteurId)] || []).find(c => {
-      const debut = new Date(c.dateDebut); debut.setHours(0, 0, 0, 0);
-      const fin   = new Date(c.dateFin);   fin.setHours(23, 59, 59, 999);
-      return d >= debut && d <= fin;
-    }) || null;
-  }, [congesMoniteurs]);
-
-  /** Vérifie si une date tombe dans le congé annuel de l'auto-école */
-  const isCongeAnnuel = useCallback((date = new Date()) => {
+  // ── Vérifie si une date tombe dans le congé annuel de l'auto-école ──────
+  const isCongeAnnuel = (date = new Date()) => {
     if (!congeAnnuel?.actif || !congeAnnuel?.dateDebut || !congeAnnuel?.dateFin) return false;
-    const d     = new Date(date);
-    const debut = new Date(congeAnnuel.dateDebut); debut.setHours(0, 0, 0, 0);
-    const fin   = new Date(congeAnnuel.dateFin);   fin.setHours(23, 59, 59, 999);
-    return d >= debut && d <= fin;
-  }, [congeAnnuel]);
+    const d = date instanceof Date ? date : new Date(date);
+    return (
+      new Date(congeAnnuel.dateDebut + "T00:00:00") <= d &&
+      d <= new Date(congeAnnuel.dateFin + "T23:59:59")
+    );
+  };
 
-  const saveCongeAnnuel = useCallback(async (data) => {
-    try {
-      const result = await window.electron.setCongeAnnuel(data);
-      if (result?.success) setCongeAnnuel(data);
-      return result;
-    } catch (err) {
-      console.error("saveCongeAnnuel:", err);
-      return { success: false };
+  // ── ADMIN : crée un congé directement validé pour un moniteur ───────────
+  const addCongeMoniteur = async (moniteurId, payload) => {
+    const result = await window.electron.addCongeMoniteur({ moniteurId, ...payload });
+    if (result?.success) {
+      await refreshMoniteur(moniteurId);
+      await refreshCongesEnAttente();
     }
-  }, []);
+    return result;
+  };
 
-  return (
-    <CongeContext.Provider value={{
-      congesMoniteurs,
-      congeAnnuel,
-      loaded,
-      addCongeMoniteur,
-      removeCongeMoniteur,
-      getCongesMoniteur,
-      isMoniteurEnConge,
-      getCongeActifMoniteur,
-      isCongeAnnuel,
-      saveCongeAnnuel,
-      refreshMoniteur,
-    }}>
-      {children}
-    </CongeContext.Provider>
-  );
-}
+  // ── MONITEUR : crée une DEMANDE (en_attente) ─────────────────────────────
+  const requestCongeMoniteur = async (moniteurId, payload) => {
+    const result = await window.electron.requestCongeMoniteur({ moniteurId, ...payload });
+    if (result?.success) {
+      await refreshMoniteur(moniteurId);
+      await refreshCongesEnAttente();
+    }
+    return result;
+  };
 
-export const useCongeCtx = () => useContext(CongeContext);
+  // ── ADMIN : valide une demande ───────────────────────────────────────────
+  const validerCongeMoniteur = async (congeId, moniteurId) => {
+    const result = await window.electron.validerCongeMoniteur(congeId);
+    if (result?.success) {
+      if (moniteurId) await refreshMoniteur(moniteurId);
+      await refreshCongesEnAttente();
+    }
+    return result;
+  };
+
+  // ── ADMIN : refuse une demande (motif optionnel) ─────────────────────────
+  const refuserCongeMoniteur = async (congeId, moniteurId, motif = "") => {
+    const result = await window.electron.refuserCongeMoniteur(congeId, motif);
+    if (result?.success) {
+      if (moniteurId) await refreshMoniteur(moniteurId);
+      await refreshCongesEnAttente();
+    }
+    return result;
+  };
+
+  // ── ADMIN : suppression libre d'un congé (peu importe le statut) ────────
+  const removeCongeMoniteur = async (moniteurId, congeId) => {
+    const result = await window.electron.removeCongeMoniteur(congeId);
+    if (result?.success) {
+      await refreshMoniteur(moniteurId);
+      await refreshCongesEnAttente();
+    }
+    return result;
+  };
+
+  // ── MONITEUR : annule SA PROPRE demande, seulement si encore en_attente ─
+  const annulerMaDemandeConge = async (congeId, moniteurId) => {
+    const result = await window.electron.annulerMaDemandeConge(congeId, moniteurId);
+    if (result?.success) {
+      await refreshMoniteur(moniteurId);
+      await refreshCongesEnAttente();
+    }
+    return result;
+  };
+
+  // ── Congé annuel auto-école (inchangé) ───────────────────────────────────
+  const saveCongeAnnuel = async (payload) => {
+    const result = await window.electron.setCongeAnnuel(payload);
+    if (result?.success) setCongeAnnuel(payload);
+    return result;
+  };
+
+  const value = {
+    // état
+    congesMoniteurs,
+    congesEnAttente,
+    congeAnnuel,
+    loading,
+
+    // lecture
+    getCongesMoniteur,
+    isMoniteurEnConge,
+    getCongeActifMoniteur,
+    isCongeAnnuel,          // ← ajout du fix
+
+    // rafraîchissement
+    refreshMoniteur,
+    refreshCongesEnAttente,
+
+    // écriture — admin
+    addCongeMoniteur,
+    validerCongeMoniteur,
+    refuserCongeMoniteur,
+    removeCongeMoniteur,
+    saveCongeAnnuel,
+
+    // écriture — moniteur
+    requestCongeMoniteur,
+    annulerMaDemandeConge,
+  };
+
+  return <CongeContext.Provider value={value}>{children}</CongeContext.Provider>;
+};

@@ -51,7 +51,6 @@
     "better-sqlite3": "^12.8.0",
     "electron-squirrel-startup": "^1.0.1",
     "framer-motion": "^12.38.0",
-    "jspdf": "^4.2.1",
     "lucide-react": "^1.7.0",
     "mysql2": "^3.22.1",
     "nodemailer": "^8.0.5",

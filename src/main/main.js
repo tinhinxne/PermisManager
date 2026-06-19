@@ -1,14 +1,13 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const db = require('./db');
+
 // ── SÉCURISATION FORCE DE LA BASE DE DONNÉES ───────────────────────────────
 db.query(`
   ALTER TABLE Candidat 
   MODIFY COLUMN categoriePermis VARCHAR(10) NOT NULL DEFAULT 'B'
 `, (err) => {
   if (err) {
-    // Si MODIFY échoue (par exemple si la colonne s'appelait différemment), 
-    // on essaie de l'ajouter proprement au cas où.
     db.query(`ALTER TABLE Candidat ADD COLUMN categoriePermis VARCHAR(10) NOT NULL DEFAULT 'B'`, (err2) => {
       if (err2) {
         console.log("ℹ️ Structure de la table Candidat déjà en place ou gérée.");
@@ -20,10 +19,11 @@ db.query(`
     console.log("✅ Structure de la colonne 'categoriePermis' synchronisée avec succès !");
   }
 });
+
 // ── SÉCURISATION : colonne categories_habilitees pour les moniteurs ────────
 db.query(`
   ALTER TABLE Moniteur 
-  ADD COLUMN categories_habilitees VARCHAR(50) NOT NULL DEFAULT 'B'
+  ADD COLUMN categories_habilitees VARCHAR(100) NOT NULL DEFAULT 'B'
 `, (err) => {
   if (err) {
     console.log("ℹ️ Colonne 'categories_habilitees' déjà présente sur Moniteur (ou erreur ignorée) :", err.code || err.message);
@@ -31,14 +31,28 @@ db.query(`
     console.log("✅ Colonne 'categories_habilitees' ajoutée avec succès à la table Moniteur !");
   }
 });
+
+// ── SÉCURISATION : colonnes manquantes sur CongeMoniteur ──────────────────
+db.query(`
+  ALTER TABLE CongeMoniteur
+    ADD COLUMN statut      ENUM('en_attente','validee','refusee') NOT NULL DEFAULT 'en_attente' AFTER \`precision\`,
+    ADD COLUMN motif_refus VARCHAR(255) DEFAULT NULL AFTER statut,
+    ADD COLUMN created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER motif_refus,
+    ADD COLUMN demande_par ENUM('admin','moniteur') NOT NULL DEFAULT 'admin' AFTER created_at,
+    ADD COLUMN traite_at   TIMESTAMP NULL DEFAULT NULL AFTER demande_par
+`, (err) => {
+  if (err) {
+    console.log("ℹ️ Colonnes CongeMoniteur déjà présentes :", err.code || err.message);
+  } else {
+    console.log("✅ Colonnes CongeMoniteur ajoutées !");
+  }
+});
+
 // ──────────────────────────────────────────────────────────────────────────
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const { registerMoniteurHandlers } = require('./moniteurHandlers');
 const { registerAdminHandlers } = require('./adminHandlers');
-
-
-
 
 // ── CONFIG EMAIL ─────────────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
@@ -48,7 +62,7 @@ const transporter = nodemailer.createTransport({
     pass: 'gjgw vqfa qzkp wbfa',
   },
 });
-// Ajouter cette fonction avec les autres templates email en haut du fichier
+
 function buildSeanceEmailHtml({ prenomCandidat, nomCandidat, prenomMoniteur, nomMoniteur, date, heure, duree, type }) {
   const typeLabel = type === "code" ? "Code" : type === "circulation" ? "Circulation" : "Créneau";
   const [h, m] = heure.split(":");
@@ -91,6 +105,7 @@ function buildSeanceEmailHtml({ prenomCandidat, nomCandidat, prenomMoniteur, nom
     </div>
   `;
 }
+
 function generatePassword(length = 10) {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
   return Array.from(crypto.randomBytes(length))
@@ -140,10 +155,11 @@ function createWindow() {
   });
   mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
 }
+
 app.whenReady().then(() => {
   createWindow();
-  registerMoniteurHandlers(db); 
-  registerAdminHandlers(db); 
+  registerMoniteurHandlers(db);
+  registerAdminHandlers(db);
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -153,16 +169,14 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-
-
 // ══════════════════════════════════════════════════════════════════════════════
 //  IPC HANDLERS
 // ══════════════════════════════════════════════════════════════════════════════
+
 // Map temporaire : email → { code, expiry }
 const otpStore = new Map();
 
 // Étape 1 : envoyer le code OTP
-
 ipcMain.handle("forgot-password-send-otp", async (event, { email }) => {
   return new Promise((resolve) => {
     db.query(
@@ -232,29 +246,27 @@ ipcMain.handle("forgot-password-reset", async (event, { email, newPassword }) =>
         if (err)
           return resolve({ success: false, message: "Erreur base de données." });
 
-        // affectedRows = 0 → email introuvable en BDD
         if (result.affectedRows === 0)
           return resolve({ success: false, message: "Aucun compte trouvé avec cet email." });
 
-        // ✅ Supprimer l'OTP seulement après succès confirmé
         otpStore.delete(email);
         resolve({ success: true });
       }
     );
   });
 });
-// 1. LOGIN
+
+// ── 1. LOGIN ──────────────────────────────────────────────────────────────────
 ipcMain.handle("login", async (event, credentials) => {
   const { email, password } = credentials;
 
-  // JOIN with Moniteur to also fetch the `actif` flag when applicable
   const sql = `
-  SELECT u.id, u.nom, u.prenom, u.type_utilisateur, m.actif
-  FROM Utilisateur u
-  LEFT JOIN Moniteur m ON u.id = m.id
-  WHERE u.mail = ? AND u.mot_de_passe = ?
-  AND u.deleted_at IS NULL
-`;
+    SELECT u.id, u.nom, u.prenom, u.type_utilisateur, m.actif
+    FROM Utilisateur u
+    LEFT JOIN Moniteur m ON u.id = m.id
+    WHERE u.mail = ? AND u.mot_de_passe = ?
+    AND u.deleted_at IS NULL
+  `;
 
   return new Promise((resolve) => {
     db.query(sql, [email, password], (err, result) => {
@@ -263,7 +275,6 @@ ipcMain.handle("login", async (event, credentials) => {
       if (result && result.length > 0) {
         const user = result[0];
 
-        // Block inactive moniteurs
         if (user.type_utilisateur === 'moniteur' && user.actif === 0) {
           return resolve({ success: false, inactive: true });
         }
@@ -276,31 +287,30 @@ ipcMain.handle("login", async (event, credentials) => {
   });
 });
 
-// 2. CANDIDATS
+// ── 2. CANDIDATS ──────────────────────────────────────────────────────────────
 ipcMain.handle("get-candidats", async () => {
   return new Promise((resolve) => {
     const sql = `
       SELECT 
-    c.*, 
-    MAX(p.montantTotal) AS montantTotal, 
-    MAX(p.montantRestant) AS montantRestant, 
-    MAX(p.statutPaiement) AS statutPaiement,
-    GROUP_CONCAT(s.idSeance) AS seanceIds,
-    GROUP_CONCAT(CONCAT(s.date, ' ', s.heure)) AS seanceDates
-    FROM Candidat c
-    LEFT JOIN Paiement p ON c.idCandidat = p.idCandidat
-    LEFT JOIN CandidatSeance cs ON c.idCandidat = cs.idCandidat
-    LEFT JOIN Seance s ON cs.idSeance = s.idSeance
-    WHERE c.deleted_at IS NULL
-    GROUP BY c.idCandidat
-    ORDER BY c.idCandidat DESC`;
+        c.*, 
+        MAX(p.montantTotal) AS montantTotal, 
+        MAX(p.montantRestant) AS montantRestant, 
+        MAX(p.statutPaiement) AS statutPaiement,
+        GROUP_CONCAT(s.idSeance) AS seanceIds,
+        GROUP_CONCAT(CONCAT(s.date, ' ', s.heure)) AS seanceDates
+      FROM Candidat c
+      LEFT JOIN Paiement p ON c.idCandidat = p.idCandidat
+      LEFT JOIN CandidatSeance cs ON c.idCandidat = cs.idCandidat
+      LEFT JOIN Seance s ON cs.idSeance = s.idSeance
+      WHERE c.deleted_at IS NULL
+      GROUP BY c.idCandidat
+      ORDER BY c.idCandidat DESC`;
 
     db.query(sql, (err, res) => {
       if (err) {
         console.error(err);
         resolve([]);
       } else {
-        // Optional: Convert the comma-separated strings back into arrays
         const formattedRes = res.map(row => ({
           ...row,
           seanceIds: row.seanceIds ? row.seanceIds.split(',').map(Number) : [],
@@ -311,10 +321,10 @@ ipcMain.handle("get-candidats", async () => {
     });
   });
 });
+
 ipcMain.handle("add-candidat", async (event, data) => {
-  // 💡 SÉCURISATION : On extrait et on nettoie la catégorie immédiatement
   const { nom, prenom, telephone, date_naissance, sexe, photo, statut, email } = data;
-  
+
   let categoriePermis = 'B';
   if (data.categoriePermis && data.categoriePermis.trim() !== "") {
     categoriePermis = data.categoriePermis.trim().toUpperCase();
@@ -336,11 +346,10 @@ ipcMain.handle("add-candidat", async (event, data) => {
     });
   });
 });
+
 ipcMain.handle("update-candidat", async (event, c) => {
   console.log("📝 update-candidat reçu:", c);
   return new Promise((resolve) => {
-    
-    // 💡 SÉCURISATION : On s'assure que la catégorie reçue n'est pas une chaîne vide
     let categorieNettoyee = 'B';
     if (c.categoriePermis && String(c.categoriePermis).trim() !== "") {
       categorieNettoyee = String(c.categoriePermis).trim().toUpperCase();
@@ -358,7 +367,7 @@ ipcMain.handle("update-candidat", async (event, c) => {
       c.photo         || null,
       c.statut,
       c.email         || null,
-      categorieNettoyee, // 💡 On utilise la valeur nettoyée et validée ici
+      categorieNettoyee,
       c.idCandidat,
     ], (err) => {
       if (err) {
@@ -385,16 +394,17 @@ ipcMain.handle("delete-candidat", async (event, id) => {
   });
 });
 
-// 3. MONITEURS
+// ── 3. MONITEURS ──────────────────────────────────────────────────────────────
 ipcMain.handle("get-moniteurs", async () => {
   return new Promise((resolve) => {
     const sql = `
-  SELECT u.id, u.nom, u.prenom, u.mail as email, m.numeroTelephone as telephone, 
-         m.photo, IF(m.actif, 'actif', 'inactif') as statut
-  FROM Utilisateur u
-  JOIN Moniteur m ON u.id = m.id
-  WHERE u.deleted_at IS NULL
-  ORDER BY u.nom ASC`;
+      SELECT u.id, u.nom, u.prenom, u.mail as email, m.numeroTelephone as telephone, 
+             m.photo, IF(m.actif, 'actif', 'inactif') as statut,
+             m.categories_habilitees
+      FROM Utilisateur u
+      JOIN Moniteur m ON u.id = m.id
+      WHERE u.deleted_at IS NULL
+      ORDER BY u.nom ASC`;
     db.query(sql, (err, res) => {
       if (err) resolve([]);
       else resolve(res);
@@ -404,6 +414,11 @@ ipcMain.handle("get-moniteurs", async () => {
 
 ipcMain.handle("add-moniteur", async (event, m) => {
   const password = generatePassword();
+
+  const categoriesHabilitees = (m.categories_habilitees && m.categories_habilitees.trim() !== "")
+    ? m.categories_habilitees.trim()
+    : 'B';
+
   return new Promise((resolve) => {
     const sqlUser = `
       INSERT INTO Utilisateur (nom, prenom, mail, mot_de_passe, type_utilisateur)
@@ -419,18 +434,20 @@ ipcMain.handle("add-moniteur", async (event, m) => {
       const newId = res.insertId;
 
       const sqlMoniteur = `
-        INSERT INTO Moniteur (id, numeroTelephone, actif, photo)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO Moniteur (id, numeroTelephone, actif, photo, categories_habilitees)
+        VALUES (?, ?, ?, ?, ?)
       `;
 
       db.query(
         sqlMoniteur,
-        [newId, m.telephone, m.statut === "actif" ? 1 : 0, m.photo],
+        [newId, m.telephone, m.statut === "actif" ? 1 : 0, m.photo, categoriesHabilitees],
         async (err2) => {
           if (err2) {
             console.error("Moniteur Insert Error:", err2.message);
             return resolve({ success: false, error: err2.message });
           }
+
+          console.log("✅ Moniteur créé avec catégories:", categoriesHabilitees);
 
           let emailSent = false;
           try {
@@ -483,14 +500,30 @@ ipcMain.handle("reset-moniteur-password", async (event, data) => {
 });
 
 ipcMain.handle("update-moniteur", async (event, m) => {
+  const categoriesHabilitees = (m.categories_habilitees && m.categories_habilitees.trim() !== "")
+    ? m.categories_habilitees.trim()
+    : 'B';
+
   return new Promise((resolve) => {
     const sqlUser = `UPDATE Utilisateur SET nom=?, prenom=?, mail=? WHERE id=?`;
     db.query(sqlUser, [m.nom, m.prenom, m.email, m.id], (err) => {
       if (err) return resolve({ success: false });
-      const sqlMon = `UPDATE Moniteur SET numeroTelephone=?, actif=?, photo=? WHERE id=?`;
-      db.query(sqlMon, [m.telephone, m.statut === 'actif' ? 1 : 0, m.photo || null, m.id], (err2) => {
-        if (err2) resolve({ success: false });
-        else resolve({ success: true });
+
+      const sqlMon = `UPDATE Moniteur SET numeroTelephone=?, actif=?, photo=?, categories_habilitees=? WHERE id=?`;
+      db.query(sqlMon, [
+        m.telephone,
+        m.statut === 'actif' ? 1 : 0,
+        m.photo || null,
+        categoriesHabilitees,
+        m.id
+      ], (err2) => {
+        if (err2) {
+          console.error("❌ update-moniteur error:", err2.message);
+          resolve({ success: false });
+        } else {
+          console.log("✅ Moniteur mis à jour avec catégories:", categoriesHabilitees);
+          resolve({ success: true });
+        }
       });
     });
   });
@@ -509,7 +542,7 @@ ipcMain.handle("delete-moniteur", async (event, id) => {
   });
 });
 
-// 4. DASHBOARD
+// ── 4. DASHBOARD ──────────────────────────────────────────────────────────────
 ipcMain.handle("get-dashboard-stats", async () => {
   return new Promise((resolve) => {
     db.query('SELECT COUNT(*) as total FROM Candidat', (err1, res1) => {
@@ -537,7 +570,7 @@ ipcMain.handle("get-dashboard-stats", async () => {
   });
 });
 
-// 5. PAIEMENTS
+// ── 5. PAIEMENTS ──────────────────────────────────────────────────────────────
 ipcMain.handle('add-payment', async (event, data) => {
   const { idCandidat, montant, methode, dateVersement, remarque, typeVersement } = data;
   const PRIX_PERMIS = 30000;
@@ -617,14 +650,13 @@ ipcMain.handle("get-payments", async () => {
 
 ipcMain.handle('get-candidats-debiteurs', async () => {
   return new Promise((resolve) => {
-    console.log("Calling this guy!")
+    console.log("Calling this guy!");
     const sql = `
       SELECT 
         c.idCandidat, 
         c.nom, 
         c.prenom, 
         c.telephone,
-        c.email,
         MAX(COALESCE(p.montantTotal, 30000)) AS montantTotal,
         MAX(COALESCE(p.montantRestant, 30000)) AS montantRestant,
         MAX(COALESCE(p.statutPaiement, 'en_attente')) AS statutPaiement,
@@ -640,39 +672,38 @@ ipcMain.handle('get-candidats-debiteurs', async () => {
     `;
 
     db.query(sql, (err, res) => {
-      if (err) { 
-        console.error('get-candidats-debiteurs error:', err); 
-        resolve([]); 
+      if (err) {
+        console.error('get-candidats-debiteurs error:', err);
+        resolve([]);
       } else {
-        // Clean up the strings into arrays for React
         const formattedRes = res.map(row => ({
           ...row,
           seanceIds: row.seanceIds ? row.seanceIds.split(',').map(Number) : [],
           seanceDetails: row.seanceDetails ? row.seanceDetails.split(',') : []
         }));
         resolve(formattedRes);
-        console.log(formattedRes)
+        console.log(formattedRes);
       }
     });
   });
 });
 
-// 6. SÉANCES
+// ── 6. SÉANCES ────────────────────────────────────────────────────────────────
 ipcMain.handle("get-seances", async () => {
   return new Promise((resolve) => {
     const sql = `
-  SELECT 
-    s.idSeance, s.date, s.heure, s.duree, s.type, s.statut, s.moniteur_id,
-    CONCAT(u.prenom, ' ', u.nom) AS moniteurNom,
-    GROUP_CONCAT(CONCAT(c.prenom, ' ', c.nom) SEPARATOR ', ') AS candidatsNoms,
-    GROUP_CONCAT(c.idCandidat SEPARATOR ',') AS candidatsIds
-  FROM Seance s
-  JOIN Moniteur m ON s.moniteur_id = m.id
-  JOIN Utilisateur u ON m.id = u.id
-  LEFT JOIN CandidatSeance cs ON s.idSeance = cs.idSeance
-  LEFT JOIN Candidat c ON cs.idCandidat = c.idCandidat
-  GROUP BY s.idSeance
-  ORDER BY s.date DESC, s.heure ASC`;
+      SELECT 
+        s.idSeance, s.date, s.heure, s.duree, s.type, s.statut, s.moniteur_id,
+        CONCAT(u.prenom, ' ', u.nom) AS moniteurNom,
+        GROUP_CONCAT(CONCAT(c.prenom, ' ', c.nom) SEPARATOR ', ') AS candidatsNoms,
+        GROUP_CONCAT(c.idCandidat SEPARATOR ',') AS candidatsIds
+      FROM Seance s
+      JOIN Moniteur m ON s.moniteur_id = m.id
+      JOIN Utilisateur u ON m.id = u.id
+      LEFT JOIN CandidatSeance cs ON s.idSeance = cs.idSeance
+      LEFT JOIN Candidat c ON cs.idCandidat = c.idCandidat
+      GROUP BY s.idSeance
+      ORDER BY s.date DESC, s.heure ASC`;
     db.query(sql, (err, res) => {
       if (err) resolve([]);
       else resolve(res);
@@ -686,7 +717,7 @@ ipcMain.handle("add-seance", async (event, seanceData) => {
     const sqlSeance = `INSERT INTO Seance (date, heure, type, statut, moniteur_id, duree) VALUES (?, ?, ?, ?, ?, ?)`;
     db.query(sqlSeance, [date, heure, type, statut || 'planifiée', moniteur_id, duree || 1], (err, res) => {
       if (err) { console.error("❌ Erreur INSERT Seance:", err); return resolve({ success: false }); }
-      
+
       const newSeanceId = res.insertId;
       console.log("✅ Séance créée ID:", newSeanceId);
 
@@ -701,7 +732,6 @@ ipcMain.handle("add-seance", async (event, seanceData) => {
 
         console.log("✅ CandidatSeance inséré, candidatIds:", candidatIds);
 
-        // ── ENVOI MAIL ──────────────────────────────────────────────────
         try {
           const candidatId = candidatIds[0];
           console.log("📧 Recherche candidat ID:", candidatId);
@@ -750,7 +780,6 @@ ipcMain.handle("add-seance", async (event, seanceData) => {
         } catch (mailErr) {
           console.error("❌ Erreur envoi mail:", mailErr.message);
         }
-        // ────────────────────────────────────────────────────────────────
 
         resolve({ success: true, id: newSeanceId });
       });
@@ -786,8 +815,7 @@ ipcMain.handle("update-seance", async (event, data) => {
   });
 });
 
-
-// NOUVEAU : Paiements filtrés par moniteur_id
+// ── 7. PAIEMENTS PAR MONITEUR ─────────────────────────────────────────────────
 ipcMain.handle('get-payments-by-moniteur', async (event, moniteurId) => {
   return new Promise((resolve) => {
     const sql = `
@@ -812,12 +840,11 @@ ipcMain.handle('get-payments-by-moniteur', async (event, moniteurId) => {
   });
 });
 
-// NOUVEAU : Candidats débiteurs du moniteur uniquement
 ipcMain.handle('get-candidats-debiteurs-moniteur', async (event, moniteurId) => {
   return new Promise((resolve) => {
     const sql = `
       SELECT DISTINCT
-        c.idCandidat, c.nom, c.prenom, c.telephone, c.email,
+        c.idCandidat, c.nom, c.prenom, c.telephone,
         COALESCE(p.montantTotal,  30000) AS montantTotal,
         COALESCE(p.montantRestant, 30000) AS montantRestant,
         COALESCE(p.statutPaiement, 'en_attente') AS statutPaiement
@@ -835,13 +862,15 @@ ipcMain.handle('get-candidats-debiteurs-moniteur', async (event, moniteurId) => 
     });
   });
 });
-// MONITEUR : récupérer ses infos personnelles
+
+// ── 8. PROFIL MONITEUR ────────────────────────────────────────────────────────
 ipcMain.handle('get-moniteur-profile', async (event, moniteurId) => {
   return new Promise((resolve) => {
     const sql = `
       SELECT u.id, u.nom, u.prenom, u.mail as email,
              m.numeroTelephone as telephone, m.photo,
-             IF(m.actif, 'actif', 'inactif') as statut
+             IF(m.actif, 'actif', 'inactif') as statut,
+             m.categories_habilitees
       FROM Utilisateur u
       JOIN Moniteur m ON u.id = m.id
       WHERE u.id = ?
@@ -853,10 +882,8 @@ ipcMain.handle('get-moniteur-profile', async (event, moniteurId) => {
   });
 });
 
-// MONITEUR : modifier son mot de passe
 ipcMain.handle('update-moniteur-password', async (event, { moniteurId, oldPassword, newPassword }) => {
   return new Promise((resolve) => {
-    // Vérifier l'ancien mot de passe
     db.query(
       'SELECT id FROM Utilisateur WHERE id = ? AND mot_de_passe = ?',
       [moniteurId, oldPassword],
@@ -864,7 +891,6 @@ ipcMain.handle('update-moniteur-password', async (event, { moniteurId, oldPasswo
         if (err) return resolve({ success: false, message: "Erreur base de données." });
         if (!res.length) return resolve({ success: false, message: "Ancien mot de passe incorrect." });
 
-        // Mettre à jour
         db.query(
           'UPDATE Utilisateur SET mot_de_passe = ? WHERE id = ?',
           [newPassword, moniteurId],
@@ -877,8 +903,8 @@ ipcMain.handle('update-moniteur-password', async (event, { moniteurId, oldPasswo
     );
   });
 });
-// ── AJOUTE CE BLOC À LA FIN DE main.js ──────────────────────────────────────
 
+// ── 9. NOTIFICATIONS EXAMEN ───────────────────────────────────────────────────
 ipcMain.handle("send-examen-notification", async (event, { email, candidat, type, date, heure, lieu }) => {
   const dateFormatee = new Date(date + "T12:00:00").toLocaleDateString("fr-FR", {
     weekday: "long", day: "numeric", month: "long", year: "numeric"
@@ -982,99 +1008,213 @@ ipcMain.handle("send-candidat-message", async (event, { email, nomCandidat, suje
   }
 });
 
-ipcMain.handle("send-rappel-paiement", async (event, { email, nomCandidat, montantRestant, montantTotal, telephone, messagePersonnalise }) => {
-  
-  // Message par défaut si rien de personnalisé
-  const corpsMessage = messagePersonnalise
-    ? `<p style="color:#475569;font-size:14px;line-height:1.7;white-space:pre-wrap;">${messagePersonnalise}</p>`
-    : `<p style="color:#475569;font-size:14px;margin-bottom:20px;line-height:1.6;">
-         Nous vous contactons concernant votre dossier de formation au permis de conduire.<br/>
-         Un solde est toujours en attente de règlement.
-       </p>`;
+// ══════════════════════════════════════════════════════════════════════════════
+//  CONGÉS MONITEURS
+// ══════════════════════════════════════════════════════════════════════════════
 
-  const prixTotal   = montantTotal  || 30000;
-  const dejaPaye    = prixTotal - Number(montantRestant || 0);
-  const pct         = Math.min(100, Math.round((dejaPaye / prixTotal) * 100));
-  const barreColor  = pct >= 100 ? "#166534" : "#4E96E1";
-
-  const html = `
-    <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:520px;margin:auto;border:1px solid #E2E8F0;border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
-      
-      <!-- HEADER -->
-      <div style="background:linear-gradient(135deg,#1e3a5f,#2b537e);padding:28px 32px;">
-        <h1 style="color:#fff;margin:0;font-size:20px;font-weight:900;">🚗 Auto-École</h1>
-        <p style="color:rgba(255,255,255,0.7);margin:5px 0 0;font-size:12px;letter-spacing:1px;text-transform:uppercase;">Rappel de paiement</p>
-      </div>
-
-      <!-- BANDEAU ORANGE -->
-      <div style="background:linear-gradient(90deg,#f97316,#fb923c);padding:10px 32px;">
-        <span style="color:#fff;font-weight:800;font-size:13px;">📧 Message de votre auto-école</span>
-      </div>
-
-      <!-- CORPS -->
-      <div style="padding:28px 32px;">
-        <p style="font-size:15px;font-weight:700;color:#1e293b;margin:0 0 14px;">
-          Bonjour <span style="color:#2b537e;">${nomCandidat}</span>,
-        </p>
-
-        ${corpsMessage}
-
-        <!-- CARTE SOLDE -->
-        <div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:18px 22px;margin:20px 0;">
-          <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">
-            Récapitulatif de votre dossier
-          </div>
-          <table style="width:100%;border-collapse:collapse;">
-            <tr>
-              <td style="padding:5px 0;font-size:13px;color:#64748b;">Total formation</td>
-              <td style="text-align:right;font-size:13px;font-weight:700;color:#1e293b;">${Number(prixTotal).toLocaleString("fr-DZ")} DA</td>
-            </tr>
-            <tr>
-              <td style="padding:5px 0;font-size:13px;color:#64748b;">Déjà réglé</td>
-              <td style="text-align:right;font-size:13px;font-weight:700;color:#166534;">${Number(dejaPaye).toLocaleString("fr-DZ")} DA</td>
-            </tr>
-            <tr style="border-top:1px solid #fca5a5;">
-              <td style="padding:10px 0 5px;font-size:14px;font-weight:800;color:#b91c1c;">Solde restant</td>
-              <td style="text-align:right;padding:10px 0 5px;font-size:20px;font-weight:900;color:#b91c1c;">${Number(montantRestant).toLocaleString("fr-DZ")} DA</td>
-            </tr>
-          </table>
-
-          <!-- BARRE DE PROGRESSION -->
-          <div style="background:#e2e8f0;border-radius:6px;height:8px;margin-top:14px;overflow:hidden;">
-            <div style="background:${barreColor};width:${pct}%;height:100%;border-radius:6px;"></div>
-          </div>
-          <div style="display:flex;justify-content:space-between;margin-top:5px;">
-            <span style="font-size:11px;color:#94a3b8;">Progression du paiement</span>
-            <span style="font-size:11px;font-weight:700;color:${barreColor};">${pct}% réglé</span>
-          </div>
-        </div>
-
-        <p style="color:#475569;font-size:13px;line-height:1.7;">
-          Merci de vous rapprocher de notre établissement pour régulariser votre situation.
-          ${telephone ? `<br/>📞 <strong>${telephone}</strong>` : ""}
-        </p>
-      </div>
-
-      <!-- FOOTER -->
-      <div style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:14px 32px;text-align:center;">
-        <p style="color:#94a3b8;font-size:11px;margin:0;">
-          Auto-École — Message automatique, merci de ne pas y répondre directement.
-        </p>
-      </div>
-    </div>
-  `;
-
-  try {
-    await transporter.sendMail({
-      from: '"Auto-École 🚗" <tinhinanethequeen@gmail.com>',
-      to: email,
-      subject: "📧 Rappel de paiement — Auto-École",
-      html,
-    });
-    return { success: true };
-  } catch (err) {
-    console.error("Erreur send-rappel-paiement:", err.message);
-    return { success: false, error: err.message };
-  }
+// Tous les congés (admin)
+ipcMain.handle("get-all-conges", async () => {
+  return new Promise((resolve) => {
+    db.query(
+      "SELECT * FROM CongeMoniteur ORDER BY created_at DESC",
+      (err, res) => {
+        if (err) { console.error("get-all-conges:", err); resolve([]); }
+        else resolve(res);
+      }
+    );
+  });
 });
 
+// Congés d'un moniteur (avec nom du moniteur)
+ipcMain.handle("get-conges-moniteur", async (event, moniteurId) => {
+  return new Promise((resolve) => {
+    db.query(
+      `SELECT cm.*,
+              CONCAT(u.prenom, ' ', u.nom) AS moniteurNom
+       FROM CongeMoniteur cm
+       JOIN Moniteur m    ON m.id = cm.moniteur_id
+       JOIN Utilisateur u ON u.id = m.id
+       WHERE cm.moniteur_id = ?
+       ORDER BY cm.dateDebut DESC`,
+      [moniteurId],
+      (err, res) => {
+        if (err) { console.error("get-conges-moniteur:", err); resolve([]); }
+        else resolve(res);
+      }
+    );
+  });
+});
+
+// Toutes les demandes en attente (vue admin) — avec moniteurNom
+ipcMain.handle("get-conges-en-attente", async () => {
+  return new Promise((resolve) => {
+    const sql = `
+      SELECT cm.*,
+             CONCAT(u.prenom, ' ', u.nom) AS moniteurNom
+      FROM CongeMoniteur cm
+      JOIN Moniteur m    ON m.id = cm.moniteur_id
+      JOIN Utilisateur u ON u.id = m.id
+      WHERE cm.statut = 'en_attente'
+      ORDER BY cm.created_at ASC
+    `;
+    db.query(sql, (err, res) => {
+      if (err) { console.error("get-conges-en-attente:", err); resolve([]); }
+      else resolve(res);
+    });
+  });
+});
+
+// Admin crée un congé directement validé
+ipcMain.handle("add-conge-moniteur", async (event, data) => {
+  const { moniteurId, dateDebut, dateFin, raison, precision } = data;
+  return new Promise((resolve) => {
+    db.query(
+      `INSERT INTO CongeMoniteur
+        (moniteur_id, dateDebut, dateFin, raison, \`precision\`, statut, demande_par, traite_at)
+       VALUES (?, ?, ?, ?, ?, 'validee', 'admin', NOW())`,
+      [moniteurId, dateDebut, dateFin, raison || "autre", precision || null],
+      (err, res) => {
+        if (err) { console.error("add-conge-moniteur:", err); resolve({ success: false, error: err.message }); }
+        else resolve({ success: true, id: res.insertId });
+      }
+    );
+  });
+});
+
+// Moniteur soumet une demande (statut en_attente)
+ipcMain.handle("request-conge-moniteur", async (event, data) => {
+  const { moniteurId, dateDebut, dateFin, raison, precision } = data;
+  return new Promise((resolve) => {
+    db.query(
+      `INSERT INTO CongeMoniteur
+        (moniteur_id, dateDebut, dateFin, raison, \`precision\`, statut, demande_par)
+       VALUES (?, ?, ?, ?, ?, 'en_attente', 'moniteur')`,
+      [moniteurId, dateDebut, dateFin, raison || "autre", precision || null],
+      (err, res) => {
+        if (err) { console.error("request-conge-moniteur:", err); resolve({ success: false, error: err.message }); }
+        else resolve({ success: true, id: res.insertId });
+      }
+    );
+  });
+});
+
+// Récupère toutes les demandes en attente avec infos du moniteur (alias legacy)
+ipcMain.handle("get-demandes-conge-attente", async () => {
+  return new Promise((resolve) => {
+    const sql = `
+      SELECT cm.id, cm.moniteur_id, cm.dateDebut, cm.dateFin, cm.raison, cm.\`precision\`,
+             u.prenom, u.nom, u.mail AS email
+      FROM CongeMoniteur cm
+      JOIN Moniteur m     ON m.id = cm.moniteur_id
+      JOIN Utilisateur u  ON u.id = m.id
+      WHERE cm.statut = 'en_attente'
+      ORDER BY cm.dateDebut ASC
+    `;
+    db.query(sql, (err, res) => {
+      if (err) { console.error("get-demandes-conge-attente:", err); resolve([]); }
+      else resolve(res);
+    });
+  });
+});
+
+// Valider ou refuser une demande (handler générique)
+ipcMain.handle("update-statut-conge", async (event, congeId, statut, motifRefus = null) => {
+  return new Promise((resolve) => {
+    db.query(
+      `UPDATE CongeMoniteur SET statut = ?, motif_refus = ? WHERE id = ?`,
+      [statut, motifRefus, congeId],
+      (err) => {
+        if (err) { console.error("update-statut-conge:", err); resolve({ success: false, error: err.message }); }
+        else resolve({ success: true });
+      }
+    );
+  });
+});
+
+// Admin valide une demande
+ipcMain.handle("valider-conge-moniteur", async (event, congeId) => {
+  return new Promise((resolve) => {
+    db.query(
+      "UPDATE CongeMoniteur SET statut = 'validee', traite_at = NOW(), motif_refus = NULL WHERE id = ?",
+      [congeId],
+      (err) => {
+        if (err) { console.error("valider-conge-moniteur:", err); resolve({ success: false }); }
+        else resolve({ success: true });
+      }
+    );
+  });
+});
+
+// Admin refuse une demande — args séparés (event, congeId, motif)
+ipcMain.handle("refuser-conge-moniteur", async (event, congeId, motif) => {
+  return new Promise((resolve) => {
+    db.query(
+      "UPDATE CongeMoniteur SET statut = 'refusee', traite_at = NOW(), motif_refus = ? WHERE id = ?",
+      [motif || null, congeId],
+      (err) => {
+        if (err) { console.error("refuser-conge-moniteur:", err); resolve({ success: false }); }
+        else resolve({ success: true });
+      }
+    );
+  });
+});
+
+// Supprimer un congé (admin)
+ipcMain.handle("remove-conge-moniteur", async (event, congeId) => {
+  return new Promise((resolve) => {
+    db.query("DELETE FROM CongeMoniteur WHERE id = ?", [congeId], (err) => {
+      if (err) resolve({ success: false });
+      else resolve({ success: true });
+    });
+  });
+});
+
+// Moniteur annule SA propre demande (seulement si encore en_attente)
+// args séparés (event, congeId, moniteurId)
+ipcMain.handle("annuler-ma-demande-conge", async (event, congeId, moniteurId) => {
+  return new Promise((resolve) => {
+    db.query(
+      "DELETE FROM CongeMoniteur WHERE id = ? AND moniteur_id = ? AND statut = 'en_attente'",
+      [congeId, moniteurId],
+      (err, result) => {
+        if (err) return resolve({ success: false, error: err.message });
+        if (result.affectedRows === 0)
+          return resolve({ success: false, error: "Impossible d'annuler : demande déjà traitée ou introuvable." });
+        resolve({ success: true });
+      }
+    );
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  CONGÉ ANNUEL AUTO-ÉCOLE
+// ══════════════════════════════════════════════════════════════════════════════
+
+ipcMain.handle("get-conge-annuel", async () => {
+  return new Promise((resolve) => {
+    db.query(
+      "SELECT valeurParametre FROM ConfigurationSysteme WHERE cleParametre = 'CONGE_ANNUEL'",
+      (err, res) => {
+        if (err || !res.length) return resolve(null);
+        try { resolve(JSON.parse(res[0].valeurParametre)); }
+        catch { resolve(null); }
+      }
+    );
+  });
+});
+
+ipcMain.handle("set-conge-annuel", async (event, data) => {
+  const val = JSON.stringify(data);
+  return new Promise((resolve) => {
+    db.query(
+      `INSERT INTO ConfigurationSysteme (cleParametre, valeurParametre)
+       VALUES ('CONGE_ANNUEL', ?)
+       ON DUPLICATE KEY UPDATE valeurParametre = ?`,
+      [val, val],
+      (err) => {
+        if (err) { console.error("set-conge-annuel:", err); resolve({ success: false }); }
+        else resolve({ success: true });
+      }
+    );
+  });
+});

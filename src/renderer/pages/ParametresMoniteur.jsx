@@ -43,6 +43,7 @@ const InfoRow = ({ icon, label, value }) => (
   </div>
 );
 
+
 // ─── Champ mot de passe ──────────────────────────────────────────────────────
 const PasswordInput = ({ label, value, onChange, show, onToggle, placeholder }) => (
   <div style={{ marginBottom: 14 }}>
@@ -78,6 +79,35 @@ const PasswordInput = ({ label, value, onChange, show, onToggle, placeholder }) 
 // ─── Composant principal ─────────────────────────────────────────────────────
 const ParametresMoniteur = () => {
   const { currentUser } = useAuth();
+  // ─── Couleurs par famille de permis ────────────────────────────────────────
+const CATEGORY_COLORS = {
+  A1: { bg: "#FEF3C7", color: "#92400E", border: "#FCD34D" },
+  A:  { bg: "#FEF3C7", color: "#92400E", border: "#FCD34D" },
+  B:  { bg: "#DBEAFE", color: "#1E40AF", border: "#93C5FD" },
+  BE: { bg: "#EDE9FE", color: "#5B21B6", border: "#C4B5FD" },
+  C1: { bg: "#D1FAE5", color: "#065F46", border: "#6EE7B7" },
+  C:  { bg: "#D1FAE5", color: "#065F46", border: "#6EE7B7" },
+  C1E:{ bg: "#ECFDF5", color: "#047857", border: "#A7F3D0" },
+  CE: { bg: "#ECFDF5", color: "#047857", border: "#A7F3D0" },
+  D:  { bg: "#FCE7F3", color: "#9D174D", border: "#F9A8D4" },
+  DE: { bg: "#FDF2F8", color: "#831843", border: "#F0ABFC" },
+  F:  { bg: "#F1F5F9", color: "#475569", border: "#CBD5E1" },
+};
+
+const CategoryBadge = ({ cat }) => {
+  const colors = CATEGORY_COLORS[cat] || { bg: "#F1F5F9", color: "#475569", border: "#CBD5E1" };
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center",
+      padding: "2px 9px", borderRadius: "20px",
+      fontSize: "11px", fontWeight: "700", letterSpacing: "0.4px",
+      background: colors.bg, color: colors.color,
+      border: `1.5px solid ${colors.border}`,
+    }}>
+      {cat}
+    </span>
+  );
+};
 
   const [profile, setProfile]   = useState(null);
   const [loading, setLoading]   = useState(true);
@@ -229,6 +259,35 @@ const ParametresMoniteur = () => {
                 label="Rôle"
                 value="Moniteur"
               />
+              {/* Catégories de permis */}
+<div style={{
+  display: "flex", alignItems: "center", gap: 14,
+  padding: "14px 18px",
+  background: "#f8faff",
+  border: "1px solid #e2eaf6",
+  borderRadius: 12,
+  marginBottom: 10,
+}}>
+  <div style={{
+    width: 36, height: 36, borderRadius: "50%",
+    background: "rgba(43,83,126,0.08)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    flexShrink: 0,
+  }}>
+    <ShieldCheck size={16} color="#2b537e" />
+  </div>
+  <div style={{ flex: 1 }}>
+    <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, marginBottom: 6 }}>
+      HABILITATIONS (PERMIS)
+    </div>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      {(profile.categories_habilitees
+        ? profile.categories_habilitees.split(",").map(c => c.trim()).filter(Boolean)
+        : ["B"]
+      ).map(cat => <CategoryBadge key={cat} cat={cat} />)}
+    </div>
+  </div>
+</div>
 
               {/* Note */}
               <div style={{

@@ -10,21 +10,29 @@ const RAISONS = [
   { value: "autre",    label: "📋 Autre",               color: "#8b5cf6" },
 ];
 
+const parseDate = (val) => {
+  if (!val) return null;
+  const str = typeof val === "string" ? val.slice(0, 10) : new Date(val).toISOString().slice(0, 10);
+  return new Date(str + "T12:00:00");
+};
+
 const formatDate = (iso) => {
-  if (!iso) return "—";
-  return new Date(iso + "T12:00:00").toLocaleDateString("fr-DZ", {
+  const d = parseDate(iso);
+  if (!d || isNaN(d)) return "—";
+  return d.toLocaleDateString("fr-DZ", {
     day: "2-digit", month: "long", year: "numeric",
   });
 };
 
 const nbJours = (d1, d2) => {
-  if (!d1 || !d2) return 0;
-  return Math.max(0, Math.round((new Date(d2) - new Date(d1)) / 86400000) + 1);
+  const a = parseDate(d1), b = parseDate(d2);
+  if (!a || !b) return 0;
+  return Math.max(0, Math.round((b - a) / 86400000) + 1);
 };
 
-const isActive  = (d, f) => { const now = new Date(); return new Date(d) <= now && now <= new Date(f + "T23:59:59"); };
-const isExpired = (f)    => new Date(f + "T23:59:59") < new Date();
-const isUpcoming= (d)    => new Date(d) > new Date();
+const isActive   = (d, f) => { const now = new Date(); return parseDate(d) <= now && now <= parseDate(f); };
+const isExpired  = (f)    => parseDate(f) < new Date();
+const isUpcoming = (d)    => parseDate(d) > new Date();
 
 const inp = {
   width: "100%", boxSizing: "border-box",
@@ -45,7 +53,6 @@ function TabCongeAnnuel() {
   const [saved,     setSaved]     = useState(false);
   const [error,     setError]     = useState("");
 
-  // Sync si congeAnnuel change depuis le contexte
   useEffect(() => {
     if (congeAnnuel) {
       setActif(congeAnnuel.actif ?? false);
@@ -225,6 +232,10 @@ function TabCongesMoniteurs() {
     }).catch(() => setLoadingMons(false));
   }, []);
 
+  useEffect(() => {
+    if (selectedId) refreshMoniteur(Number(selectedId));
+  }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const conges = selectedId ? (congesMoniteurs[selectedId] || []) : [];
   const selectedMon = moniteurs.find(m => String(m.id) === selectedId);
 
@@ -250,11 +261,8 @@ function TabCongesMoniteurs() {
     <div style={{ textAlign: "center", padding: "30px 0", color: "#94a3b8", fontSize: "0.82rem" }}>Aucun moniteur trouvé.</div>
   );
 
-  // Stats du moniteur sélectionné
-  const now = new Date();
-  const congeActif   = conges.find(c => isActive(c.dateDebut, c.dateFin));
-  const congesAvenir = conges.filter(c => isUpcoming(c.dateDebut));
-  const congesExpire = conges.filter(c => isExpired(c.dateFin));
+  const congeActif   = conges.find(c => c.statut === "validee" && isActive(c.dateDebut, c.dateFin));
+  const congesAvenir = conges.filter(c => c.statut === "validee" && isUpcoming(c.dateDebut));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -270,7 +278,8 @@ function TabCongesMoniteurs() {
         >
           {moniteurs.map(m => (
             <option key={m.id} value={String(m.id)}>
-              {m.prenom} {m.nom}{congesMoniteurs[String(m.id)]?.some(c => isActive(c.dateDebut, c.dateFin)) ? " 🌴" : ""}
+              {m.prenom} {m.nom}
+              {congesMoniteurs[String(m.id)]?.some(c => c.statut === "validee" && isActive(c.dateDebut, c.dateFin)) ? " 🌴" : ""}
             </option>
           ))}
         </select>
@@ -331,18 +340,24 @@ function TabCongesMoniteurs() {
         ) : (
           conges.map(c => {
             const r       = RAISONS.find(x => x.value === c.raison) || RAISONS[3];
-            const actif   = isActive(c.dateDebut, c.dateFin);
-            const expire  = isExpired(c.dateFin);
-            const avenir  = isUpcoming(c.dateDebut);
+            const attente = c.statut === "en_attente";
+            const refuse  = c.statut === "refusee";
+            const actif   = !attente && !refuse && isActive(c.dateDebut, c.dateFin);
+            const expire  = !attente && !refuse && isExpired(c.dateFin);
             const titre   = c.raison === "autre" && c.precision ? c.precision : r.label.slice(3);
             const jours   = nbJours(c.dateDebut, c.dateFin);
+
+            const bg         = refuse ? "#fef2f2" : attente ? "#fffbeb" : actif ? "#f0fdf4" : expire ? "#f8fafc" : "#fefce8";
+            const border     = refuse ? "#fecaca" : attente ? "#fde68a" : actif ? "#bbf7d0" : expire ? "#e2e8f0" : "#fde68a";
+            const badgeBg    = refuse ? "#fee2e2" : attente ? "#fef9c3" : actif ? "#dcfce7" : expire ? "#f1f5f9" : "#fef9c3";
+            const badgeColor = refuse ? "#dc2626" : attente ? "#a16207" : actif ? "#16a34a" : expire ? "#94a3b8" : "#a16207";
+            const badgeLabel = refuse ? "❌ Refusé" : attente ? "⏳ En attente" : actif ? "🟢 En cours" : expire ? "⚫ Expiré" : "🟡 À venir";
 
             return (
               <div key={c.id} style={{
                 padding: "12px 14px", borderRadius: 10,
-                background: actif ? "#f0fdf4" : expire ? "#f8fafc" : "#fefce8",
-                border: `1px solid ${actif ? "#bbf7d0" : expire ? "#e2e8f0" : "#fde68a"}`,
-                opacity: expire ? 0.7 : 1,
+                background: bg, border: `1px solid ${border}`,
+                opacity: (expire || refuse) ? 0.7 : 1,
                 display: "flex", alignItems: "flex-start", gap: 10,
               }}>
                 <div style={{
@@ -358,10 +373,9 @@ function TabCongesMoniteurs() {
                     <span style={{ fontSize: "0.84rem", fontWeight: 700, color: "#1e293b" }}>{titre}</span>
                     <span style={{
                       fontSize: "0.65rem", fontWeight: 700, padding: "2px 8px", borderRadius: 20, flexShrink: 0,
-                      background: actif ? "#dcfce7" : expire ? "#f1f5f9" : "#fef9c3",
-                      color: actif ? "#16a34a" : expire ? "#94a3b8" : "#a16207",
+                      background: badgeBg, color: badgeColor,
                     }}>
-                      {actif ? "🟢 En cours" : expire ? "⚫ Expiré" : "🟡 À venir"}
+                      {badgeLabel}
                     </span>
                   </div>
                   <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
@@ -370,18 +384,25 @@ function TabCongesMoniteurs() {
                   <div style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: 2 }}>
                     {jours} jour{jours > 1 ? "s" : ""}
                   </div>
+                  {refuse && c.motifRefus && (
+                    <div style={{ fontSize: "0.7rem", color: "#dc2626", marginTop: 4, fontStyle: "italic" }}>
+                      Motif du refus : {c.motifRefus}
+                    </div>
+                  )}
                 </div>
-                <button
-                  onClick={() => handleRemove(c.id)}
-                  style={{
-                    background: "none", border: "none", cursor: "pointer",
-                    color: "#ef4444", padding: 4, flexShrink: 0,
-                    borderRadius: 6, display: "flex", alignItems: "center",
-                  }}
-                  title="Supprimer"
-                >
-                  <Trash size={14} />
-                </button>
+                {!attente && (
+                  <button
+                    onClick={() => handleRemove(c.id)}
+                    style={{
+                      background: "none", border: "none", cursor: "pointer",
+                      color: "#ef4444", padding: 4, flexShrink: 0,
+                      borderRadius: 6, display: "flex", alignItems: "center",
+                    }}
+                    title="Supprimer"
+                  >
+                    <Trash size={14} />
+                  </button>
+                )}
               </div>
             );
           })

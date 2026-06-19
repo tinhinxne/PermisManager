@@ -3,9 +3,9 @@ const { ipcMain } = require('electron');
 
 function registerMoniteurHandlers(db) {
 
+  // ── Stats dashboard moniteur ─────────────────────────────────────────────
   ipcMain.handle("get-moniteur-stats", async (event, moniteurId) => {
     return new Promise((resolve) => {
-
       const today = new Date();
       const todayStr = today.toISOString().split("T")[0];
 
@@ -17,7 +17,6 @@ function registerMoniteurHandlers(db) {
       const mondayStr = monday.toISOString().split("T")[0];
       const sundayStr = sunday.toISOString().split("T")[0];
 
-      // 1. Total candidats distincts
       db.query(
         `SELECT COUNT(DISTINCT cs.idCandidat) AS total
          FROM Seance s
@@ -27,35 +26,24 @@ function registerMoniteurHandlers(db) {
         (err1, res1) => {
           if (err1) return resolve({ success: false, error: err1.message });
 
-          // 2. Séances aujourd'hui
           db.query(
-            `SELECT COUNT(*) AS total
-             FROM Seance
-             WHERE moniteur_id = ? AND DATE(date) = ?`,
+            `SELECT COUNT(*) AS total FROM Seance WHERE moniteur_id = ? AND DATE(date) = ?`,
             [moniteurId, todayStr],
             (err2, res2) => {
               if (err2) return resolve({ success: false, error: err2.message });
 
-              // 3. Séances cette semaine
               db.query(
-                `SELECT COUNT(*) AS total
-                 FROM Seance
-                 WHERE moniteur_id = ?
-                   AND DATE(date) BETWEEN ? AND ?`,
+                `SELECT COUNT(*) AS total FROM Seance WHERE moniteur_id = ? AND DATE(date) BETWEEN ? AND ?`,
                 [moniteurId, mondayStr, sundayStr],
                 (err3, res3) => {
                   if (err3) return resolve({ success: false, error: err3.message });
 
-                  // 4. Séances terminées
                   db.query(
-                    `SELECT COUNT(*) AS total
-                     FROM Seance
-                     WHERE moniteur_id = ? AND statut = 'terminée'`,
+                    `SELECT COUNT(*) AS total FROM Seance WHERE moniteur_id = ? AND statut = 'terminée'`,
                     [moniteurId],
                     (err4, res4) => {
                       if (err4) return resolve({ success: false, error: err4.message });
 
-                      // 5. Prochaines séances
                       db.query(
                         `SELECT 
                            s.idSeance, s.date, s.heure, s.type, s.statut,
@@ -63,16 +51,13 @@ function registerMoniteurHandlers(db) {
                          FROM Seance s
                          LEFT JOIN CandidatSeance cs ON s.idSeance = cs.idSeance
                          LEFT JOIN Candidat c ON cs.idCandidat = c.idCandidat
-                         WHERE s.moniteur_id = ?
-                           AND DATE(s.date) >= ?
-                           AND s.statut != 'annulée'
+                         WHERE s.moniteur_id = ? AND DATE(s.date) >= ? AND s.statut != 'annulée'
                          GROUP BY s.idSeance
                          ORDER BY s.date ASC, s.heure ASC
                          LIMIT 5`,
                         [moniteurId, todayStr],
                         (err5, res5) => {
                           if (err5) return resolve({ success: false, error: err5.message });
-
                           resolve({
                             success: true,
                             data: {
@@ -95,6 +80,7 @@ function registerMoniteurHandlers(db) {
       );
     });
   });
+
 }
 
 module.exports = { registerMoniteurHandlers };

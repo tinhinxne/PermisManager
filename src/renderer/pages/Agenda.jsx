@@ -747,10 +747,7 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
                 <option value="annulée">Annulée</option>
               </select>
             </div>
-            <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
-              <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Notes</label>
-              <input style={inpS} type="text" placeholder="Notes rapides..." value={form.notes} onChange={e => set("notes", e.target.value)} />
-            </div>
+           
           </div>
         </div>
 

@@ -26,7 +26,7 @@ import ExamensMoniteur     from "./pages/ExamenMoniteur";
 import PaiementsMoniteur   from "./pages/PaiementMoniteur";
 import ParametresMoniteur  from "./pages/ParametresMoniteur";
 import ForgotPassword      from "./pages/ForgotPassword";
-
+ import MesConges from "./pages/Mesconges";
 const App = () => {
   return (
     <AuthProvider>
@@ -56,6 +56,7 @@ const App = () => {
                       <Route path="/moniteur/dashboard"  element={<DashboardMoniteur />} />
                       <Route path="/moniteur/candidat"   element={<MesCandidats />} />
                       <Route path="/moniteur/agenda"     element={<AgendaMoniteur />} />
+                      <Route path="/moniteur/conges" element={<MesConges/>} />
                       <Route path="/moniteur/paiements"  element={<PaiementsMoniteur />} />
                       <Route path="/moniteur/examens"    element={<ExamensMoniteur />} />
                       <Route path="/moniteur/parametres" element={<ParametresMoniteur />} />
