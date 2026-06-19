@@ -267,11 +267,9 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
   const fileInputRef = useRef(null);
 
   const { blocked, needsParent, age } = evaluateRules(inscriptionRules, form.dob);
-  
-  const hasValidationErrors = Object.keys(errors).length > 0;
-  const canSave = !blocked && (!needsParent || parentAuthFile !== null) && !hasValidationErrors;
 
   // ── Validation intégrale ───────────────────────────────────────────────────
+  // ⚠️ IMPORTANT : validate doit être défini AVANT canSave
   const validate = (f = form, file = parentAuthFile) => {
     const errs = {};
 
@@ -310,8 +308,12 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
     return errs;
   };
 
+  // ✅ canSave est calculé APRÈS validate — le bouton se débloque dès que tout est valide
+  const validationResult  = validate(form, parentAuthFile);
+  const hasBlockingErrors = Object.keys(validationResult).length > 0;
+  const canSave           = !blocked && (!needsParent || parentAuthFile !== null) && !hasBlockingErrors;
+
   const handleChange = (field, value) => {
-    // 🌟 SÉCURITÉ : Si on change la catégorie, on force la valeur en MAJUSCULES
     const cleanValue = field === "categoriePermis" ? String(value).toUpperCase() : value;
     const updated = { ...form, [field]: cleanValue };
     setForm(updated);
@@ -353,11 +355,9 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
       setParentAuthFile(null);
       setErrors({});
       setTouched({});
-      
+
       if (candidat) {
-        // 🌟 SÉCURITÉ EXTRA : Récupération et conversion automatique en Majuscules
         const dbCategory = candidat.categoriePermis || candidat.categorie || candidat.categorie_permis || "";
-        
         setForm({
           nom:         candidat.nom         || "",
           prenom:      candidat.prenom      || "",
@@ -366,7 +366,7 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
           tel:         candidat.telephone    || "",
           sexe:        candidat.sexe === "M" ? "homme" : candidat.sexe === "F" ? "femme" : "",
           email:       candidat.email        || "",
-          categoriePermis: String(dbCategory).toUpperCase().trim(), 
+          categoriePermis: String(dbCategory).toUpperCase().trim(),
         });
       } else {
         const today = new Date().toISOString().split("T")[0];
@@ -378,10 +378,10 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
   const handleSave = () => {
     const allTouched = { nom: true, prenom: true, dob: true, inscription: true, tel: true, sexe: true, email: true, parentFile: true, categoriePermis: true };
     setTouched(allTouched);
-    
+
     const errs = validate();
     setErrors(errs);
-    
+
     if (Object.keys(errs).length > 0 || blocked || (needsParent && !parentAuthFile)) return;
 
     onSave?.({
@@ -393,7 +393,7 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
       date_inscription:      form.inscription,
       sexe:                  form.sexe === "homme" ? "M" : "F",
       statut:                candidat?.statut || "actif",
-      categoriePermis:       String(form.categoriePermis).toUpperCase(), // Force Majuscules vers l'IpcRenderer !
+      categoriePermis:       String(form.categoriePermis).toUpperCase(),
       autorisationParentale: needsParent && parentAuthFile !== null,
       parentAuthFile:        parentAuthFile ?? null,
       email:                 form.email || null,
@@ -423,7 +423,7 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
           {/* Body */}
           <div className="modal-body">
 
-            {/* Sélection de la catégorie de permis exacte */}
+            {/* Catégorie de permis */}
             <div className="field">
               <label>Catégorie de permis visée <span className="req">*</span></label>
               <select
@@ -445,14 +445,20 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
             {/* Nom */}
             <div className="field">
               <label>Nom du candidat <span className="req">*</span></label>
-              <input type="text" placeholder="Saisir le nom" value={form.nom} className={touched.nom && errors.nom ? "input-error" : ""} onChange={(e) => handleChange("nom", e.target.value)} onBlur={() => handleBlur("nom")} />
+              <input type="text" placeholder="Saisir le nom" value={form.nom}
+                className={touched.nom && errors.nom ? "input-error" : ""}
+                onChange={(e) => handleChange("nom", e.target.value)}
+                onBlur={() => handleBlur("nom")} />
               {touched.nom && errors.nom && <span className="field-error">{errors.nom}</span>}
             </div>
 
             {/* Prénom */}
             <div className="field">
               <label>Prénom du candidat <span className="req">*</span></label>
-              <input type="text" placeholder="Saisir le prénom" value={form.prenom} className={touched.prenom && errors.prenom ? "input-error" : ""} onChange={(e) => handleChange("prenom", e.target.value)} onBlur={() => handleBlur("prenom")} />
+              <input type="text" placeholder="Saisir le prénom" value={form.prenom}
+                className={touched.prenom && errors.prenom ? "input-error" : ""}
+                onChange={(e) => handleChange("prenom", e.target.value)}
+                onBlur={() => handleBlur("prenom")} />
               {touched.prenom && errors.prenom && <span className="field-error">{errors.prenom}</span>}
             </div>
 
@@ -460,17 +466,23 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
             <div className="row-2">
               <div className="field">
                 <label>Date de naissance <span className="req">*</span></label>
-                <input type="date" value={form.dob} className={(touched.dob && errors.dob) ? "input-error" : blocked ? "input-error" : needsParent ? "input-warning" : ""} onChange={(e) => handleChange("dob", e.target.value)} onBlur={() => handleBlur("dob")} />
+                <input type="date" value={form.dob}
+                  className={(touched.dob && errors.dob) ? "input-error" : blocked ? "input-error" : needsParent ? "input-warning" : ""}
+                  onChange={(e) => handleChange("dob", e.target.value)}
+                  onBlur={() => handleBlur("dob")} />
                 {touched.dob && errors.dob && <span className="field-error">{errors.dob}</span>}
               </div>
               <div className="field">
                 <label>Date d'inscription <span className="req">*</span></label>
-                <input type="date" value={form.inscription} className={touched.inscription && errors.inscription ? "input-error" : ""} onChange={(e) => handleChange("inscription", e.target.value)} onBlur={() => handleBlur("inscription")} />
+                <input type="date" value={form.inscription}
+                  className={touched.inscription && errors.inscription ? "input-error" : ""}
+                  onChange={(e) => handleChange("inscription", e.target.value)}
+                  onBlur={() => handleBlur("inscription")} />
                 {touched.inscription && errors.inscription && <span className="field-error">{errors.inscription}</span>}
               </div>
             </div>
 
-            {/* Bannières réglementaires basées sur l'âge */}
+            {/* Bannières âge */}
             {(!form.dob || errors.dob) ? null : blocked ? (
               <div className="age-banner blocked"><span className="banner-icon">🚫</span><span>Âge ({age} ans) : Inscription non valide selon les règles.</span></div>
             ) : needsParent ? (
@@ -479,12 +491,15 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
               <div className="age-banner ok"><span className="banner-icon">✅</span><span>Âge vérifié ({age} ans) : Inscription valide.</span></div>
             )}
 
-            {/* Zone d'autorisation parentale */}
+            {/* Autorisation parentale */}
             {needsParent && !blocked && (
               <div className="upload-section">
                 {!parentAuthFile ? (
                   <>
-                    <div className={`upload-zone${isDragOver ? " drag-over" : ""}${touched.parentFile && errors.parentFile ? " has-error" : ""}`} onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}>
+                    <div
+                      className={`upload-zone${isDragOver ? " drag-over" : ""}${touched.parentFile && errors.parentFile ? " has-error" : ""}`}
+                      onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}
+                    >
                       <input ref={fileInputRef} type="file" accept={ACCEPTED_EXTS} onChange={handleFileChange} />
                       <span className="upload-icon">☁️</span>
                       <span className="upload-label">Importer l'autorisation parentale</span>
@@ -504,16 +519,23 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
               </div>
             )}
 
-            {/* Contact & Profil */}
+            {/* Email */}
             <div className="field">
               <label>Email <span className="req">*</span></label>
-              <input type="email" placeholder="email@exemple.com" value={form.email} className={touched.email && errors.email ? "input-error" : ""} onChange={(e) => handleChange("email", e.target.value)} onBlur={() => handleBlur("email")} />
+              <input type="email" placeholder="email@exemple.com" value={form.email}
+                className={touched.email && errors.email ? "input-error" : ""}
+                onChange={(e) => handleChange("email", e.target.value)}
+                onBlur={() => handleBlur("email")} />
               {touched.email && errors.email && <span className="field-error">{errors.email}</span>}
             </div>
 
+            {/* Téléphone */}
             <div className="field">
               <label>Numéro de téléphone <span className="req">*</span></label>
-              <input type="text" placeholder="06XXXXXXXX ou 07XXXXXXXX" value={form.tel} className={touched.tel && errors.tel ? "input-error" : ""} onChange={(e) => handleChange("tel", e.target.value)} onBlur={() => handleBlur("tel")} />
+              <input type="text" placeholder="06XXXXXXXX ou 07XXXXXXXX" value={form.tel}
+                className={touched.tel && errors.tel ? "input-error" : ""}
+                onChange={(e) => handleChange("tel", e.target.value)}
+                onBlur={() => handleBlur("tel")} />
               {touched.tel && errors.tel && <span className="field-error">{errors.tel}</span>}
             </div>
 
@@ -523,7 +545,9 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
               <div className="gender-group">
                 {["homme", "femme"].map((s) => (
                   <div className="gender-option" key={s}>
-                    <input type="radio" name="sexe" id={`c-${s}`} value={s} checked={form.sexe === s} onChange={() => handleChange("sexe", s)} />
+                    <input type="radio" name="sexe" id={`c-${s}`} value={s}
+                      checked={form.sexe === s}
+                      onChange={() => handleChange("sexe", s)} />
                     <label htmlFor={`c-${s}`}>{s.charAt(0).toUpperCase() + s.slice(1)}</label>
                   </div>
                 ))}
