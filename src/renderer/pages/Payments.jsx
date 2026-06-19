@@ -245,7 +245,6 @@ function genererRapportGroupePDF(fiches, dateDebut, dateFin) {
     ? `${dateDebut ? fDate(dateDebut) : "…"} → ${dateFin ? fDate(dateFin) : "…"}`
     : "Toute la période";
 
-  // Page de garde
   doc.setFillColor(43, 83, 126); doc.rect(0, 0, W, 50, "F");
   doc.setFont("helvetica", "bold"); doc.setFontSize(20); doc.setTextColor(255, 255, 255);
   doc.text(AUTOECOLE.nom, W / 2, 22, { align: "center" });
@@ -254,7 +253,6 @@ function genererRapportGroupePDF(fiches, dateDebut, dateFin) {
   doc.text(periode, W / 2, 41, { align: "center" });
 
   let y = 62;
-  // Stats
   const stats = [
     { label: "Versements", val: String(tous.length) },
     { label: "Candidats", val: String(new Set(tous.map(v => v.candidat.idCandidat)).size) },
@@ -271,7 +269,6 @@ function genererRapportGroupePDF(fiches, dateDebut, dateFin) {
   });
   y += 26;
 
-  // Tableau
   const cols = [
     { label: "Date",      w: 28 },
     { label: "Candidat",  w: 52 },
@@ -362,7 +359,7 @@ function ExportModal({ fiches, onClose }) {
   const [recherche,     setRecherche]     = useState("");
   const [selectedIds,   setSelectedIds]   = useState(new Set());
   const [selectAll,     setSelectAll]     = useState(false);
-  const [format,        setFormat]        = useState("pdf"); // "pdf" | "csv" | "both"
+  const [format,        setFormat]        = useState("pdf");
 
   const fichesFiltrees = fiches.filter(f => {
     const nom = `${f.prenom || ""} ${f.nom || ""}`.toLowerCase();
@@ -432,8 +429,6 @@ function ExportModal({ fiches, onClose }) {
       style={{ position: "fixed", inset: 0, zIndex: 2000, background: "rgba(15,23,42,0.65)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
     >
       <div style={{ background: "#fff", borderRadius: 18, width: "100%", maxWidth: 580, maxHeight: "92vh", display: "flex", flexDirection: "column", boxShadow: "0 32px 80px rgba(0,0,0,0.25)", overflow: "hidden" }}>
-
-        {/* Header */}
         <div style={{ background: "linear-gradient(135deg,#2b537e,#1e3a5f)", padding: "18px 22px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>Export des paiements</div>
@@ -443,8 +438,6 @@ function ExportModal({ fiches, onClose }) {
         </div>
 
         <div style={{ overflowY: "auto", flex: 1, padding: "20px 22px", display: "flex", flexDirection: "column", gap: 18 }}>
-
-          {/* Période */}
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Période</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -464,7 +457,6 @@ function ExportModal({ fiches, onClose }) {
             )}
           </div>
 
-          {/* Format */}
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Format d'export</div>
             <div style={{ display: "flex", gap: 8 }}>
@@ -481,7 +473,6 @@ function ExportModal({ fiches, onClose }) {
             </div>
           </div>
 
-          {/* Sélection candidats */}
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>
               Candidats — {selectedIds.size} sélectionné{selectedIds.size !== 1 ? "s" : ""}
@@ -493,7 +484,6 @@ function ExportModal({ fiches, onClose }) {
               onChange={e => setRecherche(e.target.value)}
               style={{ ...inp, marginBottom: 8 }}
             />
-            {/* Tout sélectionner */}
             <div
               onClick={toggleAll}
               style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 8, background: "#f1f5f9", cursor: "pointer", marginBottom: 6, userSelect: "none" }}
@@ -533,7 +523,6 @@ function ExportModal({ fiches, onClose }) {
             </div>
           </div>
 
-          {/* Aperçu export */}
           {selectedIds.size > 0 && (
             <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 10, padding: "12px 16px" }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: "#0369a1", marginBottom: 8 }}>Aperçu de l'export</div>
@@ -546,7 +535,6 @@ function ExportModal({ fiches, onClose }) {
           )}
         </div>
 
-        {/* Footer */}
         <div style={{ padding: "14px 22px", borderTop: "1px solid #e2e8f0", display: "flex", gap: 10, flexShrink: 0, background: "#f8fafc" }}>
           <button onClick={onClose} style={{ flex: 1, padding: 11, borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
             Annuler
@@ -761,9 +749,9 @@ const Payments = () => {
   });
 
   const btnAct = (bg, color, border) => ({
-    padding: "4px 10px", borderRadius: 7, border: `1px solid ${border || color}`,
+    padding: "5px 11px", borderRadius: 7, border: `1px solid ${border || color}`,
     background: bg, color, cursor: "pointer", fontSize: 11, fontWeight: 600,
-    display: "inline-flex", alignItems: "center", gap: 3, whiteSpace: "nowrap",
+    display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
   });
 
   return (
@@ -812,7 +800,6 @@ const Payments = () => {
             onChange={e => setSearchTerm(e.target.value)}
             style={{ flex: 1, minWidth: 200, padding: "10px 14px", border: "1.5px solid #e2e8f0", borderRadius: 10, outline: "none", fontSize: 13, background: "#fff" }}
           />
-          {/* Filtres statut */}
           <div style={{ display: "flex", background: "#f1f5f9", borderRadius: 10, padding: 3, gap: 2 }}>
             {[["tous","Tous"], ["en_cours","En cours"], ["jamais","Jamais payé"], ["solde","Soldés"]].map(([val, label]) => (
               <button key={val} onClick={() => setFiltreStatut(val)} style={{
@@ -927,19 +914,49 @@ const Payments = () => {
                           <span style={{ fontSize: 13, color: "#475569", fontWeight: 600 }}>{f.versements.length}</span>
                         </td>
 
-                        {/* Actions */}
+                        {/* ── Actions ── */}
                         <td style={{ padding: "12px 14px", verticalAlign: "middle" }}>
                           <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                             {f.versements.length > 0 && (
                               <>
-                                <button onClick={() => { const d = genererRecuPDF(f.versements[0], f); d.save(`Recu_${f.nom}_${f.prenom}.pdf`); }} style={btnAct("#f0fdf4", "#166534", "#86efac")} title="Reçu PDF">⬇ Reçu</button>
-                                <button onClick={() => { const d = genererRecuPDF(f.versements[0], f); window.open(d.output("bloburl"), "_blank"); }} style={btnAct("#f0f4fa", "#2b537e", "#93c5fd")} title="Imprimer">🖨</button>
+                                <button
+                                  onClick={() => { const d = genererRecuPDF(f.versements[0], f); d.save(`Recu_${f.nom}_${f.prenom}.pdf`); }}
+                                  style={btnAct("#f0fdf4", "#166534", "#86efac")}
+                                  title="Télécharger le reçu PDF"
+                                >
+                                  ⬇ Reçu
+                                </button>
+                                <button
+                                  onClick={() => { const d = genererRecuPDF(f.versements[0], f); window.open(d.output("bloburl"), "_blank"); }}
+                                  style={btnAct("#f0f4fa", "#2b537e", "#93c5fd")}
+                                  title="Imprimer le reçu"
+                                >
+                                  🖨 Imprimer
+                                </button>
                               </>
                             )}
-                            <button onClick={() => { const d = genererHistoriquePDF(f, f.versements); d.save(`Historique_${f.nom}_${f.prenom}.pdf`); }} style={btnAct("#f5f3ff", "#6d28d9", "#c4b5fd")} title="Historique PDF">📋</button>
-                            <button onClick={() => setRappelCand(f)} style={btnAct("#fff7ed", "#f97316", "#fed7aa")} title="Rappel email">📧</button>
+                            <button
+                              onClick={() => { const d = genererHistoriquePDF(f, f.versements); d.save(`Historique_${f.nom}_${f.prenom}.pdf`); }}
+                              style={btnAct("#f5f3ff", "#6d28d9", "#c4b5fd")}
+                              title="Télécharger l'historique PDF"
+                            >
+                              📋 Historique
+                            </button>
+                            <button
+                              onClick={() => setRappelCand(f)}
+                              style={btnAct("#fff7ed", "#f97316", "#fed7aa")}
+                              title="Envoyer un rappel par email"
+                            >
+                              📧 Rappel
+                            </button>
                             {f.montantRestant > 0 && (
-                              <button onClick={() => { setSelected(f); setShowModal(true); }} style={btnAct("#ecfdf5", "#166534", "#6ee7b7")} title="Ajouter versement">+ Vers.</button>
+                              <button
+                                onClick={() => { setSelected(f); setShowModal(true); }}
+                                style={btnAct("#ecfdf5", "#166534", "#6ee7b7")}
+                                title="Ajouter un versement"
+                              >
+                                + Versement
+                              </button>
                             )}
                           </div>
                         </td>
@@ -953,7 +970,7 @@ const Payments = () => {
                               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                                 <thead>
                                   <tr style={{ background: "#e0eaff" }}>
-                                    {["Date", "Montant", "Méthode", "Remarque", "Reçu"].map(h => (
+                                    {["Date", "Montant", "Méthode", "Remarque", "Actions"].map(h => (
                                       <th key={h} style={{ padding: "6px 10px", textAlign: "left", color: "#2b537e", fontWeight: 700, fontSize: 11 }}>{h}</th>
                                     ))}
                                   </tr>
@@ -965,9 +982,21 @@ const Payments = () => {
                                       <td style={{ padding: "6px 10px", fontWeight: 700, color: "#166534" }}>{fDA(v.montant)}</td>
                                       <td style={{ padding: "6px 10px", color: "#475569" }}>{mLabel(v.methode)}</td>
                                       <td style={{ padding: "6px 10px", color: "#94a3b8" }}>{v.remarque || "—"}</td>
-                                      <td style={{ padding: "6px 10px", display: "flex", gap: 4 }}>
-                                        <button onClick={() => { const d = genererRecuPDF(v, f); d.save(`Recu_${f.nom}_${v.idVersement}.pdf`); }} style={{ ...btnAct("#f0fdf4", "#166534", "#86efac"), padding: "3px 8px" }}>⬇</button>
-                                        <button onClick={() => { const d = genererRecuPDF(v, f); window.open(d.output("bloburl"), "_blank"); }} style={{ ...btnAct("#f0f4fa", "#2b537e", "#93c5fd"), padding: "3px 8px" }}>🖨</button>
+                                      <td style={{ padding: "6px 10px" }}>
+                                        <div style={{ display: "flex", gap: 5 }}>
+                                          <button
+                                            onClick={() => { const d = genererRecuPDF(v, f); d.save(`Recu_${f.nom}_${v.idVersement}.pdf`); }}
+                                            style={{ ...btnAct("#f0fdf4", "#166634", "#86efac"), padding: "3px 9px" }}
+                                          >
+                                            ⬇ Reçu
+                                          </button>
+                                          <button
+                                            onClick={() => { const d = genererRecuPDF(v, f); window.open(d.output("bloburl"), "_blank"); }}
+                                            style={{ ...btnAct("#f0f4fa", "#2b537e", "#93c5fd"), padding: "3px 9px" }}
+                                          >
+                                            🖨 Imprimer
+                                          </button>
+                                        </div>
                                       </td>
                                     </tr>
                                   ))}

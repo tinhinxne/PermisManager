@@ -1077,3 +1077,4 @@ ipcMain.handle("send-rappel-paiement", async (event, { email, nomCandidat, monta
     return { success: false, error: err.message };
   }
 });
+
