@@ -767,7 +767,7 @@ export default function AgendaMoniteur() {
                 background:"#2563eb", border:"none", color:"#fff", fontFamily:"'Poppins',sans-serif",
                 fontSize:"0.83rem", fontWeight:600, cursor:"pointer", boxShadow:"0 4px 14px rgba(37,99,235,0.35)" }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              + Ajouter Séance
+              Ajouter Séance
             </button>
           ) : (
             <LockedTooltip>

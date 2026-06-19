@@ -278,12 +278,22 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
     if (!f.nom.trim())    errs.nom    = "Le nom est requis.";
     if (!f.prenom.trim()) errs.prenom = "Le prénom est requis.";
 
+// ICI QUE JAI MODIFIE (MELISSA)
     if (!f.dob) {
       errs.dob = "La date de naissance est requise.";
     } else {
       const today = new Date(); today.setHours(0, 0, 0, 0);
       const birth = new Date(f.dob);
-      if (birth >= today) errs.dob = "La date de naissance est invalide.";
+      const AGE_MAX_REALISTE = 100;
+      const dateMin = new Date(today.getFullYear() - AGE_MAX_REALISTE, today.getMonth(), today.getDate());
+
+      if (isNaN(birth.getTime())) {
+        errs.dob = "Date de naissance invalide.";
+      } else if (birth >= today) {
+        errs.dob = "La date de naissance ne peut pas être dans le futur.";
+      } else if (birth < dateMin) {
+        errs.dob = `Date de naissance invalide (plus de ${AGE_MAX_REALISTE} ans).`;
+      }
     }
 
     if (!f.inscription) {
@@ -460,7 +470,17 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
             <div className="row-2">
               <div className="field">
                 <label>Date de naissance <span className="req">*</span></label>
-                <input type="date" value={form.dob} className={(touched.dob && errors.dob) ? "input-error" : blocked ? "input-error" : needsParent ? "input-warning" : ""} onChange={(e) => handleChange("dob", e.target.value)} onBlur={() => handleBlur("dob")} />
+                {/* <input type="date" value={form.dob} className={(touched.dob && errors.dob) ? "input-error" : blocked ? "input-error" : needsParent ? "input-warning" : ""} onChange={(e) => handleChange("dob", e.target.value)} onBlur={() => handleBlur("dob")} > */}
+
+                <input
+  type="date"
+  min={`${new Date().getFullYear() - 100}-01-01`}
+  max={new Date().toISOString().split("T")[0]}
+  value={form.dob}
+ className={(touched.dob && errors.dob) ? "input-error" : blocked ? "input-error" : needsParent ? "input-warning" : ""}
+  onChange={(e) => handleChange("dob", e.target.value)}
+  onBlur={() => handleBlur("dob")}
+/>
                 {touched.dob && errors.dob && <span className="field-error">{errors.dob}</span>}
               </div>
               <div className="field">
