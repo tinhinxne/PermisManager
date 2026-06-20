@@ -208,6 +208,9 @@ export function ExamenProvider({ children }) {
           // Informations de traçabilité pour affichage
           dateBaseCalc: getLastSeanceDate(seancesCand, "code") || today,
           calcSource:   echecsCode > 0 ? "après_échec" : "après_dernière_séance",
+          // Infos candidat nécessaires aux documents officiels (PDF)
+          dateNaissance:   candidat.date_naissance,
+          categoriePermis: candidat.categoriePermis,
         });
       }
 
@@ -234,6 +237,9 @@ export function ExamenProvider({ children }) {
           suggested:    rapportCandidat?.type === "Créneau",
           dateBaseCalc: getLastSeanceDate(seancesCand, "creneau") || today,
           calcSource:   echecsCreneau > 0 ? "après_échec" : "après_dernière_séance",
+          // Infos candidat nécessaires aux documents officiels (PDF)
+          dateNaissance:   candidat.date_naissance,
+          categoriePermis: candidat.categoriePermis,
         });
       }
 
@@ -260,6 +266,9 @@ export function ExamenProvider({ children }) {
           suggested:    rapportCandidat?.type === "Circulation",
           dateBaseCalc: getLastSeanceDate(seancesCand, "circulation") || today,
           calcSource:   echecsCirculation > 0 ? "après_échec" : "après_dernière_séance",
+          // Infos candidat nécessaires aux documents officiels (PDF)
+          dateNaissance:   candidat.date_naissance,
+          categoriePermis: candidat.categoriePermis,
         });
       }
     });
