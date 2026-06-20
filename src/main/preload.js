@@ -65,7 +65,7 @@ updateStatutConge: (congeId, statut, motifRefus) => ipcRenderer.invoke("update-s
   setCongeAnnuel: (data) => ipcRenderer.invoke("set-conge-annuel", data),
 
   sendRappelPaiement: (data) => ipcRenderer.invoke("send-rappel-paiement", data),
-  generateListeCandidatsPDF: (data) =>
+   generateListeCandidatsPDF: (data) =>
     ipcRenderer.invoke("generate-liste-candidats-pdf", data),
 
 });

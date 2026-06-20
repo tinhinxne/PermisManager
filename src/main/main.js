@@ -1224,3 +1224,11 @@ ipcMain.handle("set-conge-annuel", async (event, data) => {
     );
   });
 });
+
+ipcMain.handle("generate-liste-candidats-pdf", async (event, data) => {
+  // data = { wilaya, centreExamen, dateDepot, dateExamen, nomEcole, candidats }
+  const html = buildListeCandidatsHTML(data);
+  const fileName = `liste_candidats_${(data.dateExamen || "").replace(/\//g, "-")}.pdf`;
+  const savedPath = await generatePDFFromHTML(html, fileName);
+  return savedPath; // null si l'utilisateur a annulé, sinon le chemin du fichier
+});
