@@ -2,6 +2,22 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const db = require('./db');
 
+// ── SÉCURISATION : colonnes de verrouillage de compte sur Utilisateur ─────
+const colonnesVerrouillage = [
+  { nom: "tentatives_echouees", sql: "ALTER TABLE Utilisateur ADD COLUMN tentatives_echouees INT NOT NULL DEFAULT 0" },
+  { nom: "verrouille_jusqua",   sql: "ALTER TABLE Utilisateur ADD COLUMN verrouille_jusqua DATETIME NULL DEFAULT NULL" },
+];
+
+colonnesVerrouillage.forEach(({ nom, sql }) => {
+  db.query(sql, (err) => {
+    if (err) {
+      console.log(`ℹ️ Colonne '${nom}' déjà présente sur Utilisateur (ou erreur ignorée) :`, err.code || err.message);
+    } else {
+      console.log(`✅ Colonne '${nom}' ajoutée avec succès à Utilisateur !`);
+    }
+  });
+});
+
 // ── SÉCURISATION FORCE DE LA BASE DE DONNÉES ───────────────────────────────
 db.query(`
   ALTER TABLE Candidat 
@@ -199,6 +215,32 @@ function buildEmailHtml({ prenom, nom, email, password, isReset = false }) {
   `;
 }
 
+function buildLockoutEmailHtml({ prenom, nom, dateDeblocage }) {
+  const heureDeblocage = dateDeblocage.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  return `
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;">
+      <div style="background:#c0392b;padding:24px;text-align:center;">
+        <h1 style="color:#fff;margin:0;font-size:20px;">🚗 Auto-École</h1>
+      </div>
+      <div style="padding:28px;">
+        <h2 style="color:#0F172A;margin-bottom:8px;">Compte temporairement bloqué</h2>
+        <p style="color:#475569;margin-bottom:20px;">
+          Bonjour <strong>${prenom} ${nom}</strong>, votre compte a été bloqué après 3 tentatives de connexion échouées.
+        </p>
+        <div style="background:#F1F5F9;border-radius:8px;padding:16px;margin-bottom:20px;">
+          <p style="margin:6px 0;color:#475569;">
+            <strong>🔓 Vous pourrez réessayer à partir de :</strong> ${heureDeblocage}
+          </p>
+        </div>
+        <p style="color:#94A3B8;font-size:12px;">
+          Si ce n'est pas vous qui avez tenté de vous connecter, contactez immédiatement l'administrateur.
+        </p>
+      </div>
+    </div>
+  `;
+}
+    
+
 // ── FENÊTRE ──────────────────────────────────────────────────────────────────
 function createWindow() {
   const mainWindow = new BrowserWindow({
@@ -313,34 +355,88 @@ ipcMain.handle("forgot-password-reset", async (event, { email, newPassword }) =>
   });
 });
 
-// ── 1. LOGIN ──────────────────────────────────────────────────────────────────
 ipcMain.handle("login", async (event, credentials) => {
   const { email, password } = credentials;
 
-  const sql = `
-    SELECT u.id, u.nom, u.prenom, u.type_utilisateur, m.actif
-    FROM Utilisateur u
-    LEFT JOIN Moniteur m ON u.id = m.id
-    WHERE u.mail = ? AND u.mot_de_passe = ?
-    AND u.deleted_at IS NULL
-  `;
-
   return new Promise((resolve) => {
-    db.query(sql, [email, password], (err, result) => {
-      if (err) return resolve({ success: false, message: "Erreur Base de données" });
+    db.query(
+      `SELECT u.id, u.nom, u.prenom, u.mail, u.mot_de_passe, u.type_utilisateur, 
+              u.tentatives_echouees, u.verrouille_jusqua, m.actif
+       FROM Utilisateur u
+       LEFT JOIN Moniteur m ON u.id = m.id
+       WHERE u.mail = ? AND u.deleted_at IS NULL`,
+      [email],
+      (err, result) => {
+        if (err) return resolve({ success: false, message: "Erreur Base de données" });
+        if (!result || result.length === 0) {
+          return resolve({ success: false, message: "Identifiants incorrects" });
+        }
 
-      if (result && result.length > 0) {
         const user = result[0];
+        const now = new Date();
 
+        // ── Compte actuellement verrouillé ? ──
+        if (user.verrouille_jusqua && new Date(user.verrouille_jusqua) > now) {
+          const minutesRestantes = Math.ceil((new Date(user.verrouille_jusqua) - now) / 60000);
+          return resolve({ success: false, locked: true, minutesRestantes });
+        }
+
+        // ── Mauvais mot de passe ──
+        if (user.mot_de_passe !== password) {
+          const nouvellesTentatives = (user.tentatives_echouees || 0) + 1;
+
+          if (nouvellesTentatives >= 3) {
+            const deblocage = new Date(now.getTime() + 10 * 60 * 1000);
+
+            db.query(
+              `UPDATE Utilisateur SET tentatives_echouees = ?, verrouille_jusqua = ? WHERE id = ?`,
+              [nouvellesTentatives, deblocage, user.id],
+              async () => {
+                try {
+                  await transporter.sendMail({
+                    from: '"Auto-École 🚗" <tinhinanethequeen@gmail.com>',
+                    to: user.mail,
+                    subject: "Compte temporairement bloqué – Auto-École",
+                    html: buildLockoutEmailHtml({ prenom: user.prenom, nom: user.nom, dateDeblocage: deblocage }),
+                  });
+                } catch (e) {
+                  console.error("Erreur envoi mail verrouillage:", e.message);
+                }
+                resolve({ success: false, locked: true, minutesRestantes: 10 });
+              }
+            );
+          } else {
+            db.query(
+              `UPDATE Utilisateur SET tentatives_echouees = ? WHERE id = ?`,
+              [nouvellesTentatives, user.id],
+              () => {
+                resolve({
+                  success: false,
+                  message: `Identifiants incorrects (${3 - nouvellesTentatives} tentative(s) restante(s))`,
+                });
+              }
+            );
+          }
+          return;
+        }
+
+        // ── Mot de passe correct ──
         if (user.type_utilisateur === 'moniteur' && user.actif === 0) {
           return resolve({ success: false, inactive: true });
         }
 
-        resolve({ success: true, user });
-      } else {
-        resolve({ success: false, message: "Identifiants incorrects" });
+        db.query(
+          `UPDATE Utilisateur SET tentatives_echouees = 0, verrouille_jusqua = NULL WHERE id = ?`,
+          [user.id],
+          () => {
+            resolve({
+              success: true,
+              user: { id: user.id, nom: user.nom, prenom: user.prenom, type_utilisateur: user.type_utilisateur },
+            });
+          }
+        );
       }
-    });
+    );
   });
 });
 

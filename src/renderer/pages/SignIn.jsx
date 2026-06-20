@@ -113,6 +113,64 @@ const InactivePopup = ({ onClose }) => (
     </div>
   </div>
 );
+const LockedPopup = ({ minutes, onClose }) => (
+  <div style={{
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
+  }}>
+    <div style={{
+      backgroundColor: '#fdf2e9',
+      borderRadius: '12px',
+      padding: '36px 40px',
+      maxWidth: '380px',
+      width: '90%',
+      border: 'solid 3px #e67e22',
+      textAlign: 'center',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+    }}>
+      <h2 style={{
+        color: '#0d0a0a',
+        fontSize: '18px',
+        fontWeight: '700',
+        margin: '0 0 12px',
+      }}>
+        Compte bloqué
+      </h2>
+
+      <p style={{
+        color: '#261816',
+        fontSize: '14px',
+        lineHeight: '1.6',
+        margin: '0 0 28px',
+      }}>
+        Trop de tentatives échouées.<br />
+        Réessayez dans {minutes} minute{minutes > 1 ? 's' : ''}.<br />
+        Un email vous a été envoyé.
+      </p>
+
+      <button
+        onClick={onClose}
+        style={{
+          backgroundColor: '#fff',
+          color: '#e67e22',
+          border: 'solid 2px #e67e22',
+          borderRadius: '8px',
+          padding: '10px 28px',
+          fontSize: '14px',
+          fontWeight: '700',
+          cursor: 'pointer',
+        }}
+      >
+        Fermer
+      </button>
+    </div>
+  </div>
+);
 
 export default function SignIn() {
   const { login } = useAuth();
@@ -123,7 +181,8 @@ export default function SignIn() {
 
   // 👇 AJOUTE ÇA
   const [showPassword, setShowPassword] = useState(false);
-
+const [showLockedPopup, setShowLockedPopup] = useState(false);
+const [lockMinutes, setLockMinutes] = useState(0);
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -132,20 +191,23 @@ export default function SignIn() {
     try {
       const response = await window.electron.login({ email, password });
 
-      if (response.success) {
-        login(response.user);
-        localStorage.setItem("user", JSON.stringify(response.user));
+     if (response.success) {
+  login(response.user);
+  localStorage.setItem("user", JSON.stringify(response.user));
 
-        if (response.user.type_utilisateur === "moniteur") {
-          navigate("/moniteur/dashboard");
-        } else {
-          navigate("/dashboard");
-        }
-      } else if (response.inactive) {
-        setShowInactivePopup(true);
-      } else {
-        alert(response.message || "Identifiants invalides");
-      }
+  if (response.user.type_utilisateur === "moniteur") {
+    navigate("/moniteur/dashboard");
+  } else {
+    navigate("/dashboard");
+  }
+} else if (response.locked) {
+  setLockMinutes(response.minutesRestantes);
+  setShowLockedPopup(true);
+} else if (response.inactive) {
+  setShowInactivePopup(true);
+} else {
+  alert(response.message || "Identifiants invalides");
+}
     } catch (error) {
       console.error("Erreur lors de la tentative de connexion :", error);
       alert("Impossible de contacter la base de données.");
@@ -162,7 +224,10 @@ export default function SignIn() {
       {showInactivePopup && (
         <InactivePopup onClose={() => setShowInactivePopup(false)} />
       )}
-
+        {/* ── Popup compte bloqué ── */}
+      {showLockedPopup && (
+        <LockedPopup minutes={lockMinutes} onClose={() => setShowLockedPopup(false)} />
+      )}
       {/* ── Images de fond ── */}
       <img
         src="../../assets/Car.png"
