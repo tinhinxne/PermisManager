@@ -88,13 +88,13 @@ function TabCongeAnnuel() {
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "14px 16px", borderRadius: 12,
-        background: actif ? "#fff7ed" : "#f8fafc",
-        border: `1.5px solid ${actif ? "#fed7aa" : "#e2e8f0"}`,
+        background: actif ? "#f0f5fa" : "#f8fafc",
+        border: `1.5px solid ${actif ? "#c3d6e8" : "#e2e8f0"}`,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{
             width: 36, height: 36, borderRadius: 10,
-            background: actif ? "linear-gradient(135deg,#f97316,#fb923c)" : "#e2e8f0",
+            background: actif ? "linear-gradient(135deg,#2b537e,#3a6da0)" : "#e2e8f0",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
             <Building2 size={18} color={actif ? "#fff" : "#94a3b8"} />
@@ -108,7 +108,7 @@ function TabCongeAnnuel() {
           onClick={() => setActif(v => !v)}
           style={{
             width: 44, height: 24, borderRadius: 12,
-            background: actif ? "#f97316" : "#cbd5e1",
+            background: actif ? "#2b537e" : "#cbd5e1",
             cursor: "pointer", position: "relative", flexShrink: 0,
             transition: "background 0.2s",
           }}
@@ -155,8 +155,8 @@ function TabCongeAnnuel() {
           {dateDebut && dateFin && !error && (
             <div style={{
               padding: "12px 16px", borderRadius: 10,
-              background: statut === "en_cours" ? "#f0fdf4" : statut === "expire" ? "#f8fafc" : "#fffbeb",
-              border: `1px solid ${statut === "en_cours" ? "#86efac" : statut === "expire" ? "#e2e8f0" : "#fcd34d"}`,
+              background: statut === "en_cours" ? "#f0fdf4" : statut === "expire" ? "#f8fafc" : "#f0f5fa",
+              border: `1px solid ${statut === "en_cours" ? "#86efac" : statut === "expire" ? "#e2e8f0" : "#c3d6e8"}`,
               display: "flex", alignItems: "center", justifyContent: "space-between",
             }}>
               <div>
@@ -169,8 +169,8 @@ function TabCongeAnnuel() {
               </div>
               <span style={{
                 fontSize: "0.7rem", fontWeight: 700, padding: "3px 10px", borderRadius: 20,
-                background: statut === "en_cours" ? "#dcfce7" : statut === "expire" ? "#f1f5f9" : "#fef9c3",
-                color: statut === "en_cours" ? "#16a34a" : statut === "expire" ? "#94a3b8" : "#a16207",
+                background: statut === "en_cours" ? "#dcfce7" : statut === "expire" ? "#f1f5f9" : "#dce6f0",
+                color: statut === "en_cours" ? "#16a34a" : statut === "expire" ? "#94a3b8" : "#2b537e",
               }}>
                 {statut === "en_cours" ? "🟢 En cours" : statut === "expire" ? "⚫ Expiré" : "🟡 À venir"}
               </span>
@@ -201,7 +201,7 @@ function TabCongeAnnuel() {
         disabled={saving}
         style={{
           padding: "10px 0", borderRadius: 10, border: "none",
-          background: saved ? "#22c55e" : saving ? "#94a3b8" : "#f97316",
+          background: saved ? "#22c55e" : saving ? "#94a3b8" : "#2b537e",
           color: "#fff", fontFamily: "'Poppins',sans-serif",
           fontSize: "0.85rem", fontWeight: 700, cursor: saving ? "not-allowed" : "pointer",
           display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
@@ -289,13 +289,13 @@ function TabCongesMoniteurs() {
       {selectedMon && (
         <div style={{
           padding: "12px 14px", borderRadius: 12,
-          background: congeActif ? "#fff7ed" : "#f8fafc",
-          border: `1.5px solid ${congeActif ? "#fed7aa" : "#e2e8f0"}`,
+          background: congeActif ? "#f0f5fa" : "#f8fafc",
+          border: `1.5px solid ${congeActif ? "#c3d6e8" : "#e2e8f0"}`,
           display: "flex", alignItems: "center", gap: 12,
         }}>
           <div style={{
             width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
-            background: congeActif ? "linear-gradient(135deg,#f97316,#fb923c)" : "#e2e8f0",
+            background: congeActif ? "linear-gradient(135deg,#2b537e,#3a6da0)" : "#e2e8f0",
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: "0.9rem", fontWeight: 700, color: congeActif ? "#fff" : "#64748b",
           }}>
@@ -312,7 +312,7 @@ function TabCongesMoniteurs() {
           </div>
           <div style={{ display: "flex", gap: 8, fontSize: "0.7rem", flexShrink: 0 }}>
             {congeActif && (
-              <span style={{ padding: "3px 9px", borderRadius: 20, background: "#fff7ed", color: "#ea580c", border: "1px solid #fed7aa", fontWeight: 700 }}>
+              <span style={{ padding: "3px 9px", borderRadius: 20, background: "#f0f5fa", color: "#2b537e", border: "1px solid #c3d6e8", fontWeight: 700 }}>
                 En cours
               </span>
             )}
@@ -504,9 +504,9 @@ export default function ModalConges({ onClose }) {
   const tabStyle = (id) => ({
     flex: 1, padding: "10px 0", border: "none", cursor: "pointer",
     fontFamily: "'Poppins',sans-serif", fontSize: "0.82rem", fontWeight: 600,
-    borderBottom: tab === id ? "2.5px solid #f97316" : "2.5px solid transparent",
+    borderBottom: tab === id ? "2.5px solid #2b537e" : "2.5px solid transparent",
     background: "transparent",
-    color: tab === id ? "#f97316" : "#64748b",
+    color: tab === id ? "#2b537e" : "#64748b",
     transition: "color 0.2s, border-color 0.2s",
   });
 
@@ -527,7 +527,7 @@ export default function ModalConges({ onClose }) {
       }}>
         {/* Header */}
         <div style={{
-          background: "linear-gradient(135deg,#f97316,#fb923c)",
+          background: "linear-gradient(135deg,#2b537e,#3a6da0)",
           padding: "18px 22px",
           display: "flex", alignItems: "center", justifyContent: "space-between",
         }}>

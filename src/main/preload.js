@@ -55,10 +55,11 @@
   requestCongeMoniteur:  (data)          => ipcRenderer.invoke("request-conge-moniteur", data),
    validerCongeMoniteur:  (congeId)            => ipcRenderer.invoke("valider-conge-moniteur", congeId),
   removeCongeMoniteur: (congeId)    => ipcRenderer.invoke("remove-conge-moniteur", congeId),
-  refuserCongeMoniteur:  (congeId, motif)     => ipcRenderer.invoke("refuser-conge-moniteur", { congeId, motif }),
-   annulerMaDemandeConge: (congeId, moniteurId)=> ipcRenderer.invoke("annuler-ma-demande-conge", { congeId, moniteurId }),
+refuserCongeMoniteur: (congeId, motif) => ipcRenderer.invoke("refuser-conge-moniteur", congeId, motif),
+annulerMaDemandeConge: (congeId, moniteurId) => ipcRenderer.invoke("annuler-ma-demande-conge", congeId, moniteurId),  
    getDemandesCongeAttente: () => ipcRenderer.invoke("get-demandes-conge-attente"),
 updateStatutConge: (congeId, statut, motifRefus) => ipcRenderer.invoke("update-statut-conge", congeId, statut, motifRefus),
+sendMessageAdmin: (data) => ipcRenderer.invoke("send-message-admin", data),
 
   // Congé annuel
   getCongeAnnuel: ()     => ipcRenderer.invoke("get-conge-annuel"),

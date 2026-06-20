@@ -8,6 +8,7 @@ import {
   CalendarOff, Plus, Save, X, Trash2, Clock,
   CheckCircle2, XCircle, AlertCircle, CalendarDays,
 } from "lucide-react";
+import { usePermissionsCtx } from "../context/PermissionsContext";
 
 const RAISONS = [
   { value: "maladie",  label: "🤒 Maladie",            color: "#ef4444" },
@@ -230,6 +231,9 @@ const MesConges = () => {
     valides:   conges.filter(c => c.statut === "validee").length,
     refuses:   conges.filter(c => c.statut === "refusee").length,
   }), [conges]);
+  const { getPermissions } = usePermissionsCtx();
+const permissions = getPermissions(moniteurId);
+const peutDemanderConge = !!permissions.CAN_REQUEST_CONGE;
 
   const handleSubmit = async () => {
     if (!form.dateDebut || !form.dateFin) { setError("Renseignez les deux dates."); return; }
@@ -278,6 +282,16 @@ const MesConges = () => {
     Chaque demande est soumise à la validation de l'administrateur.
   </p>
 </div>
+{!peutDemanderConge && (
+  <div style={{
+    background: "#fef2f2", border: "1.5px solid #fecaca",
+    borderRadius: 10, padding: "10px 14px", marginBottom: 16,
+    fontSize: "0.78rem", color: "#991b1b",
+    display: "flex", alignItems: "center", gap: 8,
+  }}>
+    🔒 La demande de congé a été désactivée par l'administrateur pour votre compte.
+  </div>
+)}
 <div
   style={{
     display: "flex",
@@ -303,30 +317,34 @@ const MesConges = () => {
     📅 Suivi de vos demandes de congé
   </div>
 
-  <button
-    onClick={() => {
-      setShowForm(v => !v);
-      setError("");
-    }}
-    style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 7,
-      padding: "10px 20px",
-      borderRadius: 10,
-      background: "#2b537e",
-      border: "none",
-      color: "#fff",
-      fontFamily: "inherit",
-      fontSize: "0.85rem",
-      fontWeight: 700,
-      cursor: "pointer",
-      boxShadow: "0 4px 14px rgba(43,83,126,0.3)",
-    }}
-  >
-    {showForm ? <X size={15} /> : <Plus size={15} />}
-    {showForm ? "Fermer" : "Demander un congé"}
-  </button>
+ <button
+  onClick={() => {
+    if (!peutDemanderConge) return;
+    setShowForm(v => !v);
+    setError("");
+  }}
+  disabled={!peutDemanderConge}
+  title={!peutDemanderConge ? "Cette action a été désactivée par l'administrateur" : undefined}
+  style={{
+    display: "flex",
+    alignItems: "center",
+    gap: 7,
+    padding: "10px 20px",
+    borderRadius: 10,
+    background: !peutDemanderConge ? "#cbd5e1" : "#2b537e",
+    border: "none",
+    color: "#fff",
+    fontFamily: "inherit",
+    fontSize: "0.85rem",
+    fontWeight: 700,
+    cursor: !peutDemanderConge ? "not-allowed" : "pointer",
+    boxShadow: !peutDemanderConge ? "none" : "0 4px 14px rgba(43,83,126,0.3)",
+    opacity: !peutDemanderConge ? 0.7 : 1,
+  }}
+>
+  {showForm ? <X size={15} /> : <Plus size={15} />}
+  {showForm ? "Fermer" : "Demander un congé"}
+</button>
 </div>
       {/* ── Stats rapides ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 22 }}>

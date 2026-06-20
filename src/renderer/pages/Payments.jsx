@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import PaymentModal from "../components/PaymentModal";
-import InvoiceGenerator from "../components/InvoiceGenerator";
+import InvoiceGenerator from "../components/Invoicegenerator";
 import { jsPDF } from "jspdf";
 import ConnexionImg from "../../assets/Connexion.png";
 import SmallCar from "../../assets/SmallCar.png";

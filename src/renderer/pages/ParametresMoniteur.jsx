@@ -6,6 +6,7 @@ import {
   User, Phone, Mail, Lock, Eye, EyeOff,
   Save, X, Check, ShieldCheck, AlertCircle,
 } from "lucide-react";
+import { MessageCircle } from "lucide-react";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 const getInitials = (prenom = "", nom = "") =>
@@ -121,6 +122,32 @@ const CategoryBadge = ({ cat }) => {
   const [showOld,  setShowOld]  = useState(false);
   const [showNew,  setShowNew]  = useState(false);
   const [showConf, setShowConf] = useState(false);
+  const [showContactModal, setShowContactModal] = useState(false);
+const [contactSujet, setContactSujet]         = useState("");
+const [contactMessage, setContactMessage]     = useState("");
+const [contactSending, setContactSending]     = useState(false);
+const [contactStatus, setContactStatus]       = useState(null);
+const handleSendContact = async () => {
+  if (!contactMessage.trim()) {
+    return setContactStatus({ type: "error", message: "Veuillez écrire un message." });
+  }
+  setContactSending(true);
+  const result = await window.electron.sendMessageAdmin({
+    moniteurId: currentUser.id,
+    sujet: contactSujet.trim(),
+    message: contactMessage.trim(),
+  });
+  setContactSending(false);
+
+  if (result.success) {
+    setContactStatus({ type: "success", message: "Message envoyé à l'administrateur !" });
+    setContactSujet("");
+    setContactMessage("");
+    setTimeout(() => { setShowContactModal(false); setContactStatus(null); }, 1500);
+  } else {
+    setContactStatus({ type: "error", message: result.message || "Erreur lors de l'envoi." });
+  }
+};
 
   // Feedback
   const [pwdStatus, setPwdStatus] = useState(null); // { type: 'success'|'error', message }
@@ -179,6 +206,7 @@ const CategoryBadge = ({ cat }) => {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
+     <>
     <div className="container">
       <div className="main">
 
@@ -290,15 +318,25 @@ const CategoryBadge = ({ cat }) => {
 </div>
 
               {/* Note */}
-              <div style={{
-                marginTop: 16, padding: "10px 14px",
-                background: "rgba(43,83,126,0.05)",
-                border: "1px solid rgba(43,83,126,0.12)",
-                borderRadius: 10, fontSize: 12, color: "#64748b",
-              }}>
-                💡 Pour modifier vos informations personnelles (nom, téléphone, email),
-                contactez l'administrateur de l'auto-école.
-              </div>
+             <div style={{
+  marginTop: 16, padding: "10px 14px",
+  background: "rgba(43,83,126,0.05)",
+  border: "1px solid rgba(43,83,126,0.12)",
+  borderRadius: 10, fontSize: 12, color: "#64748b",
+}}>
+  💡 Pour modifier vos informations personnelles (nom, téléphone, email), contactez l'administrateur de l'auto-école.
+  <button
+    onClick={() => setShowContactModal(true)}
+    style={{
+      display: "flex", alignItems: "center", gap: 6,
+      marginTop: 10, padding: "7px 14px", borderRadius: 8,
+      border: "1px solid #2b537e", background: "white",
+      color: "#2b537e", fontSize: 12, fontWeight: 700, cursor: "pointer",
+    }}
+  >
+    <MessageCircle size={13} /> Contacter l'administrateur
+  </button>
+</div>
             </div>
 
             {/* ── CARTE MOT DE PASSE ── */}
@@ -438,8 +476,102 @@ const CategoryBadge = ({ cat }) => {
           </div>
         )}
       </div>
+      
     </div>
+    {showContactModal && (
+  <div
+    style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
+    }}
+    onClick={(e) => e.target === e.currentTarget && setShowContactModal(false)}
+  >
+    <div style={{
+      background: "white", borderRadius: 16, width: 420, maxWidth: "94vw",
+      boxShadow: "0 20px 60px rgba(0,0,0,0.18)", overflow: "hidden",
+    }}>
+      <div style={{
+        background: "#2b537e", padding: "16px 20px",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+      }}>
+        <span style={{ color: "white", fontWeight: 700, fontSize: 15 }}>
+          Contacter l'administrateur
+        </span>
+        <button
+          onClick={() => setShowContactModal(false)}
+          style={{ background: "rgba(255,255,255,0.18)", border: "none", borderRadius: 7, width: 26, height: 26, cursor: "pointer" }}
+        >
+          <X size={14} color="white" />
+        </button>
+      </div>
+
+      <div style={{ padding: 20 }}>
+        <label style={{ fontSize: 12, fontWeight: 600, color: "#475569", display: "block", marginBottom: 6 }}>
+          Sujet (optionnel)
+        </label>
+        <input
+          type="text"
+          value={contactSujet}
+          onChange={e => setContactSujet(e.target.value)}
+          placeholder="Ex : Demande de modification de téléphone"
+          style={{
+            width: "100%", padding: "9px 12px", borderRadius: 9,
+            border: "1px solid #e2eaf6", fontSize: 13, outline: "none",
+            background: "#f8faff", marginBottom: 14, boxSizing: "border-box",
+          }}
+        />
+
+        <label style={{ fontSize: 12, fontWeight: 600, color: "#475569", display: "block", marginBottom: 6 }}>
+          Message
+        </label>
+        <textarea
+          value={contactMessage}
+          onChange={e => setContactMessage(e.target.value)}
+          placeholder="Écrivez votre message ici..."
+          rows={5}
+          style={{
+            width: "100%", padding: "9px 12px", borderRadius: 9,
+            border: "1px solid #e2eaf6", fontSize: 13, outline: "none",
+            background: "#f8faff", marginBottom: 14, boxSizing: "border-box",
+            fontFamily: "inherit", resize: "vertical",
+          }}
+        />
+
+        {contactStatus && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "9px 12px", borderRadius: 9, marginBottom: 14,
+            fontSize: 12, fontWeight: 500,
+            background: contactStatus.type === "success" ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)",
+            border: `1px solid ${contactStatus.type === "success" ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"}`,
+            color: contactStatus.type === "success" ? "#166534" : "#dc2626",
+          }}>
+            {contactStatus.type === "success" ? <Check size={14} /> : <AlertCircle size={14} />}
+            {contactStatus.message}
+          </div>
+        )}
+
+        <button
+          onClick={handleSendContact}
+          disabled={contactSending}
+          style={{
+            width: "100%", padding: "10px 0", borderRadius: 9, border: "none",
+            background: contactSending ? "#94a3b8" : "#2b537e",
+            color: "#fff", fontSize: 13, fontWeight: 700,
+            cursor: contactSending ? "not-allowed" : "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+          }}
+        >
+          <Save size={14} /> {contactSending ? "Envoi…" : "Envoyer le message"}
+        </button>
+      </div>
+    </div>
+  </div>
+)}</>
+    
+    
   );
+  
 };
 
 export default ParametresMoniteur;

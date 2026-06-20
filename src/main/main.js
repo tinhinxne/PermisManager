@@ -111,6 +111,57 @@ function buildSeanceEmailHtml({ prenomCandidat, nomCandidat, prenomMoniteur, nom
     </div>
   `;
 }
+const RAISON_LABELS = {
+  maladie:  "🤒 Maladie",
+  voyage:   "✈️ Voyage",
+  familial: "👨‍👩‍👧 Raison familiale",
+  autre:    "📋 Autre",
+};
+
+function buildCongeRequestEmailHtml({ prenom, nom, dateDebut, dateFin, raison, precision }) {
+  const raisonLabel = RAISON_LABELS[raison] || raison;
+  const titreRaison = raison === "autre" && precision ? precision : raisonLabel;
+
+  const fmt = (d) => new Date(d + "T12:00:00").toLocaleDateString("fr-FR", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric"
+  });
+
+  return `
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;">
+      <div style="background:#f97316;padding:24px;text-align:center;">
+        <h1 style="color:#fff;margin:0;font-size:20px;">🚗 Auto-École</h1>
+        <p style="color:#fed7aa;margin:6px 0 0;font-size:13px;">Nouvelle demande de congé</p>
+      </div>
+      <div style="padding:28px;">
+        <p style="color:#475569;font-size:15px;margin-bottom:20px;">
+          <strong>${prenom} ${nom}</strong> a soumis une demande de congé qui nécessite votre validation.
+        </p>
+        <div style="background:#F8FAFC;border-radius:10px;padding:20px;margin-bottom:20px;">
+          <table style="width:100%;border-collapse:collapse;">
+            <tr>
+              <td style="padding:8px 0;color:#64748b;font-size:13px;width:35%;">📋 Raison</td>
+              <td style="padding:8px 0;color:#0F172A;font-size:13px;font-weight:600;">${titreRaison}</td>
+            </tr>
+            <tr>
+              <td style="padding:8px 0;color:#64748b;font-size:13px;">📅 Début</td>
+              <td style="padding:8px 0;color:#0F172A;font-size:13px;font-weight:600;">${fmt(dateDebut)}</td>
+            </tr>
+            <tr>
+              <td style="padding:8px 0;color:#64748b;font-size:13px;">📅 Fin</td>
+              <td style="padding:8px 0;color:#0F172A;font-size:13px;font-weight:600;">${fmt(dateFin)}</td>
+            </tr>
+          </table>
+        </div>
+        <p style="color:#94A3B8;font-size:12px;">
+          Connectez-vous à l'application pour valider ou refuser cette demande depuis le tableau de bord ou la page Moniteurs.
+        </p>
+      </div>
+      <div style="background:#F1F5F9;padding:14px 28px;text-align:center;">
+        <p style="color:#94A3B8;font-size:11px;margin:0;">Auto-École — Ce message est envoyé automatiquement, merci de ne pas y répondre.</p>
+      </div>
+    </div>
+  `;
+}
 
 function generatePassword(length = 10) {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
@@ -1088,17 +1139,69 @@ ipcMain.handle("add-conge-moniteur", async (event, data) => {
 });
 
 // Moniteur soumet une demande (statut en_attente)
+// Moniteur soumet une demande (statut en_attente)
 ipcMain.handle("request-conge-moniteur", async (event, data) => {
+  console.log("📥 [1] request-conge-moniteur appelé avec:", data);   // ← AJOUT
+
   const { moniteurId, dateDebut, dateFin, raison, precision } = data;
+
   return new Promise((resolve) => {
     db.query(
       `INSERT INTO CongeMoniteur
         (moniteur_id, dateDebut, dateFin, raison, \`precision\`, statut, demande_par)
        VALUES (?, ?, ?, ?, ?, 'en_attente', 'moniteur')`,
       [moniteurId, dateDebut, dateFin, raison || "autre", precision || null],
-      (err, res) => {
-        if (err) { console.error("request-conge-moniteur:", err); resolve({ success: false, error: err.message }); }
-        else resolve({ success: true, id: res.insertId });
+      async (err, res) => {
+        if (err) {
+          console.error("❌ [2] Erreur INSERT CongeMoniteur:", err.message);   // ← AJOUT
+          return resolve({ success: false, error: err.message });
+        }
+
+        const congeId = res.insertId;
+        console.log("✅ [2] Congé inséré en BDD, id:", congeId);   // ← AJOUT
+
+        // Récupère le nom du moniteur pour personnaliser l'email admin
+        db.query(
+          `SELECT u.nom, u.prenom FROM Utilisateur u WHERE u.id = ?`,
+          [moniteurId],
+          async (err2, rows) => {
+            console.log("📋 [3] Résultat lookup moniteur:", { err2: err2?.message, rows });   // ← AJOUT
+
+            if (err2 || !rows.length) {
+              console.error("❌ [3] Erreur ou moniteur introuvable, id:", moniteurId);   // ← AJOUT
+              return resolve({ success: true, id: congeId });
+            }
+
+            const moniteur = rows[0];
+            console.log("👤 [4] Moniteur trouvé:", moniteur);   // ← AJOUT
+
+            try {
+              console.log("📤 [5] Tentative envoi email à tinhinanethequeen@gmail.com...");   // ← AJOUT
+
+              const infoMail = await transporter.sendMail({
+                from: '"Auto-École 🚗" <tinhinanethequeen@gmail.com>',
+                to: "tinhinanethequeen@gmail.com",
+                subject: `Nouvelle demande de congé — ${moniteur.prenom} ${moniteur.nom}`,
+                html: buildCongeRequestEmailHtml({
+                  prenom: moniteur.prenom,
+                  nom: moniteur.nom,
+                  dateDebut,
+                  dateFin,
+                  raison: raison || "autre",
+                  precision: precision || "",
+                }),
+              });
+
+              console.log("✅ [6] Email envoyé avec succès ! Réponse SMTP:", infoMail.response);   // ← AJOUT
+
+            } catch (emailErr) {
+              console.error("❌ [6] ÉCHEC envoi email demande congé:", emailErr.message);   // ← AJOUT (déjà existant, juste plus visible)
+              console.error("❌ [6] Détail complet erreur:", emailErr);   // ← AJOUT
+            }
+
+            resolve({ success: true, id: congeId });
+          }
+        );
       }
     );
   });
@@ -1160,6 +1263,52 @@ ipcMain.handle("refuser-conge-moniteur", async (event, congeId, motif) => {
       (err) => {
         if (err) { console.error("refuser-conge-moniteur:", err); resolve({ success: false }); }
         else resolve({ success: true });
+      }
+    );
+  });
+});
+ipcMain.handle("send-message-admin", async (event, { moniteurId, sujet, message }) => {
+  return new Promise((resolve) => {
+    db.query(
+      `SELECT u.nom, u.prenom, u.mail FROM Utilisateur u WHERE u.id = ?`,
+      [moniteurId],
+      async (err, rows) => {
+        if (err || !rows.length) {
+          return resolve({ success: false, message: "Profil moniteur introuvable." });
+        }
+
+        const moniteur = rows[0];
+        const html = `
+          <div style="font-family:sans-serif;max-width:480px;margin:auto;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;">
+            <div style="background:#2b537e;padding:24px;text-align:center;">
+              <h1 style="color:#fff;margin:0;font-size:20px;">🚗 Auto-École</h1>
+              <p style="color:#c7d7f0;margin:6px 0 0;font-size:13px;">Message d'un moniteur</p>
+            </div>
+            <div style="padding:28px;">
+              <p style="color:#475569;font-size:15px;margin-bottom:16px;">
+                <strong>${moniteur.prenom} ${moniteur.nom}</strong> (${moniteur.mail}) vous a envoyé un message :
+              </p>
+              <div style="background:#F8FAFC;border-radius:10px;padding:20px;color:#1e293b;font-size:14px;line-height:1.7;white-space:pre-wrap;">${message}</div>
+              <p style="color:#94A3B8;font-size:12px;margin-top:20px;">
+                Vous pouvez répondre directement à ce moniteur à l'adresse ${moniteur.mail}.
+              </p>
+            </div>
+          </div>
+        `;
+
+        try {
+          await transporter.sendMail({
+            from: '"Auto-École 🚗" <tinhinanethequeen@gmail.com>',
+            to: "tinhinanethequeen@gmail.com",
+            replyTo: moniteur.mail,
+            subject: sujet || `Message de ${moniteur.prenom} ${moniteur.nom}`,
+            html,
+          });
+          resolve({ success: true });
+        } catch (emailErr) {
+          console.error("Erreur envoi message admin:", emailErr.message);
+          resolve({ success: false, message: "Erreur lors de l'envoi." });
+        }
       }
     );
   });

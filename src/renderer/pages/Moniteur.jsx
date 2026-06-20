@@ -102,7 +102,7 @@ const CongeQuickModal = ({ moniteur, onClose }) => {
       }}>
         {/* Header */}
         <div style={{
-          background: "linear-gradient(135deg, #f97316, #fb923c)",
+          background: "linear-gradient(135deg, #2b537e, #3a6da0)",
           padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
@@ -129,11 +129,11 @@ const CongeQuickModal = ({ moniteur, onClose }) => {
             {conges.length === 0 ? (
               <div style={{ textAlign: "center", padding: "26px 0", color: "#94a3b8", fontSize: 12 }}>
                 <div style={{
-                  width: 48, height: 48, borderRadius: "50%", background: "#fff7ed",
+                  width: 48, height: 48, borderRadius: "50%", background: "#f0f5fa",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   margin: "0 auto 8px",
                 }}>
-                  <CalendarOff size={22} color="#fdba74" strokeWidth={2} />
+                  <CalendarOff size={22} color="#90b4d6" strokeWidth={2} />
                 </div>
                 Aucun congé enregistré pour ce moniteur
               </div>
@@ -293,7 +293,7 @@ const CongeQuickModal = ({ moniteur, onClose }) => {
                   onClick={handleAdd}
                   style={{
                     flex: 2, padding: "7px", borderRadius: 7, border: "none",
-                    background: "#f97316", color: "white",
+                    background: "#2b537e", color: "white",
                     fontSize: 12, fontWeight: 700, cursor: "pointer",
                     display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
                   }}
@@ -307,8 +307,8 @@ const CongeQuickModal = ({ moniteur, onClose }) => {
               onClick={() => setShowForm(true)}
               style={{
                 width: "100%", padding: "8px", borderRadius: 8,
-                border: "1.5px dashed #fed7aa", background: "#fff7ed",
-                color: "#f97316", fontWeight: 600, fontSize: 12,
+                border: "1.5px dashed #c3d6e8", background: "#f0f5fa",
+                color: "#2b537e", fontWeight: 600, fontSize: 12,
                 cursor: "pointer", display: "flex", alignItems: "center",
                 justifyContent: "center", gap: 6,
               }}
@@ -576,7 +576,7 @@ const Moniteur = () => {
                 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                     <div style={{ fontSize: 13 }}>
-                      <strong style={{ color: "#1e293b" }}>{d.prenom} {d.nom}</strong>
+                      <strong style={{ color: "#1e293b" }}>{d.moniteurNom}</strong>
                       <span style={{ color: "#64748b" }}>
                         {" "}— {formatDate(d.dateDebut)} → {formatDate(d.dateFin)}
                         {" "}({d.raison === "autre" && d.precision ? d.precision : d.raison})

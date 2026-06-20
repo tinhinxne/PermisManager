@@ -11,6 +11,8 @@ import { useRulesCtx }        from "../context/RulesContext";
 import { usePermissionsCtx }  from "../context/PermissionsContext";
 import { useExamenRulesCtx }  from "../context/ExamenRulesContext";
 import ModalConges            from "../components/ModalConges";
+import { useLocation } from "react-router-dom";
+
 
 /* ─── COMPOSANTS RÉUTILISABLES ─────────────────────────────────────────── */
 const Toggle = ({ value, onChange }) => (
@@ -148,6 +150,7 @@ const ModalMoniteurs = ({ onClose }) => {
     { key: "CAN_TOGGLE_STATUS",       icon: "✅", label: "Peut modifier le résultat d'examen" },
     { key: "CAN_REMOVE_CANDIDAT",     icon: "🗑️", label: "Peut supprimer un candidat" },
     { key: "CAN_VIEW_ALL_CANDIDATES", icon: "👥", label: "Peut voir tous les candidats" },
+      { key: "CAN_REQUEST_CONGE",       icon: "📋", label: "Peut demander un congé" },
   ];
 
   useEffect(() => {
@@ -312,6 +315,13 @@ const ModalInscription = ({ onClose }) => {
 const Parametres = () => {
   const [activeModal,    setActiveModal]    = useState(null);
   const [savedSections,  setSavedSections]  = useState([]);
+  const location = useLocation();
+
+useEffect(() => {
+  if (location.state?.openModal) {
+    setActiveModal(location.state.openModal);
+  }
+}, [location.state]);
 
   const sections = [
     {
