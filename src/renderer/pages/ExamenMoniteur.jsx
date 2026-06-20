@@ -57,6 +57,14 @@ const ExamensMoniteur = () => {
   const [lastGenerated, setLastGenerated] = useState(null);
   const [mesCandidatIds, setMesCandidatIds] = useState([]);
 
+
+
+  const STATUS_LABELS = {
+  Tous: "Tous",
+  Scheduled: "Programmé",
+  Passed: "Réussi",
+  Failed: "Échoué",
+};
   const STATUS_CONFIG = {
     Scheduled: { bg: "#e3f2fd", color: "#1565c0", label: "Programmé" },
     Passed:    { bg: "#e8f5e9", color: "#2e7d32", label: "Réussi"    },
@@ -201,7 +209,7 @@ const ExamensMoniteur = () => {
         <div className="examens-filters">
           <SelectFilter
             value={statusFilter} onChange={setStatusFilter}
-            options={["Tous", "Scheduled", "Passed", "Failed"]}
+            options={["Tous", "Scheduled", "Passed", "Failed"].map(v => ({ value: v, label: STATUS_LABELS[v] }))}
             label="Filtrer par Statut"
           />
           <SelectFilter
