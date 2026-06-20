@@ -54,15 +54,12 @@ const crypto = require("crypto");
 const { registerMoniteurHandlers } = require('./moniteurHandlers');
 const { registerAdminHandlers } = require('./adminHandlers');
 
-<<<<<<< HEAD
-=======
 const { generatePDFFromHTML } = require("./pdfGenerator");
 const { buildListeCandidatsHTML } = require("./templates/listeCandidatsTemplate");
  
 
 
 
->>>>>>> origin/amina
 // ── CONFIG EMAIL ─────────────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
   service: "gmail",
