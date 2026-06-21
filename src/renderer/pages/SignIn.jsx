@@ -230,18 +230,18 @@ const [lockMinutes, setLockMinutes] = useState(0);
       )}
       {/* ── Images de fond ── */}
       <img
-        src="../../assets/Car.png"
-        alt=""
-        aria-hidden="true"
-        className="signin-page__bg-image signin-page__bg-image--instructor"
-      />
+  src={CarImage}
+  alt=""
+  aria-hidden="true"
+  className="signin-page__bg-image signin-page__bg-image--instructor"
+/>
 
-      <img
-        src="../../assets/Car.png"
-        alt=""
-        aria-hidden="true"
-        className="signin-page__bg-image signin-page__bg-image--car"
-      />
+<img
+  src={CarImage}
+  alt=""
+  aria-hidden="true"
+  className="signin-page__bg-image signin-page__bg-image--car"
+/>
 
       {/* ── Carte de connexion ── */}
       <div className="signin-card">

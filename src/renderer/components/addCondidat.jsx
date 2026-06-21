@@ -66,6 +66,15 @@ const validateEmail = (email) => {
   return { valid: true, msg: "" };
 };
 
+// ── Validation du nom arabe : autorise lettres arabes, espaces, tirets ───────
+const validateArabicText = (text, fieldLabel) => {
+  if (!text || !text.trim()) return { valid: true, msg: "" }; // optionnel, donc vide = ok
+  const arabicRegex = /^[\u0600-\u06FF\s'-]+$/;
+  if (!arabicRegex.test(text.trim()))
+    return { valid: false, msg: `${fieldLabel} doit être saisi en caractères arabes uniquement.` };
+  return { valid: true, msg: "" };
+};
+
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ACCEPTED_TYPES = ["application/pdf", "image/jpeg", "image/png"];
 const ACCEPTED_EXTS  = ".pdf,.jpg,.jpeg,.png";
@@ -155,6 +164,7 @@ const css = `
   .field { display: flex; flex-direction: column; gap: 5px; }
   .field label { font-size: 12.5px; font-weight: 600; color: var(--gray-600); }
   .field label .req { color: var(--red); margin-left: 2px; }
+  .field label .opt { color: var(--gray-400); font-weight: 500; font-style: italic; margin-left: 4px; }
 
   .field input[type="text"],
   .field input[type="date"],
@@ -168,12 +178,19 @@ const css = `
   .field input:focus, .field select:focus { border-color: var(--blue);   background: #fff; }
   .field input.input-error, .field select.input-error { border-color: var(--red);    background: var(--red-light); }
   .field input.input-warning { border-color: var(--orange); background: var(--orange-light); }
+  .field input.input-arabic {
+    direction: rtl; text-align: right; font-family: 'Sora', 'Tahoma', sans-serif;
+  }
 
   .field-error {
     font-size: 11.5px; color: var(--red); font-weight: 500;
     display: flex; align-items: center; gap: 4px; margin-top: 1px;
   }
   .field-error::before { content: "⚠"; font-size: 11px; }
+
+  .field-hint {
+    font-size: 11px; color: var(--gray-400); margin-top: 1px;
+  }
 
   .row-2 { display: flex; gap: 12px; }
   .row-2 .field { flex: 1; }
@@ -258,7 +275,8 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
   const isEdit = !!candidat;
   const { inscriptionRules } = useRulesCtx();
 
-  const emptyForm = { nom: "", prenom: "", dob: "", inscription: "", tel: "", sexe: "", email: "", categoriePermis: "" };
+  // ── AJOUT : nom_ar / prenom_ar dans le formulaire ─────────────────────────
+  const emptyForm = { nom: "", prenom: "", nom_ar: "", prenom_ar: "", dob: "", inscription: "", tel: "", sexe: "", email: "", categoriePermis: "" };
   const [form, setForm]           = useState(emptyForm);
   const [errors, setErrors]       = useState({});
   const [touched, setTouched]     = useState({});
@@ -277,6 +295,13 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
 
     if (!f.nom.trim())    errs.nom    = "Le nom est requis.";
     if (!f.prenom.trim()) errs.prenom = "Le prénom est requis.";
+
+    // ── AJOUT : validation des champs arabes (optionnels mais doivent être en arabe si remplis) ──
+    const nomArCheck = validateArabicText(f.nom_ar, "Le nom en arabe");
+    if (!nomArCheck.valid) errs.nom_ar = nomArCheck.msg;
+
+    const prenomArCheck = validateArabicText(f.prenom_ar, "Le prénom en arabe");
+    if (!prenomArCheck.valid) errs.prenom_ar = prenomArCheck.msg;
 
 // ICI QUE JAI MODIFIE (MELISSA)
     if (!f.dob) {
@@ -371,6 +396,8 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
         setForm({
           nom:         candidat.nom         || "",
           prenom:      candidat.prenom      || "",
+          nom_ar:      candidat.nom_ar      || "",
+          prenom_ar:   candidat.prenom_ar   || "",
           dob:         candidat.date_naissance ? new Date(candidat.date_naissance).toISOString().split("T")[0] : "",
           inscription: candidat.date_inscription ? new Date(candidat.date_inscription).toISOString().split("T")[0] : "",
           tel:         candidat.telephone    || "",
@@ -380,13 +407,13 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
         });
       } else {
         const today = new Date().toISOString().split("T")[0];
-        setForm({ nom: "", prenom: "", dob: "", inscription: today, tel: "", sexe: "", email: "", categoriePermis: "" });
+        setForm({ nom: "", prenom: "", nom_ar: "", prenom_ar: "", dob: "", inscription: today, tel: "", sexe: "", email: "", categoriePermis: "" });
       }
     }
   }, [candidat, showModal]);
 
   const handleSave = () => {
-    const allTouched = { nom: true, prenom: true, dob: true, inscription: true, tel: true, sexe: true, email: true, parentFile: true, categoriePermis: true };
+    const allTouched = { nom: true, prenom: true, nom_ar: true, prenom_ar: true, dob: true, inscription: true, tel: true, sexe: true, email: true, parentFile: true, categoriePermis: true };
     setTouched(allTouched);
     
     const errs = validate();
@@ -398,6 +425,8 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
       idCandidat:            candidat?.idCandidat,
       nom:                   form.nom,
       prenom:                form.prenom,
+      nom_ar:                form.nom_ar    || null,
+      prenom_ar:             form.prenom_ar || null,
       telephone:             form.tel,
       date_naissance:        form.dob,
       date_inscription:      form.inscription,
@@ -459,6 +488,23 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
               {touched.nom && errors.nom && <span className="field-error">{errors.nom}</span>}
             </div>
 
+            {/* Nom en arabe — AJOUT */}
+            <div className="field">
+              <label>الاسم (nom en arabe) <span className="opt">— pour les documents officiels</span></label>
+              <input
+                type="text"
+                dir="rtl"
+                placeholder="مثال: بنعلي"
+                value={form.nom_ar}
+                className={`input-arabic ${touched.nom_ar && errors.nom_ar ? "input-error" : ""}`}
+                onChange={(e) => handleChange("nom_ar", e.target.value)}
+                onBlur={() => handleBlur("nom_ar")}
+              />
+              {touched.nom_ar && errors.nom_ar
+                ? <span className="field-error">{errors.nom_ar}</span>
+                : <span className="field-hint">Utilisé pour les listes d'examen et documents administratifs en arabe.</span>}
+            </div>
+
             {/* Prénom */}
             <div className="field">
               <label>Prénom du candidat <span className="req">*</span></label>
@@ -466,21 +512,34 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
               {touched.prenom && errors.prenom && <span className="field-error">{errors.prenom}</span>}
             </div>
 
+            {/* Prénom en arabe — AJOUT */}
+            <div className="field">
+              <label>الاسم الأول (prénom en arabe) <span className="opt">— pour les documents officiels</span></label>
+              <input
+                type="text"
+                dir="rtl"
+                placeholder="مثال: محمد"
+                value={form.prenom_ar}
+                className={`input-arabic ${touched.prenom_ar && errors.prenom_ar ? "input-error" : ""}`}
+                onChange={(e) => handleChange("prenom_ar", e.target.value)}
+                onBlur={() => handleBlur("prenom_ar")}
+              />
+              {touched.prenom_ar && errors.prenom_ar && <span className="field-error">{errors.prenom_ar}</span>}
+            </div>
+
             {/* Dates */}
             <div className="row-2">
               <div className="field">
                 <label>Date de naissance <span className="req">*</span></label>
-                {/* <input type="date" value={form.dob} className={(touched.dob && errors.dob) ? "input-error" : blocked ? "input-error" : needsParent ? "input-warning" : ""} onChange={(e) => handleChange("dob", e.target.value)} onBlur={() => handleBlur("dob")} > */}
-
                 <input
-  type="date"
-  min={`${new Date().getFullYear() - 100}-01-01`}
-  max={new Date().toISOString().split("T")[0]}
-  value={form.dob}
- className={(touched.dob && errors.dob) ? "input-error" : blocked ? "input-error" : needsParent ? "input-warning" : ""}
-  onChange={(e) => handleChange("dob", e.target.value)}
-  onBlur={() => handleBlur("dob")}
-/>
+                  type="date"
+                  min={`${new Date().getFullYear() - 100}-01-01`}
+                  max={new Date().toISOString().split("T")[0]}
+                  value={form.dob}
+                  className={(touched.dob && errors.dob) ? "input-error" : blocked ? "input-error" : needsParent ? "input-warning" : ""}
+                  onChange={(e) => handleChange("dob", e.target.value)}
+                  onBlur={() => handleBlur("dob")}
+                />
                 {touched.dob && errors.dob && <span className="field-error">{errors.dob}</span>}
               </div>
               <div className="field">

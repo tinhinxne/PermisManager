@@ -36,6 +36,29 @@ db.query(`
   }
 });
 
+// ── SÉCURISATION : colonnes nom_ar / prenom_ar pour le nom en arabe ────────
+db.query(`
+  ALTER TABLE Candidat
+  ADD COLUMN nom_ar VARCHAR(150) NULL
+`, (err) => {
+  if (err) {
+    console.log("ℹ️ Colonne 'nom_ar' déjà présente sur Candidat (ou erreur ignorée) :", err.code || err.message);
+  } else {
+    console.log("✅ Colonne 'nom_ar' ajoutée avec succès à la table Candidat !");
+  }
+});
+
+db.query(`
+  ALTER TABLE Candidat
+  ADD COLUMN prenom_ar VARCHAR(150) NULL
+`, (err) => {
+  if (err) {
+    console.log("ℹ️ Colonne 'prenom_ar' déjà présente sur Candidat (ou erreur ignorée) :", err.code || err.message);
+  } else {
+    console.log("✅ Colonne 'prenom_ar' ajoutée avec succès à la table Candidat !");
+  }
+});
+
 // ── SÉCURISATION : colonne categories_habilitees pour les moniteurs ────────
 db.query(`
   ALTER TABLE Moniteur 
@@ -73,8 +96,7 @@ const { registerAdminHandlers } = require('./adminHandlers');
 const { generatePDFFromHTML } = require("./pdfGenerator");
 const { buildListeCandidatsHTML } = require("./templates/listeCandidatsTemplate");
  
-
-
+const { buildListeEnvoiHTML } = require("./templates/listeEnvoiTemplate");
 
 // ── CONFIG EMAIL ─────────────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
@@ -127,6 +149,7 @@ function buildSeanceEmailHtml({ prenomCandidat, nomCandidat, prenomMoniteur, nom
     </div>
   `;
 }
+
 const RAISON_LABELS = {
   maladie:  "🤒 Maladie",
   voyage:   "✈️ Voyage",
@@ -239,7 +262,7 @@ function buildLockoutEmailHtml({ prenom, nom, dateDeblocage }) {
     </div>
   `;
 }
-    
+
 
 // ── FENÊTRE ──────────────────────────────────────────────────────────────────
 function createWindow() {
@@ -250,7 +273,7 @@ function createWindow() {
       preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
       contextIsolation: true,
       nodeIntegration: false,
-      plugins:true
+      plugins: true
     },
   });
   mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
@@ -477,7 +500,7 @@ ipcMain.handle("get-candidats", async () => {
 });
 
 ipcMain.handle("add-candidat", async (event, data) => {
-  const { nom, prenom, telephone, date_naissance, sexe, photo, statut, email } = data;
+  const { nom, prenom, nom_ar, prenom_ar, telephone, date_naissance, sexe, photo, statut, email } = data;
 
   let categoriePermis = 'B';
   if (data.categoriePermis && data.categoriePermis.trim() !== "") {
@@ -490,11 +513,15 @@ ipcMain.handle("add-candidat", async (event, data) => {
   }
 
   const sql = `
-    INSERT INTO Candidat (nom, prenom, telephone, date_naissance, date_inscription, sexe, photo, statut, email, categoriePermis)
-    VALUES (?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?)
+    INSERT INTO Candidat (nom, prenom, nom_ar, prenom_ar, telephone, date_naissance, date_inscription, sexe, photo, statut, email, categoriePermis)
+    VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?)
   `;
   return new Promise((resolve) => {
-    db.query(sql, [nom, prenom, telephone, date_naissance || null, sexe, photoBuffer, statut, email || null, categoriePermis], (err) => {
+    db.query(sql, [
+      nom, prenom,
+      nom_ar || null, prenom_ar || null,
+      telephone, date_naissance || null, sexe, photoBuffer, statut, email || null, categoriePermis
+    ], (err) => {
       if (err) { console.error('add-candidat error:', err); resolve(false); }
       else resolve(true);
     });
@@ -510,11 +537,13 @@ ipcMain.handle("update-candidat", async (event, c) => {
     }
 
     const sql = `UPDATE Candidat 
-      SET nom=?, prenom=?, telephone=?, date_naissance=?, sexe=?, photo=?, statut=?, email=?, categoriePermis=?
+      SET nom=?, prenom=?, nom_ar=?, prenom_ar=?, telephone=?, date_naissance=?, sexe=?, photo=?, statut=?, email=?, categoriePermis=?
       WHERE idCandidat=?`;
     db.query(sql, [
       c.nom,
       c.prenom,
+      c.nom_ar    || null,
+      c.prenom_ar || null,
       c.telephone     || null,
       c.date_naissance && c.date_naissance !== "" ? c.date_naissance : null,
       c.sexe,
@@ -1236,9 +1265,8 @@ ipcMain.handle("add-conge-moniteur", async (event, data) => {
 });
 
 // Moniteur soumet une demande (statut en_attente)
-// Moniteur soumet une demande (statut en_attente)
 ipcMain.handle("request-conge-moniteur", async (event, data) => {
-  console.log("📥 [1] request-conge-moniteur appelé avec:", data);   // ← AJOUT
+  console.log("📥 [1] request-conge-moniteur appelé avec:", data);
 
   const { moniteurId, dateDebut, dateFin, raison, precision } = data;
 
@@ -1250,30 +1278,30 @@ ipcMain.handle("request-conge-moniteur", async (event, data) => {
       [moniteurId, dateDebut, dateFin, raison || "autre", precision || null],
       async (err, res) => {
         if (err) {
-          console.error("❌ [2] Erreur INSERT CongeMoniteur:", err.message);   // ← AJOUT
+          console.error("❌ [2] Erreur INSERT CongeMoniteur:", err.message);
           return resolve({ success: false, error: err.message });
         }
 
         const congeId = res.insertId;
-        console.log("✅ [2] Congé inséré en BDD, id:", congeId);   // ← AJOUT
+        console.log("✅ [2] Congé inséré en BDD, id:", congeId);
 
         // Récupère le nom du moniteur pour personnaliser l'email admin
         db.query(
           `SELECT u.nom, u.prenom FROM Utilisateur u WHERE u.id = ?`,
           [moniteurId],
           async (err2, rows) => {
-            console.log("📋 [3] Résultat lookup moniteur:", { err2: err2?.message, rows });   // ← AJOUT
+            console.log("📋 [3] Résultat lookup moniteur:", { err2: err2?.message, rows });
 
             if (err2 || !rows.length) {
-              console.error("❌ [3] Erreur ou moniteur introuvable, id:", moniteurId);   // ← AJOUT
+              console.error("❌ [3] Erreur ou moniteur introuvable, id:", moniteurId);
               return resolve({ success: true, id: congeId });
             }
 
             const moniteur = rows[0];
-            console.log("👤 [4] Moniteur trouvé:", moniteur);   // ← AJOUT
+            console.log("👤 [4] Moniteur trouvé:", moniteur);
 
             try {
-              console.log("📤 [5] Tentative envoi email à tinhinanethequeen@gmail.com...");   // ← AJOUT
+              console.log("📤 [5] Tentative envoi email à tinhinanethequeen@gmail.com...");
 
               const infoMail = await transporter.sendMail({
                 from: '"Auto-École 🚗" <tinhinanethequeen@gmail.com>',
@@ -1289,11 +1317,11 @@ ipcMain.handle("request-conge-moniteur", async (event, data) => {
                 }),
               });
 
-              console.log("✅ [6] Email envoyé avec succès ! Réponse SMTP:", infoMail.response);   // ← AJOUT
+              console.log("✅ [6] Email envoyé avec succès ! Réponse SMTP:", infoMail.response);
 
             } catch (emailErr) {
-              console.error("❌ [6] ÉCHEC envoi email demande congé:", emailErr.message);   // ← AJOUT (déjà existant, juste plus visible)
-              console.error("❌ [6] Détail complet erreur:", emailErr);   // ← AJOUT
+              console.error("❌ [6] ÉCHEC envoi email demande congé:", emailErr.message);
+              console.error("❌ [6] Détail complet erreur:", emailErr);
             }
 
             resolve({ success: true, id: congeId });
@@ -1364,6 +1392,7 @@ ipcMain.handle("refuser-conge-moniteur", async (event, congeId, motif) => {
     );
   });
 });
+
 ipcMain.handle("send-message-admin", async (event, { moniteurId, sujet, message }) => {
   return new Promise((resolve) => {
     db.query(
@@ -1512,4 +1541,10 @@ ipcMain.handle("send-rappel-paiement", async (event, data) => {
     console.error("Erreur envoi rappel paiement:", err.message);
     return { success: false, error: err.message };
   }
+});
+ipcMain.handle("generate-liste-envoi-pdf", async (event, data) => {
+  const html = buildListeEnvoiHTML(data);
+  const fileName = `liste_envoi_${(data.dateDepot || "").replace(/\//g, "-")}.pdf`;
+  const savedPath = await generatePDFFromHTML(html, fileName);
+  return savedPath;
 });
