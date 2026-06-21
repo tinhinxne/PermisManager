@@ -64,6 +64,13 @@ const Examens = () => {
     }
   }, []);
 
+  const STATUS_LABELS = {
+  Tous: "Tous",
+  Scheduled: "Programmé",
+  Passed: "Réussi",
+  Failed: "Échoué",
+};
+
   const STATUS_CONFIG = {
     Scheduled: { bg: "#e3f2fd", color: "#1565c0", label: "Programmé" },
     Passed:    { bg: "#e8f5e9", color: "#2e7d32", label: "Réussi"    },
@@ -279,7 +286,7 @@ const Examens = () => {
 
         {/* Filtres */}
         <div className="examens-filters">
-          <SelectFilter value={statusFilter} onChange={setStatusFilter} options={["Tous", "Scheduled", "Passed", "Failed"]} label="Filtrer par Statut" />
+         <SelectFilter value={statusFilter} onChange={setStatusFilter} options={["Tous", "Scheduled", "Passed", "Failed"].map(v => ({ value: v, label: STATUS_LABELS[v] }))} label="Filtrer par Statut"/>
           <SelectFilter value={typeFilter}   onChange={setTypeFilter}   options={["Tous", "Code", "Créneau", "Circulation"]} label="Type d'examen" />
         </div>
 
