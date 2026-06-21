@@ -250,6 +250,7 @@ function createWindow() {
       preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
       contextIsolation: true,
       nodeIntegration: false,
+      plugins:true
     },
   });
   mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
@@ -1476,4 +1477,39 @@ ipcMain.handle("generate-liste-candidats-pdf", async (event, data) => {
   const fileName = `liste_candidats_${(data.dateExamen || "").replace(/\//g, "-")}.pdf`;
   const savedPath = await generatePDFFromHTML(html, fileName);
   return savedPath; // null si l'utilisateur a annulé, sinon le chemin du fichier
+});
+
+function buildRappelEmailHtml({ nomCandidat, montantRestant, montantTotal, telephone, messagePersonnalise }) {
+  const message = messagePersonnalise || `Un solde de ${montantRestant} DA reste à régler sur votre dossier de formation.`;
+  return `
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;">
+      <div style="background:#f97316;padding:24px;text-align:center;">
+        <h1 style="color:#fff;margin:0;font-size:20px;">🚗 Auto-École</h1>
+        <p style="color:#fed7aa;margin:6px 0 0;font-size:13px;">Rappel de paiement</p>
+      </div>
+      <div style="padding:28px;">
+        <p style="color:#475569;white-space:pre-line;margin-bottom:20px;">${message}</p>
+        <div style="background:#F1F5F9;border-radius:8px;padding:16px;">
+          <p style="margin:4px 0;color:#475569;"><strong>Reste à payer :</strong> ${montantRestant} DA / ${montantTotal} DA</p>
+          <p style="margin:4px 0;color:#475569;"><strong>Téléphone :</strong> ${telephone}</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+ipcMain.handle("send-rappel-paiement", async (event, data) => {
+  const { email, nomCandidat, montantRestant, montantTotal, telephone, messagePersonnalise } = data;
+  try {
+    await transporter.sendMail({
+      from: '"Auto-École 🚗" <tinhinanethequeen@gmail.com>',
+      to: email,
+      subject: "Rappel de paiement – Auto-École",
+      html: buildRappelEmailHtml({ nomCandidat, montantRestant, montantTotal, telephone, messagePersonnalise }),
+    });
+    return { success: true };
+  } catch (err) {
+    console.error("Erreur envoi rappel paiement:", err.message);
+    return { success: false, error: err.message };
+  }
 });

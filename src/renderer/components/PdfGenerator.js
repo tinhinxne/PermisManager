@@ -111,11 +111,11 @@ function dessinerCarteCandidat(doc, candidat, yStart) {
   doc.setFontSize(8.5);
   doc.setTextColor(100, 116, 139);
 
-  const infos = [
-    candidat.telephone  ? `📞 ${candidat.telephone}` : null,
-    candidat.email      ? `✉  ${candidat.email}`     : null,
-    candidat.idCandidat ? `ID : ${candidat.idCandidat}` : null,
-  ].filter(Boolean);
+const infos = [
+  candidat.telephone  ? `Tél : ${candidat.telephone}` : null,
+  candidat.email      ? `Email : ${candidat.email}`   : null,
+  candidat.idCandidat ? `ID : ${candidat.idCandidat}` : null,
+].filter(Boolean);
 
   infos.forEach((info, i) => {
     doc.text(info, 20 + i * 62, yStart + 19);
@@ -315,7 +315,7 @@ export function telechargerRecuPDF(versement, candidat, autoecole = {}) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(22, 101, 52);
-    doc.text('✔ Dossier entièrement soldé — Félicitations !', w / 2, y + 8, { align: 'center' });
+    doc.text('Dossier entièrement soldé — Félicitations !', w / 2, y + 8, { align: 'center' });
   }
 
   // Signature
@@ -448,7 +448,7 @@ export function telechargerHistoriquePDF(candidat, versements, autoecole = {}) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(185, 28, 28);
-    doc.text(`⚠ Solde restant : ${fDA(reste)}`, w / 2, y + 8, { align: 'center' });
+    doc.text(`Solde restant : ${fDA(reste)}`, w / 2, y + 8, { align: 'center' });
   }
 
   dessinerPiedDePage(doc, `Historique paiements — ${candidat.prenom} ${candidat.nom} — ${autoecole.nom || 'Auto-École'}`);
