@@ -97,7 +97,6 @@ const { generatePDFFromHTML } = require("./pdfGenerator");
 const { buildListeCandidatsHTML } = require("./templates/listeCandidatsTemplate");
 const { buildListeEnvoiHTML } = require("./templates/listeEnvoiTemplate");
  
-const { buildListeEnvoiHTML } = require("./templates/listeEnvoiTemplate");
 
 // ── CONFIG EMAIL ─────────────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
@@ -1572,9 +1571,9 @@ ipcMain.handle("send-rappel-paiement", async (event, data) => {
     return { success: false, error: err.message };
   }
 });
-ipcMain.handle("generate-liste-envoi-pdf", async (event, data) => {
-  const html = buildListeEnvoiHTML(data);
-  const fileName = `liste_envoi_${(data.dateDepot || "").replace(/\//g, "-")}.pdf`;
-  const savedPath = await generatePDFFromHTML(html, fileName);
-  return savedPath;
-});
+// ipcMain.handle("generate-liste-envoi-pdf", async (event, data) => {
+//   const html = buildListeEnvoiHTML(data);
+//   const fileName = `liste_envoi_${(data.dateDepot || "").replace(/\//g, "-")}.pdf`;
+//   const savedPath = await generatePDFFromHTML(html, fileName);
+//   return savedPath;
+// });

@@ -117,6 +117,7 @@ function genererRecuPDF(versement, candidat) {
 }
 
 function genererHistoriquePDF(candidat, versements) {
+  versements = versements || [];
   const doc       = new jsPDF({ unit: "mm", format: "a4" });
   const W         = doc.internal.pageSize.getWidth();
   const totalPaye = versements.reduce((s, v) => s + Number(v.montant || 0), 0);
@@ -361,13 +362,10 @@ function ExportModal({ fiches, onClose }) {
   const [selectedIds,   setSelectedIds]   = useState(new Set());
   const [selectAll,     setSelectAll]     = useState(false);
   const [format,        setFormat]        = useState("pdf");
+  const [step,          setStep]          = useState("form");
+  const [previewDoc,    setPreviewDoc]    = useState(null);
+  const [previewUrl,    setPreviewUrl]    = useState(null);
 
-  // ── NOUVEAU : étape d'aperçu avant export final ──────────────────────────
-  const [step,        setStep]        = useState("form"); // "form" | "preview"
-  const [previewDoc,  setPreviewDoc]  = useState(null);   // instance jsPDF
-  const [previewUrl,  setPreviewUrl]  = useState(null);   // blob url pour l'iframe
-
-  // Nettoie l'URL blob quand elle change ou que la modale se ferme (évite les fuites mémoire)
   useEffect(() => {
     return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
   }, [previewUrl]);
@@ -417,17 +415,13 @@ function ExportModal({ fiches, onClose }) {
     }).length;
   }, 0);
 
-  // ── Étape 1 → Étape 2 : génère le PDF et l'affiche en aperçu ────────────
   const handlePreview = () => {
     if (fichesExport.length === 0 || nbVersementsExport === 0) return;
-
-    // Le CSV n'a pas d'aperçu visuel pertinent : export direct dans ce cas précis
     if (format === "csv") {
       exporterCSV(fichesExport, dateDebut, dateFin);
       onClose();
       return;
     }
-
     const doc = genererRapportGroupePDF(fichesExport, dateDebut, dateFin);
     const url = doc.output("bloburl");
     setPreviewDoc(doc);
@@ -435,7 +429,6 @@ function ExportModal({ fiches, onClose }) {
     setStep("preview");
   };
 
-  // ── Téléchargement final depuis l'aperçu ─────────────────────────────────
   const handleTelecharger = () => {
     if (previewDoc) {
       previewDoc.save(`Rapport_Paiements_${new Date().toISOString().slice(0, 10)}.pdf`);
@@ -447,11 +440,10 @@ function ExportModal({ fiches, onClose }) {
   };
 
   const handleRetour = () => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(null);
-    setPreviewDoc(null);
-    setStep("form");
-  };
+  setPreviewUrl(null);
+  setPreviewDoc(null);
+  setStep("form");
+};
 
   const inp = {
     padding: "9px 12px", border: "1.5px solid #e2e8f0", borderRadius: 9,
@@ -482,7 +474,6 @@ function ExportModal({ fiches, onClose }) {
           <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 8, width: 32, height: 32, cursor: "pointer", color: "#fff", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
         </div>
 
-        {/* ── ÉTAPE 1 : formulaire (inchangé) ── */}
         {step === "form" && (
           <>
             <div style={{ overflowY: "auto", flex: 1, padding: "20px 22px", display: "flex", flexDirection: "column", gap: 18 }}>
@@ -607,7 +598,6 @@ function ExportModal({ fiches, onClose }) {
           </>
         )}
 
-        {/* ── ÉTAPE 2 : aperçu du PDF avant téléchargement ── */}
         {step === "preview" && (
           <>
             <div style={{ flex: 1, background: "#525659", padding: 12, overflow: "hidden" }}>
@@ -718,21 +708,105 @@ function RappelModal({ candidat, onClose }) {
   );
 }
 
+// ─── Modal Historique ─────────────────────────────────────────────────────────
+function HistoriqueModal({ candidat, onClose }) {
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [doc,        setDoc]        = useState(null);
+
+  useEffect(() => {
+    if (!candidat) return;
+    const d   = genererHistoriquePDF(candidat, candidat.versements);
+    const url = d.output("bloburl");
+    setDoc(d);
+    setPreviewUrl(url);
+    return () => { if (url) URL.revokeObjectURL(url); };
+  }, [candidat]);
+
+  if (!candidat) return null;
+
+  const handleTelecharger = () => {
+    if (doc) doc.save(`Historique_${candidat.nom}_${candidat.prenom}.pdf`);
+    onClose();
+  };
+
+  return (
+    <div
+      onClick={e => e.target === e.currentTarget && onClose()}
+      style={{ position: "fixed", inset: 0, zIndex: 2000, background: "rgba(15,23,42,0.65)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+    >
+      <div style={{
+        background: "#fff", borderRadius: 18, width: "100%", maxWidth: 820,
+        maxHeight: "92vh", display: "flex", flexDirection: "column",
+        boxShadow: "0 32px 80px rgba(0,0,0,0.25)", overflow: "hidden",
+      }}>
+        {/* Header */}
+        <div style={{ background: "linear-gradient(135deg,#6d28d9,#5b21b6)", padding: "18px 22px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>
+              Historique des paiements
+            </div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", marginTop: 2 }}>
+              {candidat.prenom} {candidat.nom} · {candidat.versements.length} versement{candidat.versements.length !== 1 ? "s" : ""} · {fDA(candidat.totalVerse)} versé
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 8, width: 32, height: 32, cursor: "pointer", color: "#fff", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+        </div>
+
+        {/* Aperçu PDF */}
+        <div style={{ flex: 1, background: "#525659", padding: 12, overflow: "hidden" }}>
+          {previewUrl
+            ? (
+              <iframe
+                src={previewUrl}
+                title="Aperçu historique"
+                style={{ width: "100%", height: "100%", minHeight: 460, border: "none", borderRadius: 6, background: "#fff" }}
+              />
+            )
+            : (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", minHeight: 460, color: "#ccc", fontSize: 13 }}>
+                ⏳ Génération du PDF…
+              </div>
+            )
+          }
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "14px 22px", borderTop: "1px solid #e2e8f0", display: "flex", gap: 10, flexShrink: 0, background: "#f8fafc" }}>
+          <button
+            onClick={onClose}
+            style={{ flex: 1, padding: 11, borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", cursor: "pointer", fontWeight: 600, fontSize: 13 }}
+          >
+            Fermer
+          </button>
+          <button
+            onClick={handleTelecharger}
+            disabled={!doc}
+            style={{ flex: 2, padding: 11, borderRadius: 10, border: "none", background: doc ? "#6d28d9" : "#94a3b8", color: "#fff", fontWeight: 700, fontSize: 13, cursor: doc ? "pointer" : "not-allowed" }}
+          >
+            ⬇ Télécharger le PDF
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Composant Principal ──────────────────────────────────────────────────────
 const Payments = () => {
-  const [selected,     setSelected]     = useState(null);
-  const [showModal,    setShowModal]    = useState(false);
-  const [showInvoices, setShowInvoices] = useState(false);
-  const [showExport,   setShowExport]   = useState(false);
-  const [showSeanceSup, setShowSeanceSup] = useState(false);
-  const [rappelCand,   setRappelCand]   = useState(null);
-  const [searchTerm,   setSearchTerm]   = useState("");
-  const [filtreStatut, setFiltreStatut] = useState("tous");
-  const [sortConfig,   setSortConfig]   = useState({ key: "nom", dir: "asc" });
-  const [expanded,     setExpanded]     = useState(new Set());
-  const [toastMsg,     setToastMsg]     = useState(null);
-  const [paymentsData,  setPaymentsData]  = useState([]);
-  const [allCandidates, setAllCandidates] = useState([]);
+  const [selected,       setSelected]       = useState(null);
+  const [showModal,      setShowModal]      = useState(false);
+  const [showInvoices,   setShowInvoices]   = useState(false);
+  const [showExport,     setShowExport]     = useState(false);
+  const [showSeanceSup,  setShowSeanceSup]  = useState(false);
+  const [rappelCand,     setRappelCand]     = useState(null);
+  const [historiqueCand, setHistoriqueCand] = useState(null);
+  const [searchTerm,     setSearchTerm]     = useState("");
+  const [filtreStatut,   setFiltreStatut]   = useState("tous");
+  const [sortConfig,     setSortConfig]     = useState({ key: "nom", dir: "asc" });
+  const [expanded,       setExpanded]       = useState(new Set());
+  const [toastMsg,       setToastMsg]       = useState(null);
+  const [paymentsData,   setPaymentsData]   = useState([]);
+  const [allCandidates,  setAllCandidates]  = useState([]);
 
   const showToast = (msg, type = "success") => {
     setToastMsg({ msg, type });
@@ -795,11 +869,11 @@ const Payments = () => {
     })
     .sort((a, b) => {
       const dir = sortConfig.dir === "asc" ? 1 : -1;
-      if (sortConfig.key === "nom")             return dir * (`${a.prenom} ${a.nom}`).localeCompare(`${b.prenom} ${b.nom}`);
-      if (sortConfig.key === "totalVerse")      return dir * (a.totalVerse - b.totalVerse);
-      if (sortConfig.key === "montantRestant")  return dir * (a.montantRestant - b.montantRestant);
-      if (sortConfig.key === "pct")             return dir * (a.pct - b.pct);
-      if (sortConfig.key === "versements")      return dir * (a.versements.length - b.versements.length);
+      if (sortConfig.key === "nom")            return dir * (`${a.prenom} ${a.nom}`).localeCompare(`${b.prenom} ${b.nom}`);
+      if (sortConfig.key === "totalVerse")     return dir * (a.totalVerse - b.totalVerse);
+      if (sortConfig.key === "montantRestant") return dir * (a.montantRestant - b.montantRestant);
+      if (sortConfig.key === "pct")            return dir * (a.pct - b.pct);
+      if (sortConfig.key === "versements")     return dir * (a.versements.length - b.versements.length);
       return 0;
     });
 
@@ -903,11 +977,11 @@ const Payments = () => {
             + Versement
           </button>
           <button
-  onClick={() => setShowSeanceSup(true)}
-  style={{ padding: "10px 18px", borderRadius: 10, background: "#d97706", color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
->
-  ➕ Séance Sup.
-</button>
+            onClick={() => setShowSeanceSup(true)}
+            style={{ padding: "10px 18px", borderRadius: 10, background: "#d97706", color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+          >
+            ➕ Séance Sup.
+          </button>
         </div>
 
         {/* Compteur */}
@@ -1023,9 +1097,9 @@ const Payments = () => {
                               </>
                             )}
                             <button
-                              onClick={() => { const d = genererHistoriquePDF(f, f.versements); d.save(`Historique_${f.nom}_${f.prenom}.pdf`); }}
+                              onClick={() => setHistoriqueCand(f)}
                               style={btnAct("#f5f3ff", "#6d28d9", "#c4b5fd")}
-                              title="Télécharger l'historique PDF"
+                              title="Aperçu et téléchargement de l'historique PDF"
                             >
                               📋 Historique
                             </button>
@@ -1101,7 +1175,7 @@ const Payments = () => {
           </div>
         )}
 
-        {/* Modales */}
+        {/* ── Modales ── */}
         {showModal && (
           <PaymentModal
             candidate={selected}
@@ -1114,21 +1188,22 @@ const Payments = () => {
         {showExport && (
           <ExportModal fiches={fichesCandidats} onClose={() => setShowExport(false)} />
         )}
+
         {showSeanceSup && (
-  <SeanceSupModal
-    onClose={() => setShowSeanceSup(false)}
-    onAddPayment={async (paymentData) => {
-      const result = await window.electron.addPayment(paymentData);
-      if (result?.success) {
-        setShowSeanceSup(false);
-        await fetchData();
-        showToast(`Séance supplémentaire enregistrée — ${Number(paymentData.montant).toLocaleString("fr-DZ")} DA !`);
-      } else {
-        alert("Erreur : " + (result?.message || "Action impossible"));
-      }
-    }}
-  />
-)}
+          <SeanceSupModal
+            onClose={() => setShowSeanceSup(false)}
+            onAddPayment={async (paymentData) => {
+              const result = await window.electron.addPayment(paymentData);
+              if (result?.success) {
+                setShowSeanceSup(false);
+                await fetchData();
+                showToast(`Séance supplémentaire enregistrée — ${Number(paymentData.montant).toLocaleString("fr-DZ")} DA !`);
+              } else {
+                alert("Erreur : " + (result?.message || "Action impossible"));
+              }
+            }}
+          />
+        )}
 
         {showInvoices && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1500, overflowY: "auto" }}>
@@ -1139,7 +1214,13 @@ const Payments = () => {
           </div>
         )}
 
-        {rappelCand && <RappelModal candidat={rappelCand} onClose={() => setRappelCand(null)} />}
+        {rappelCand && (
+          <RappelModal candidat={rappelCand} onClose={() => setRappelCand(null)} />
+        )}
+
+        {historiqueCand && (
+          <HistoriqueModal candidat={historiqueCand} onClose={() => setHistoriqueCand(null)} />
+        )}
 
       </div>
     </div>
