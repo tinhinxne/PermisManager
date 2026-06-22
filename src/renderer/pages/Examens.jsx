@@ -17,20 +17,57 @@ import { useExamenRulesCtx } from "../context/ExamenRulesContext";
 import { usePermissionsCtx } from "../context/PermissionsContext";
 import { useAuth } from "../context/AuthContext";
 
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
+const STATUS_LABELS = {
+  Tous: "Tous",
+  Scheduled: "Programmé",
+  Passed: "Réussi",
+  Failed: "Échoué",
+};
+
+const STATUS_CONFIG = {
+  Scheduled: { bg: "#e3f2fd", color: "#1565c0", label: "Programmé" },
+  Passed:    { bg: "#e8f5e9", color: "#2e7d32", label: "Réussi"    },
+  Failed:    { bg: "#ffebee", color: "#c62828", label: "Échoué"    },
+};
+const TOUTES_CATEGORIES_PERMIS = [
+  "Tous", "A1", "A", "B", "BE", "C1", "C", "C1E", "CE", "D", "DE", "F"
+];
+
+
+// Formate une date ISO → YYYY/MM/DD
+function formatDateAr(isoDate) {
+  if (!isoDate) return "";
+  const str = isoDate instanceof Date ? isoDate.toISOString() : String(isoDate);
+  const d = new Date(str.includes("T") ? str : str + "T12:00:00");
+  if (isNaN(d)) return str;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const j = String(d.getDate()).padStart(2, "0");
+  return `${y}/${m}/${j}`;
+}
+
+// ─────────────────────────────────────────────
+// Composant principal
+// ─────────────────────────────────────────────
 const Examens = () => {
   const {
     examensList, generateExamens, toggleExamenStatus,
     retirerCandidat, candidatsReportes, EXAM_THRESHOLDS,
   } = useExamenCtx();
-  const { examRules } = useExamenRulesCtx();
-  const { currentUser } = useAuth();
+  const { examRules }    = useExamenRulesCtx();
+  const { currentUser }  = useAuth();
   const { getPermissions } = usePermissionsCtx();
+  
 
   const isAdmin = currentUser?.type_utilisateur === "administrateur";
   const perms   = isAdmin
     ? { CAN_REMOVE_CANDIDAT: true, CAN_TOGGLE_STATUS: true }
     : getPermissions(currentUser?.id);
 
+  // ── state ──
   const [selectedExamen, setSelectedExamen] = useState(null);
   const [statusFilter,   setStatusFilter]   = useState("Tous");
   const [typeFilter,     setTypeFilter]     = useState("Tous");
@@ -38,45 +75,43 @@ const Examens = () => {
   const [lastGenerated,  setLastGenerated]  = useState(null);
   const [showReportes,   setShowReportes]   = useState(false);
   const [candidatsMap,   setCandidatsMap]   = useState({});
+  const [categorieFilter, setCategorieFilter] = useState("Tous");
 
-  // ── Export PDF (liste officielle des candidats à l'examen) ──────────────
-  // L'app est destinée à des auto-écoles dans n'importe quelle wilaya, et le
-  // centre d'examen change parfois même au sein d'une même wilaya : aucune
-  // de ces infos n'existe en base, donc on les fait saisir ici à chaque
-  // export. Seules "nom de l'école" et "wilaya" sont mémorisées localement
-  // (elles changent rarement), le reste se ressaisit à chaque session.
   const [showExportModal, setShowExportModal] = useState(false);
   const [pdfLoading,      setPdfLoading]      = useState(false);
   const [exportForm, setExportForm] = useState({
-    nomEcole: "",
-    wilaya: "",
+    nomEcole:     "",
+    wilaya:       "",
     centreExamen: "",
-    dateDepot: "",
-    dateExamen: "",
+    morkaba:      "",
+    dateDepot:    "",
+    dateExamen:   "",
   });
 
+  // ── لائحة الإرسال modal state ──
+  const [showEnvoiModal, setShowEnvoiModal] = useState(false);
+  const [envoiLoading,   setEnvoiLoading]   = useState(false);
+  const [envoiForm, setEnvoiForm] = useState({
+    wilaya:    "",
+    nomEcole:  "",
+    dateDepot: "",
+  });
+
+  // Charge les valeurs mémorisées
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("export_pdf_defaults") || "{}");
-      setExportForm((f) => ({ ...f, ...saved }));
-    } catch {
-      // pas de valeurs sauvegardées encore, formulaire vide
-    }
+      setExportForm(f => ({ ...f, ...saved }));
+      // Réutilise wilaya et nomEcole pour لائحة الإرسال aussi
+      setEnvoiForm(f => ({
+        ...f,
+        wilaya:   saved.wilaya   || "",
+        nomEcole: saved.nomEcole || "",
+      }));
+    } catch { /* pas de valeurs sauvegardées */ }
   }, []);
 
-  const STATUS_LABELS = {
-  Tous: "Tous",
-  Scheduled: "Programmé",
-  Passed: "Réussi",
-  Failed: "Échoué",
-};
-
-  const STATUS_CONFIG = {
-    Scheduled: { bg: "#e3f2fd", color: "#1565c0", label: "Programmé" },
-    Passed:    { bg: "#e8f5e9", color: "#2e7d32", label: "Réussi"    },
-    Failed:    { bg: "#ffebee", color: "#c62828", label: "Échoué"    },
-  };
-
+  // ── génération des examens ──
   const handleGenerate = async () => {
     setLoading(true);
     try {
@@ -87,9 +122,11 @@ const Examens = () => {
       const map = {};
       candidats.forEach(c => {
         map[String(c.idCandidat)] = {
-          nom: c.nom ?? "",
-          prenom: c.prenom ?? "",
-          dateNaissance: c.date_naissance ?? "",
+          nom:             c.nom             ?? "",
+          prenom:          c.prenom          ?? "",
+          nom_ar:          c.nom_ar          ?? "",
+          prenom_ar:       c.prenom_ar       ?? "",
+          dateNaissance:   c.date_naissance  ?? "",
           categoriePermis: c.categoriePermis ?? "",
         };
       });
@@ -104,6 +141,7 @@ const Examens = () => {
 
   useEffect(() => { handleGenerate(); }, []);
 
+  // ── actions ──
   const handleRemove = (id, e) => {
     e.stopPropagation();
     if (!perms.CAN_REMOVE_CANDIDAT) return;
@@ -118,12 +156,22 @@ const Examens = () => {
     toggleExamenStatus(id);
   };
 
-  const filtered = examensList.filter(e => {
-    const matchStatus = statusFilter === "Tous" || e.status === statusFilter;
-    const matchType   = typeFilter   === "Tous" || e.type   === typeFilter;
-    return matchStatus && matchType;
-  });
+  // filtres
+const filtered = examensList.filter(e => {
+  const matchStatus = statusFilter === "Tous" || e.status === statusFilter;
+  const matchType   = typeFilter   === "Tous" || e.type   === typeFilter;
 
+  // Cherche la catégorie dans l'examen OU dans candidatsMap (comme Candidats utilise _raw)
+  const cat = (
+    e.categoriePermis ||
+    candidatsMap[String(e.candidatId)]?.categoriePermis ||
+    ""
+  ).toUpperCase();
+
+  const matchCategorie = categorieFilter === "Tous" || cat === categorieFilter.toUpperCase();
+
+  return matchStatus && matchType && matchCategorie;
+});
   const reportesEntries = Object.entries(candidatsReportes);
 
   const getCandidatName = (id) => {
@@ -133,6 +181,7 @@ const Examens = () => {
     return full || `Candidat #${id}`;
   };
 
+  // ── stats ──
   const statsData = [
     { label: "Total session", val: examensList.length,                                       color: "blue",   icon: <FaUser />,        trend: "Candidats"      },
     { label: "Réussites",     val: examensList.filter(e => e.status === "Passed").length,    color: "green",  icon: <FaCheckCircle />, trend: "Validés"        },
@@ -140,36 +189,26 @@ const Examens = () => {
     { label: "En attente",    val: examensList.filter(e => e.status === "Scheduled").length, color: "orange", icon: <FaClock />,       trend: "À évaluer"      },
   ];
 
+  // ── styles inline réutilisables ──
   const th = { padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "13px" };
   const td = { padding: "12px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "13px", color: "#1F2937" };
 
-  // Formate une date pour affichage dans le document arabe : YYYY/MM/DD
-  const formatDateAr = (isoDate) => {
-    if (!isoDate) return "";
-    const d = new Date(isoDate.includes("T") ? isoDate : isoDate + "T12:00:00");
-    if (isNaN(d)) return isoDate;
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const j = String(d.getDate()).padStart(2, "0");
-    return `${y}/${m}/${j}`;
-  };
-
+  // ── export PDF (قائمة المترشحين) ──
   const openExportModal = () => {
     if (filtered.length === 0) {
       alert("Aucun candidat dans la liste actuelle à exporter. Ajustez les filtres ci-dessus.");
       return;
     }
-    setExportForm((f) => ({
+    setExportForm(f => ({
       ...f,
       centreExamen: f.centreExamen || "",
-      dateExamen: formatDateAr(filtered[0]?.date) || f.dateExamen || "",
+      dateExamen:   formatDateAr(filtered[0]?.date) || f.dateExamen || "",
     }));
     setShowExportModal(true);
   };
 
-  const handleExportFormChange = (field, value) => {
-    setExportForm((f) => ({ ...f, [field]: value }));
-  };
+  const handleExportFormChange = (field, value) =>
+    setExportForm(f => ({ ...f, [field]: value }));
 
   const handleConfirmExport = async () => {
     if (!exportForm.wilaya.trim() || !exportForm.centreExamen.trim()) {
@@ -179,34 +218,42 @@ const Examens = () => {
 
     setPdfLoading(true);
     try {
-      const candidatsPourPDF = filtered.map((examen, i) => ({
-        rang: i + 1,
-        // Pas de "numéro de dossier" administratif dans l'app : on utilise
-        // l'identifiant interne du candidat en attendant, à ajuster une fois
-        // ce numéro saisi/géré ailleurs si besoin.
-        numDossier: examen.candidatId,
-        nomPrenom: examen.candidat,
-        dateNaissance: formatDateAr(examen.dateNaissance),
-        categorie: examen.categoriePermis || "",
-        dateDepot: formatDateAr(exportForm.dateDepot),
-        dateExamenRapport: formatDateAr(examen.date),
-        observations: "",
-      }));
+      const candidatsPourPDF = filtered.map((examen, i) => {
+        const info = candidatsMap[String(examen.candidatId)] || {};
+        const nomAr    = info.nom_ar    || "";
+        const prenomAr = info.prenom_ar || "";
+        const nomPrenomAr = (nomAr || prenomAr)
+          ? `${nomAr} ${prenomAr}`.trim()
+          : "";
 
-      const savedPath = await window.electron.generateListeCandidatsPDF({
-        nomEcole: exportForm.nomEcole,
-        wilaya: exportForm.wilaya,
-        centreExamen: exportForm.centreExamen,
-        dateDepot: formatDateAr(exportForm.dateDepot),
-        dateExamen: exportForm.dateExamen,
-        candidats: candidatsPourPDF,
+        return {
+          rang:              i + 1,
+          numDossier:        examen.candidatId,
+          nomPrenom:         examen.candidat,
+          nomPrenomAr,
+          dateNaissance:     formatDateAr(examen.dateNaissance),
+          categorie:         examen.categoriePermis || "",
+          typeExamen:        examen.type || "",
+          dateDepot:         formatDateAr(exportForm.dateDepot),
+          dateExamenRapport: formatDateAr(examen.date),
+          observations:      "",
+        };
       });
 
-      // Mémorise uniquement les infos stables (école, wilaya) pour le
-      // prochain export — le centre et les dates se ressaisissent chaque fois.
+      const savedPath = await window.electron.generateListeCandidatsPDF({
+        nomEcole:     exportForm.nomEcole,
+        wilaya:       exportForm.wilaya,
+        centreExamen: exportForm.centreExamen,
+        morkaba:      exportForm.morkaba,
+        dateDepot:    formatDateAr(exportForm.dateDepot),
+        dateExamen:   exportForm.dateExamen,
+        candidats:    candidatsPourPDF,
+      });
+
       localStorage.setItem("export_pdf_defaults", JSON.stringify({
         nomEcole: exportForm.nomEcole,
-        wilaya: exportForm.wilaya,
+        wilaya:   exportForm.wilaya,
+        morkaba:  exportForm.morkaba,
       }));
 
       if (savedPath) {
@@ -220,6 +267,73 @@ const Examens = () => {
     setPdfLoading(false);
   };
 
+  // ── export لائحة الإرسال ──
+  const openEnvoiModal = () => {
+    if (filtered.length === 0) {
+      alert("Aucun candidat dans la liste actuelle. Ajustez les filtres.");
+      return;
+    }
+    setShowEnvoiModal(true);
+  };
+
+  const handleEnvoiFormChange = (field, value) =>
+    setEnvoiForm(f => ({ ...f, [field]: value }));
+
+  const handleConfirmEnvoi = async () => {
+    if (!envoiForm.wilaya.trim()) {
+      alert("Merci de renseigner la wilaya.");
+      return;
+    }
+
+    setEnvoiLoading(true);
+    try {
+      const candidatsPourEnvoi = filtered.map((examen) => {
+        const info = candidatsMap[String(examen.candidatId)] || {};
+        const nomAr    = info.nom_ar    || "";
+        const prenomAr = info.prenom_ar || "";
+        const nomPrenomAr = (nomAr || prenomAr)
+          ? `${nomAr} ${prenomAr}`.trim()
+          : "";
+
+        return {
+          nomPrenom:     examen.candidat,
+          nomPrenomAr,
+          dateNaissance: formatDateAr(examen.dateNaissance),
+          categorie:     examen.categoriePermis || "",
+        };
+      });
+
+      const savedPath = await window.electron.generateListeEnvoiPDF({
+        wilaya:    envoiForm.wilaya,
+        nomEcole:  envoiForm.nomEcole,
+        dateDepot: formatDateAr(envoiForm.dateDepot),
+        candidats: candidatsPourEnvoi,
+      });
+
+      // Mémorise wilaya et nomEcole
+      try {
+        const prev = JSON.parse(localStorage.getItem("export_pdf_defaults") || "{}");
+        localStorage.setItem("export_pdf_defaults", JSON.stringify({
+          ...prev,
+          wilaya:   envoiForm.wilaya,
+          nomEcole: envoiForm.nomEcole,
+        }));
+      } catch { /* ignore */ }
+
+      if (savedPath) {
+        alert(`لائحة الإرسال enregistrée :\n${savedPath}`);
+        setShowEnvoiModal(false);
+      }
+    } catch (e) {
+      console.error("Erreur génération لائحة الإرسال:", e);
+      alert("Erreur lors de la génération du document.");
+    }
+    setEnvoiLoading(false);
+  };
+
+  // ─────────────────────────────────────────────
+  // Rendu
+  // ─────────────────────────────────────────────
   return (
     <div className="main">
       <div className="header">
@@ -230,23 +344,37 @@ const Examens = () => {
 
       <div className="examens-content">
 
-        {/* Header + boutons d'action */}
+        {/* ── Header + boutons d'action ── */}
         <div className="examens-page-header">
           <div>
             <h2 className="examens-page-title">Sessions d'examens</h2>
             <p className="examens-page-sub">
               Générées selon les seuils : Code ≥{EXAM_THRESHOLDS.Code} séances · Créneau ≥{EXAM_THRESHOLDS.Créneau} · Circulation ≥{EXAM_THRESHOLDS.Circulation}
-              {lastGenerated && <span style={{ color: "#94a3b8", marginLeft: 12, fontSize: 12 }}>Dernière mise à jour : {lastGenerated}</span>}
+              {lastGenerated && (
+                <span style={{ color: "#94a3b8", marginLeft: 12, fontSize: 12 }}>
+                  Dernière mise à jour : {lastGenerated}
+                </span>
+              )}
             </p>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
+
+            {/* ── Bouton قائمة المترشحين ── */}
             <button
               onClick={openExportModal}
               style={{ display: "flex", alignItems: "center", gap: 8, background: "#2b537e", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600 }}
             >
-              <FaFilePdf />
-              Générer la liste (PDF)
+              <FaFilePdf /> قائمة المترشحين
             </button>
+
+            {/* ── Bouton لائحة الإرسال ── */}
+            <button
+              onClick={openEnvoiModal}
+              style={{ display: "flex", alignItems: "center", gap: 8, background: "#7c3aed", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600 }}
+            >
+              <FaFilePdf /> لائحة الإرسال
+            </button>
+
             {isAdmin && (
               <button
                 onClick={handleGenerate} disabled={loading}
@@ -259,7 +387,7 @@ const Examens = () => {
           </div>
         </div>
 
-        {/* Règles actives */}
+        {/* ── Règles actives ── */}
         <div style={{ background: "#f0f4ff", border: "1px solid #c7d7f5", borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: "#3b5bdb", display: "flex", alignItems: "center", gap: 10 }}>
           <FaInfoCircle />
           <span>
@@ -270,7 +398,7 @@ const Examens = () => {
           </span>
         </div>
 
-        {/* Stats */}
+        {/* ── Stats ── */}
         <div className="stats-grid">
           {statsData.map((item, i) => (
             <motion.div key={i} className="stat-card-modern" whileHover={{ y: -5 }}>
@@ -284,13 +412,30 @@ const Examens = () => {
           ))}
         </div>
 
-        {/* Filtres */}
+        {/* ── Filtres ── */}
         <div className="examens-filters">
-         <SelectFilter value={statusFilter} onChange={setStatusFilter} options={["Tous", "Scheduled", "Passed", "Failed"].map(v => ({ value: v, label: STATUS_LABELS[v] }))} label="Filtrer par Statut"/>
-          <SelectFilter value={typeFilter}   onChange={setTypeFilter}   options={["Tous", "Code", "Créneau", "Circulation"]} label="Type d'examen" />
+          <SelectFilter
+            value={statusFilter} onChange={setStatusFilter}
+            options={["Tous", "Scheduled", "Passed", "Failed"].map(v => ({ value: v, label: STATUS_LABELS[v] }))}
+            label="Filtrer par Statut"
+          />
+          <SelectFilter
+            value={typeFilter} onChange={setTypeFilter}
+            options={["Tous", "Code", "Créneau", "Circulation"]}
+            label="Type d'examen"
+          />
+          <SelectFilter
+  value={categorieFilter}
+  onChange={setCategorieFilter}
+  options={TOUTES_CATEGORIES_PERMIS.map(cat => ({
+    value: cat,
+    label: cat === "Tous" ? "Tous les permis" : `Permis ${cat}`
+  }))}
+  label="Catégorie de permis"
+/>
         </div>
 
-        {/* Tableau */}
+        {/* ── Tableau ── */}
         <div style={{ background: "#fff", borderRadius: 15, overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)" }}>
           <div style={{ maxHeight: 500, overflowY: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -318,8 +463,12 @@ const Examens = () => {
                       >
                         <td style={{ ...td, fontWeight: 600 }}>
                           {examen.candidat}
-                          {examen.autoGenerated && <span style={{ marginLeft: 8, fontSize: 10, background: "#e0f2fe", color: "#0369a1", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>auto</span>}
-                          {examen.suggested     && <span style={{ marginLeft: 4,  fontSize: 10, background: "#fef3c7", color: "#92400e", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>re-suggéré</span>}
+                          {examen.autoGenerated && (
+                            <span style={{ marginLeft: 8, fontSize: 10, background: "#e0f2fe", color: "#0369a1", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>auto</span>
+                          )}
+                          {examen.suggested && (
+                            <span style={{ marginLeft: 4, fontSize: 10, background: "#fef3c7", color: "#92400e", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>re-suggéré</span>
+                          )}
                         </td>
                         <td style={td}>{examen.type}</td>
                         <td style={td}>
@@ -369,7 +518,7 @@ const Examens = () => {
           </div>
         </div>
 
-        {/* Candidats reportés */}
+        {/* ── Candidats reportés ── */}
         {reportesEntries.length > 0 && (
           <div style={{ marginTop: 20 }}>
             <button
@@ -432,57 +581,124 @@ const Examens = () => {
         )}
       </div>
 
+      {/* ── Modal détail examen ── */}
       <ExamenModal examen={selectedExamen} onClose={() => setSelectedExamen(null)} />
 
-      {/* Modale de saisie des infos d'export PDF — wilaya / centre d'examen / dates.
-          Aucune de ces infos n'existe en base de données : l'app étant destinée
-          à des auto-écoles de n'importe quelle wilaya, ces champs sont toujours
-          saisis manuellement ici plutôt que supposés fixes. */}
+      {/* ══════════════════════════════════════════════
+          Modal export قائمة المترشحين (inchangé)
+      ══════════════════════════════════════════════ */}
       {showExportModal && (
         <div
           style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
           onClick={() => !pdfLoading && setShowExportModal(false)}
         >
           <div
-            style={{ background: "#fff", borderRadius: 14, padding: 24, width: 420, maxWidth: "90vw", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }}
-            onClick={(e) => e.stopPropagation()}
+            style={{ background: "#fff", borderRadius: 14, padding: 24, width: 440, maxWidth: "90vw", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }}
+            onClick={e => e.stopPropagation()}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <h3 style={{ margin: 0, fontSize: 17, color: "#1F2937" }}>Informations du document</h3>
-              <button
-                onClick={() => !pdfLoading && setShowExportModal(false)}
-                style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16 }}
-              >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <h3 style={{ margin: 0, fontSize: 17, color: "#1F2937" }}>قائمة المترشحين — Informations</h3>
+              <button onClick={() => !pdfLoading && setShowExportModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16 }}>
+                <FaTimes />
+              </button>
+            </div>
+            <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>
+              L'école, la wilaya et la morkaba sont mémorisés. Le centre et les dates sont à vérifier à chaque session.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+              <FormField label="Nom de l'auto-école"      value={exportForm.nomEcole}     onChange={v => handleExportFormChange("nomEcole", v)}     placeholder="Ex : Auto-École Essalem" />
+              <FormField label="Wilaya"                   value={exportForm.wilaya}        onChange={v => handleExportFormChange("wilaya", v)}        placeholder="Ex : Béjaïa, Sétif..." required />
+              <FormField label="Centre d'examen"          value={exportForm.centreExamen}  onChange={v => handleExportFormChange("centreExamen", v)}  placeholder="Ex : Le Châlet, El Kseur..." required />
+              <FormField label="المركبة الأولى"           value={exportForm.morkaba}       onChange={v => handleExportFormChange("morkaba", v)}       placeholder="Ex : رونو كليو 03" />
+              <FormField label="Date de dépôt des dossiers" value={exportForm.dateDepot}  onChange={v => handleExportFormChange("dateDepot", v)}     type="date" />
+              <FormField label="Date de l'examen"         value={exportForm.dateExamen}    onChange={v => handleExportFormChange("dateExamen", v)}    placeholder="YYYY/MM/DD" />
+            </div>
+            <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#475569" }}>
+              <strong style={{ color: "#1f2937" }}>Aperçu :</strong> {filtered.length} candidat(s) exporté(s)
+              {typeFilter !== "Tous" && <> · Type : <strong>{typeFilter}</strong></>}
+              {statusFilter !== "Tous" && <> · Statut : <strong>{STATUS_LABELS[statusFilter]}</strong></>}
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+              <button onClick={() => setShowExportModal(false)} disabled={pdfLoading} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>
+                Annuler
+              </button>
+              <button onClick={handleConfirmExport} disabled={pdfLoading} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#2b537e", color: "#fff", cursor: "pointer", fontWeight: 600, fontSize: 13.5, opacity: pdfLoading ? 0.7 : 1 }}>
+                {pdfLoading ? "Génération..." : "Générer le PDF"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════
+          Modal export لائحة الإرسال (nouveau)
+      ══════════════════════════════════════════════ */}
+      {showEnvoiModal && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+          onClick={() => !envoiLoading && setShowEnvoiModal(false)}
+        >
+          <div
+            style={{ background: "#fff", borderRadius: 14, padding: 24, width: 400, maxWidth: "90vw", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <h3 style={{ margin: 0, fontSize: 17, color: "#1F2937" }}>لائحة الإرسال</h3>
+              <button onClick={() => !envoiLoading && setShowEnvoiModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16 }}>
                 <FaTimes />
               </button>
             </div>
 
-            <p style={{ fontSize: 12.5, color: "#64748b", marginBottom: 16 }}>
-              Ces informations apparaîtront sur la liste officielle. La wilaya et le nom de l'école sont mémorisés pour les prochains exports ; le centre d'examen et les dates sont à vérifier à chaque session.
+            <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>
+              Liste d'envoi au commissaire de sécurité routière — المندوبية الولائية للأمن في الطرق
             </p>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <FormField label="Nom de l'auto-école" value={exportForm.nomEcole} onChange={(v) => handleExportFormChange("nomEcole", v)} placeholder="Ex : Auto-École Essalem" />
-              <FormField label="Wilaya" value={exportForm.wilaya} onChange={(v) => handleExportFormChange("wilaya", v)} placeholder="Ex : Béjaïa, Sétif, Alger..." required />
-              <FormField label="Centre d'examen" value={exportForm.centreExamen} onChange={(v) => handleExportFormChange("centreExamen", v)} placeholder="Ex : Le Châlet, El Kseur..." required />
-              <FormField label="Date de dépôt des dossiers" value={exportForm.dateDepot} onChange={(v) => handleExportFormChange("dateDepot", v)} type="date" />
-              <FormField label="Date de l'examen" value={exportForm.dateExamen} onChange={(v) => handleExportFormChange("dateExamen", v)} placeholder="YYYY/MM/DD" />
+            {/* Badge violet rappelant le destinataire */}
+            <div style={{ background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: "#6d28d9", direction: "rtl", textAlign: "right" }}>
+              الى السيد مكلف المندوبية الولائية للأمن في الطرق
             </div>
 
-            <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+              <FormField
+                label="الولاية (Wilaya)"
+                value={envoiForm.wilaya}
+                onChange={v => handleEnvoiFormChange("wilaya", v)}
+                placeholder="Ex : بجاية  /  Béjaïa"
+                required
+              />
+              <FormField
+                label="Nom de l'auto-école (optionnel)"
+                value={envoiForm.nomEcole}
+                onChange={v => handleEnvoiFormChange("nomEcole", v)}
+                placeholder="Ex : Auto-École Essalem"
+              />
+              <FormField
+                label="Date de dépôt — القصر في"
+                value={envoiForm.dateDepot}
+                onChange={v => handleEnvoiFormChange("dateDepot", v)}
+                type="date"
+              />
+            </div>
+
+            <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#475569" }}>
+              <strong style={{ color: "#1f2937" }}>Candidats :</strong> {filtered.length} dossier(s)
+              {typeFilter !== "Tous" && <> · Type : <strong>{typeFilter}</strong></>}
+            </div>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
               <button
-                onClick={() => setShowExportModal(false)}
-                disabled={pdfLoading}
+                onClick={() => setShowEnvoiModal(false)}
+                disabled={envoiLoading}
                 style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}
               >
                 Annuler
               </button>
               <button
-                onClick={handleConfirmExport}
-                disabled={pdfLoading}
-                style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#2b537e", color: "#fff", cursor: "pointer", fontWeight: 600, fontSize: 13.5, opacity: pdfLoading ? 0.7 : 1 }}
+                onClick={handleConfirmEnvoi}
+                disabled={envoiLoading}
+                style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#7c3aed", color: "#fff", cursor: "pointer", fontWeight: 600, fontSize: 13.5, opacity: envoiLoading ? 0.7 : 1 }}
               >
-                {pdfLoading ? "Génération..." : "Générer le PDF"}
+                {envoiLoading ? "Génération..." : "Générer لائحة الإرسال"}
               </button>
             </div>
           </div>
@@ -492,6 +708,9 @@ const Examens = () => {
   );
 };
 
+// ─────────────────────────────────────────────
+// Sous-composant champ formulaire
+// ─────────────────────────────────────────────
 const FormField = ({ label, value, onChange, placeholder, type = "text", required = false }) => (
   <div>
     <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
@@ -500,9 +719,9 @@ const FormField = ({ label, value, onChange, placeholder, type = "text", require
     <input
       type={type}
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
-      style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13.5, color: "#1F2937", outline: "none" }}
+      style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13.5, color: "#1F2937", outline: "none", boxSizing: "border-box" }}
     />
   </div>
 );

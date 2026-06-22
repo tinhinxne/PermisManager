@@ -72,6 +72,7 @@ const { registerAdminHandlers } = require('./adminHandlers');
 
 const { generatePDFFromHTML } = require("./pdfGenerator");
 const { buildListeCandidatsHTML } = require("./templates/listeCandidatsTemplate");
+const { buildListeEnvoiHTML } = require("./templates/listeEnvoiTemplate");
  
 
 
@@ -847,7 +848,7 @@ ipcMain.handle("get-seances", async () => {
   return new Promise((resolve) => {
     const sql = `
       SELECT 
-        s.idSeance, s.date, s.heure, s.duree, s.type, s.statut, s.moniteur_id,
+        s.idSeance, s.date, s.heure, s.duree, s.type, s.statut, s.moniteur_id, s.categoriePermis,
         CONCAT(u.prenom, ' ', u.nom) AS moniteurNom,
         GROUP_CONCAT(CONCAT(c.prenom, ' ', c.nom) SEPARATOR ', ') AS candidatsNoms,
         GROUP_CONCAT(c.idCandidat SEPARATOR ',') AS candidatsIds
@@ -866,15 +867,13 @@ ipcMain.handle("get-seances", async () => {
 });
 
 ipcMain.handle("add-seance", async (event, seanceData) => {
-  const { date, heure, type, statut, moniteur_id, candidatIds, duree } = seanceData;
+  const { date, heure, type, statut, moniteur_id, candidatIds, duree, categoriePermis } = seanceData;
   return new Promise((resolve) => {
-    const sqlSeance = `INSERT INTO Seance (date, heure, type, statut, moniteur_id, duree) VALUES (?, ?, ?, ?, ?, ?)`;
-    db.query(sqlSeance, [date, heure, type, statut || 'planifiée', moniteur_id, duree || 1], (err, res) => {
+    const sqlSeance = `INSERT INTO Seance (date, heure, type, statut, moniteur_id, duree, categoriePermis) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+    db.query(sqlSeance, [date, heure, type, statut || 'planifiée', moniteur_id, duree || 1, categoriePermis || 'B'], (err, res) => {
       if (err) { console.error("❌ Erreur INSERT Seance:", err); return resolve({ success: false }); }
-
       const newSeanceId = res.insertId;
       console.log("✅ Séance créée ID:", newSeanceId);
-
       if (!candidatIds || candidatIds.length === 0) {
         console.log("⚠️ Aucun candidat — mail non envoyé");
         return resolve({ success: true, id: newSeanceId });
@@ -941,6 +940,7 @@ ipcMain.handle("add-seance", async (event, seanceData) => {
   });
 });
 
+
 ipcMain.handle("delete-seance", async (event, id) => {
   return new Promise((resolve) => {
     db.query("DELETE FROM Seance WHERE idSeance = ?", [id], (err) => {
@@ -950,11 +950,11 @@ ipcMain.handle("delete-seance", async (event, id) => {
 });
 
 ipcMain.handle("update-seance", async (event, data) => {
-  const { id, date, heure, type, statut, moniteur_id, duree, candidatId } = data;
+  const { id, date, heure, type, statut, moniteur_id, duree, candidatId, categoriePermis } = data;
   return new Promise((resolve) => {
     db.query(
-      "UPDATE Seance SET date=?, heure=?, type=?, statut=?, moniteur_id=?, duree=? WHERE idSeance=?",
-      [date, heure, type, statut, moniteur_id, duree || 1, id],
+      "UPDATE Seance SET date=?, heure=?, type=?, statut=?, moniteur_id=?, duree=?, categoriePermis=? WHERE idSeance=?",
+      [date, heure, type, statut, moniteur_id, duree || 1, categoriePermis || 'B', id],
       (err) => {
         if (err) return resolve(false);
         if (!candidatId) return resolve(true);
@@ -968,6 +968,7 @@ ipcMain.handle("update-seance", async (event, data) => {
     );
   });
 });
+
 
 // ── 7. PAIEMENTS PAR MONITEUR ─────────────────────────────────────────────────
 ipcMain.handle('get-payments-by-moniteur', async (event, moniteurId) => {
@@ -1469,6 +1470,12 @@ ipcMain.handle("set-conge-annuel", async (event, data) => {
       }
     );
   });
+});
+ipcMain.handle("generate-liste-envoi-pdf", async (event, data) => {
+  const html = buildListeEnvoiHTML(data);
+  const fileName = `liste_envoi_${(data.dateDepot || "").replace(/\//g, "-")}.pdf`;
+  const savedPath = await generatePDFFromHTML(html, fileName);
+  return savedPath;
 });
 
 ipcMain.handle("generate-liste-candidats-pdf", async (event, data) => {

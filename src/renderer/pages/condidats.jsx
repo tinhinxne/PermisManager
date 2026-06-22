@@ -357,7 +357,22 @@ const Condidats = () => {
     }
   };
 
-  useEffect(() => { loadCandidats(); }, []);
+ useEffect(() => {
+  loadCandidats();
+
+  const handleFocus = () => loadCandidats();
+  const handleVisibility = () => {
+    if (document.visibilityState === "visible") loadCandidats();
+  };
+
+  window.addEventListener("focus", handleFocus);
+  document.addEventListener("visibilitychange", handleVisibility);
+
+  return () => {
+    window.removeEventListener("focus", handleFocus);
+    document.removeEventListener("visibilitychange", handleVisibility);
+  };
+}, []);
 
   const handleEdit = (candidat) => {
     setIsReinscription(false); 

@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 import Sidebar from "../components/Sidebar";
 import Button from "../components/Button";
 import { useCongeCtx } from "../context/CongeContext";
+import { useExamenCtx } from "../context/ExamenContext";
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
 const HOURS      = [7,8,9,10,11,12,13,14,15,16,17,18];
@@ -456,6 +457,8 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
   const [moniteurs, setMoniteurs] = useState([]);
   const [alertInfo, setAlertInfo] = useState(null);
   const { isMoniteurEnConge, isCongeAnnuel, congeAnnuel } = useCongeCtx();
+  const { examensList } = useExamenCtx();
+  
 
   useEffect(() => {
     async function loadData() {
@@ -489,6 +492,13 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
   });
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  // Historique d'examens du candidat sélectionné
+  const examsCandidat = (examensList || []).filter(
+    e => String(e.candidatId) === String(form.candidatId)
+  );
+  const aReussiCode    = examsCandidat.some(e => e.type === "Code"    && e.status === "Passed");
+  const aReussiCreneau = examsCandidat.some(e => e.type === "Créneau" && e.status === "Passed");
+
 
   const selectedCandidatObj = candidats.find(c => String(c.idCandidat) === String(form.candidatId));
   const candidatCat = selectedCandidatObj ? candidatCategorie(selectedCandidatObj) : "";
@@ -567,9 +577,28 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
       return;
     }
 
-    if (!form.candidatId) { setAlertInfo({ icon:"🧑", title:"Candidat manquant", message:"Veuillez sélectionner un candidat avant d'enregistrer la séance.", color:"#ef4444" }); return; }
+ if (!form.candidatId) { setAlertInfo({ icon:"🧑", title:"Candidat manquant", message:"Veuillez sélectionner un candidat avant d'enregistrer la séance.", color:"#ef4444" }); return; }
     if (!form.moniteur_id) { setAlertInfo({ icon:"🧑‍🏫", title:"Moniteur manquant", message:"Veuillez sélectionner un moniteur avant d'enregistrer la séance.", color:"#ef4444" }); return; }
 
+    // ── Progression obligatoire : Code → Créneau → Circulation ──────────────
+    if (form.type === "creneau" && !aReussiCode) {
+      setAlertInfo({
+        icon: "🚫",
+        title: "Examen Code non validé",
+        color: "#ef4444",
+        message: `${form.candidat || "Ce candidat"} doit d'abord réussir l'examen du Code de la route avant de pouvoir programmer une séance de Créneau.`,
+      });
+      return;
+    }
+    if (form.type === "circulation" && !aReussiCreneau) {
+      setAlertInfo({
+        icon: "🚫",
+        title: "Examen Créneau non validé",
+        color: "#ef4444",
+        message: `${form.candidat || "Ce candidat"} doit d'abord réussir l'examen du Créneau avant de pouvoir programmer une séance de Circulation.`,
+      });
+      return;
+    }
     const moniteurSel = moniteurs.find(m => String(m.id) === String(form.moniteur_id));
     if (selectedCandidatObj && moniteurSel && !moniteurCategories(moniteurSel).includes(candidatCat)) {
       setAlertInfo({ icon:"🎓", title:"Catégorie incompatible", color:"#3b82f6", message:`Ce moniteur n'est pas habilité pour la catégorie ${candidatCat}.` });
@@ -667,6 +696,7 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
             </div>
           )}
 
+
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Candidat <span style={{ color:"#ef4444" }}>*</span></label>
@@ -705,11 +735,17 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Type <span style={{ color:"#ef4444" }}>*</span></label>
-              <select style={inpS} value={form.type} onChange={e => set("type", e.target.value)}>
-                <option value="code">Code</option>
-                <option value="circulation">Circulation</option>
-                <option value="creneau">Créneau</option>
-              </select>
+           <select style={inpS} value={form.type} onChange={e => set("type", e.target.value)}>
+  <option value="code" disabled={aReussiCode}>
+    Code {aReussiCode ? "(déjà réussi)" : ""}
+  </option>
+  <option value="creneau" disabled={!aReussiCode || aReussiCreneau}>
+    Créneau {aReussiCreneau ? "(déjà réussi)" : !aReussiCode ? "(Code requis)" : ""}
+  </option>
+  <option value="circulation" disabled={!aReussiCreneau}>
+    Circulation {!aReussiCreneau ? "(Créneau requis)" : ""}
+  </option>
+</select>
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Date <span style={{ color:"#ef4444" }}>*</span></label>
@@ -1193,7 +1229,7 @@ export default function AgendaPage() {
             <input style={{ width:"100%", boxSizing:"border-box", padding:"8px 12px 8px 32px", background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:8, color:"#1e293b", fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", outline:"none" }}
               type="text" placeholder="Rechercher candidat ou moniteur..." value={search} onChange={e=>setSearch(e.target.value)} />
           </div>
-          <span style={{ fontSize:"0.75rem", color:"#94a3b8", fontWeight:500 }}>Type :</span>
+        <span style={{ fontSize:"0.75rem", color:"#94a3b8", fontWeight:500 }}>Type :</span>
           <select style={{ padding:"7px 10px", borderRadius:8, background:"#f8fafc", border:"1px solid #e2e8f0", color:"#334155", fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", outline:"none", cursor:"pointer" }}
             value={filterType} onChange={e=>setFilterType(e.target.value)}>
             <option value="">Tous</option>

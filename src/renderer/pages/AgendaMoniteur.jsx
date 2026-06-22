@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useMyPermissions } from "../context/PermissionsContext";
+import { useExamenCtx } from "../context/ExamenContext";
 
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
 const HOURS      = [7,8,9,10,11,12,13,14,15,16,17,18];
@@ -260,10 +261,30 @@ function SessionPopup({ session, anchor, onClose, isOwn, canEdit, onEdit, onDele
     </div>
   );
 }
-
+// ── ALERTE MODALE ─────────────────────────────────────────────────────────────
+function AlertModal({ icon, title, message, color = "#ef4444", onClose }) {
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:700, background:"rgba(15,23,42,0.55)", backdropFilter:"blur(4px)", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Poppins',sans-serif" }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background:"#fff", borderRadius:18, width:340, maxWidth:"88vw", boxShadow:"0 30px 70px rgba(0,0,0,0.22)", overflow:"hidden", animation:"alertPop .22s cubic-bezier(.34,1.56,.64,1)" }}>
+        <style>{`@keyframes alertPop{from{transform:translateY(18px) scale(.96);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}`}</style>
+        <div style={{ padding:"24px 22px 18px", textAlign:"center" }}>
+          <div style={{ width:52, height:52, borderRadius:"50%", margin:"0 auto 14px", background:`${color}1A`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>{icon}</div>
+          <div style={{ fontSize:"0.95rem", fontWeight:700, color:"#1e293b", marginBottom:7 }}>{title}</div>
+          <div style={{ fontSize:"0.8rem", color:"#64748b", lineHeight:1.55 }}>{message}</div>
+        </div>
+        <div style={{ padding:"0 22px 22px" }}>
+          <button onClick={onClose} style={{ width:"100%", padding:"10px 0", borderRadius:10, border:"none", background:color, color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.86rem", fontWeight:700, cursor:"pointer" }}>Compris</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 // ── CREATE / EDIT MODAL ───────────────────────────────────────────────────────
 function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUserId }) {
   const [candidats, setCandidats] = useState([]);
+  const [alertInfo, setAlertInfo] = useState(null);
+  const { examensList } = useExamenCtx();
 
   useEffect(() => {
     async function load() {
@@ -292,6 +313,12 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
   });
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+    // Historique d'examens du candidat sélectionné
+  const examsCandidat = (examensList || []).filter(
+    e => String(e.candidatId) === String(form.candidatId)
+  );
+  const aReussiCode    = examsCandidat.some(e => e.type === "Code"    && e.status === "Passed");
+  const aReussiCreneau = examsCandidat.some(e => e.type === "Créneau" && e.status === "Passed");
 
   const inpS = {
     width:"100%", boxSizing:"border-box", background:"#fff",
@@ -335,9 +362,32 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
     });
   };
 
-  const handleSubmit = () => {
+ const handleSubmit = () => {
     if (!form.date || !form.heure || !form.type) return;
-    if (!form.candidatId) { alert("Veuillez sélectionner un candidat."); return; }
+    if (!form.candidatId) {
+      setAlertInfo({ icon:"🧑", title:"Candidat manquant", message:"Veuillez sélectionner un candidat avant d'enregistrer la séance.", color:"#ef4444" });
+      return;
+    }
+
+    if (form.type === "creneau" && !aReussiCode) {
+      setAlertInfo({
+        icon: "🚫",
+        title: "Examen Code non validé",
+        color: "#ef4444",
+        message: `${form.candidat || "Ce candidat"} doit d'abord réussir l'examen du Code de la route avant de pouvoir programmer une séance de Créneau.`,
+      });
+      return;
+    }
+    if (form.type === "circulation" && !aReussiCreneau) {
+      setAlertInfo({
+        icon: "🚫",
+        title: "Examen Créneau non validé",
+        color: "#ef4444",
+        message: `${form.candidat || "Ce candidat"} doit d'abord réussir l'examen du Créneau avant de pouvoir programmer une séance de Circulation.`,
+      });
+      return;
+    }
+
     onCreate({
       id:          editing ? editing.id : Date.now(),
       name:        form.candidat,
@@ -396,11 +446,17 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Type <span style={{ color:"#ef4444" }}>*</span></label>
-              <select style={inpS} value={form.type} onChange={e => set("type", e.target.value)}>
-                <option value="code">Code</option>
-                <option value="circulation">Circulation</option>
-                <option value="creneau">Créneau</option>
-              </select>
+            <select style={inpS} value={form.type} onChange={e => set("type", e.target.value)}>
+  <option value="code" disabled={aReussiCode}>
+    Code {aReussiCode ? "(déjà réussi)" : ""}
+  </option>
+  <option value="creneau" disabled={!aReussiCode || aReussiCreneau}>
+    Créneau {aReussiCreneau ? "(déjà réussi)" : !aReussiCode ? "(Code requis)" : ""}
+  </option>
+  <option value="circulation" disabled={!aReussiCreneau}>
+    Circulation {!aReussiCreneau ? "(Créneau requis)" : ""}
+  </option>
+</select>
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Date <span style={{ color:"#ef4444" }}>*</span></label>
@@ -453,8 +509,7 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
         </div>
       </div>
     </div>
-  );
-}
+  );}
 
 // ── CALENDAR GRID ─────────────────────────────────────────────────────────────
 function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupClick, currentUserId }) {
