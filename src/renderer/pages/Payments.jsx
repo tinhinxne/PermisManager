@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import PaymentModal from "../components/PaymentModal";
+import SeanceSupModal from "../components/SeanceSupModal";
 import InvoiceGenerator from "../components/Invoicegenerator";
 import { jsPDF } from "jspdf";
 import ConnexionImg from "../../assets/Connexion.png";
@@ -723,6 +724,7 @@ const Payments = () => {
   const [showModal,    setShowModal]    = useState(false);
   const [showInvoices, setShowInvoices] = useState(false);
   const [showExport,   setShowExport]   = useState(false);
+  const [showSeanceSup, setShowSeanceSup] = useState(false);
   const [rappelCand,   setRappelCand]   = useState(null);
   const [searchTerm,   setSearchTerm]   = useState("");
   const [filtreStatut, setFiltreStatut] = useState("tous");
@@ -900,6 +902,12 @@ const Payments = () => {
           <button onClick={() => { setSelected(null); setShowModal(true); }} style={{ padding: "10px 18px", borderRadius: 10, background: "#166534", color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
             + Versement
           </button>
+          <button
+  onClick={() => setShowSeanceSup(true)}
+  style={{ padding: "10px 18px", borderRadius: 10, background: "#d97706", color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+>
+  ➕ Séance Sup.
+</button>
         </div>
 
         {/* Compteur */}
@@ -1106,6 +1114,21 @@ const Payments = () => {
         {showExport && (
           <ExportModal fiches={fichesCandidats} onClose={() => setShowExport(false)} />
         )}
+        {showSeanceSup && (
+  <SeanceSupModal
+    onClose={() => setShowSeanceSup(false)}
+    onAddPayment={async (paymentData) => {
+      const result = await window.electron.addPayment(paymentData);
+      if (result?.success) {
+        setShowSeanceSup(false);
+        await fetchData();
+        showToast(`Séance supplémentaire enregistrée — ${Number(paymentData.montant).toLocaleString("fr-DZ")} DA !`);
+      } else {
+        alert("Erreur : " + (result?.message || "Action impossible"));
+      }
+    }}
+  />
+)}
 
         {showInvoices && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1500, overflowY: "auto" }}>

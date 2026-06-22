@@ -731,6 +731,29 @@ ipcMain.handle('add-payment', async (event, data) => {
   const PRIX_PERMIS = 30000;
   const versement = parseFloat(montant);
 
+  // ── Séances supplémentaires : paiement indépendant du forfait ─────────────
+  if (typeVersement === 'seance_supplementaire') {
+    return new Promise((resolve) => {
+      db.query('SELECT * FROM Paiement WHERE idCandidat = ? LIMIT 1', [idCandidat], (err, rows) => {
+        if (err) return resolve({ success: false, message: "Erreur DB: " + err.message });
+        if (!rows || rows.length === 0)
+          return resolve({ success: false, message: "Aucun dossier de paiement trouvé pour ce candidat." });
+
+        const idPaiement = rows[0].idPaiement;
+        db.query(
+          `INSERT INTO Versement (montant, typeVersement, datePaiement, methode, numeroTranche, remarque, dateVersement, idPaiement)
+           VALUES (?, 'seance_supplementaire', NOW(), ?, NULL, ?, ?, ?)`,
+          [versement, methode, remarque || null, dateVersement, idPaiement],
+          (err2) => {
+            if (err2) return resolve({ success: false, message: "Erreur Versement: " + err2.message });
+            resolve({ success: true, montantRestant: rows[0].montantRestant });
+          }
+        );
+      });
+    });
+  }
+
+  // ── Paiement forfait normal ───────────────────────────────────────────────
   return new Promise((resolve) => {
     db.query('SELECT * FROM Paiement WHERE idCandidat = ? LIMIT 1', [idCandidat], (err, rows) => {
       if (err) return resolve({ success: false, message: "Erreur DB: " + err.message });
