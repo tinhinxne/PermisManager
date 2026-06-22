@@ -4,7 +4,7 @@ import Button from "../components/Button";
 import "../../styles/condidats.css";
 import ConnexionImg from "../../assets/Connexion.png";
 import SmallCar from "../../assets/SmallCar.png";
-import { SquarePen, Trash, Phone, Mail, X, Send, PlusCircle, Filter } from "lucide-react"; 
+import { SquarePen, Trash, Phone, Mail, X, Send, PlusCircle, Filter, FileText } from "lucide-react"; 
 import AddCandidatModal from "../components/addCondidat";
 
 // ─────────────────────────────────────────────
@@ -17,11 +17,35 @@ const TOUTES_CATEGORIES = [
   "C1E", "CE", "DE",
 ];
 
+// Clé localStorage utilisée pour mémoriser la dernière date de référence
+// de la liste d'envoi (لائحة الإرسال) — voir handleConfirmEnvoiCandidats
+const ENVOI_REF_KEY = "liste_envoi_derniere_date";
+const ENVOI_DEFAULTS_KEY = "export_pdf_defaults"; // réutilise les mêmes infos wilaya/école que la page Examens
+
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
 const getInitials = (prenom, nom) =>
   `${prenom?.[0] || ""}${nom?.[0] || ""}`.toUpperCase();
+
+// Formate une date ISO/Date en YYYY/MM/DD pour le PDF arabe
+function formatDateAr(rawDate) {
+  if (!rawDate) return "";
+  const str = rawDate instanceof Date ? rawDate.toISOString() : String(rawDate);
+  const d = new Date(str.includes("T") ? str : str + "T12:00:00");
+  if (isNaN(d)) return str;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const j = String(d.getDate()).padStart(2, "0");
+  return `${y}/${m}/${j}`;
+}
+
+// Convertit une date (Date | string ISO | "YYYY-MM-DD") en string comparable "YYYY-MM-DD"
+function toComparableDate(rawDate) {
+  if (!rawDate) return "";
+  const str = rawDate instanceof Date ? rawDate.toISOString() : String(rawDate);
+  return str.slice(0, 10); // garde juste "YYYY-MM-DD"
+}
 
 // ─────────────────────────────────────────────
 // Modale Contact Email
@@ -276,6 +300,230 @@ function ContactModal({ candidat, onClose }) {
 }
 
 // ─────────────────────────────────────────────
+// Sous-composant champ formulaire (réutilisé par la modale لائحة الإرسال)
+// ─────────────────────────────────────────────
+const FormField = ({ label, value, onChange, placeholder, type = "text", required = false, disabled = false }) => (
+  <div>
+    <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
+      {label}{required && <span style={{ color: "#dc2626" }}> *</span>}
+    </label>
+    <input
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      disabled={disabled}
+      style={{
+        width: "100%", padding: "9px 12px", borderRadius: 8,
+        border: "1px solid #d1d5db", fontSize: 13.5,
+        color: disabled ? "#94a3b8" : "#1F2937",
+        background: disabled ? "#f1f5f9" : "#fff",
+        outline: "none", boxSizing: "border-box",
+      }}
+    />
+  </div>
+);
+
+// ─────────────────────────────────────────────
+// Modale لائحة الإرسال — nouveaux inscrits depuis la dernière liste
+// ─────────────────────────────────────────────
+function EnvoiCandidatsModal({ candidats, onClose }) {
+  const [dateDebut,    setDateDebut]    = useState("");   // utilisé seulement la 1ère fois (pas de référence connue)
+  const [dateFin,      setDateFin]      = useState("");
+  const [wilaya,       setWilaya]       = useState("");
+  const [nomEcole,     setNomEcole]     = useState("");
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState("");
+
+  // Référence mémorisée depuis le dernier envoi (date de fin précédente)
+  const [derniereDate, setDerniereDate] = useState(null);
+
+  useEffect(() => {
+    try {
+      const ref = localStorage.getItem(ENVOI_REF_KEY);
+      setDerniereDate(ref || null);
+
+      const defaults = JSON.parse(localStorage.getItem(ENVOI_DEFAULTS_KEY) || "{}");
+      setWilaya(defaults.wilaya || "");
+      setNomEcole(defaults.nomEcole || "");
+    } catch {
+      setDerniereDate(null);
+    }
+  }, []);
+
+  // Candidats dont la date d'inscription tombe dans la plage choisie
+  const candidatsFiltresParDate = candidats.filter((c) => {
+    const insc = toComparableDate(c._raw?.date_inscription);
+    if (!insc) return false;
+
+    const debutEffectif = derniereDate || dateDebut; // priorité à la référence mémorisée
+    if (!debutEffectif || !dateFin) return false;
+
+    // Si on a une référence mémorisée, on prend strictement après celle-ci.
+    // Sinon (1ère fois, saisie manuelle), on inclut la date de début elle-même.
+    return derniereDate
+      ? insc > debutEffectif && insc <= dateFin
+      : insc >= debutEffectif && insc <= dateFin;
+  });
+
+  const handleConfirm = async () => {
+    setError("");
+
+    if (!derniereDate && !dateDebut) {
+      setError("Merci de renseigner la date de début (aucune référence précédente trouvée).");
+      return;
+    }
+    if (!dateFin) {
+      setError("Merci de choisir la date jusqu'à laquelle inclure les inscrits.");
+      return;
+    }
+    if (!wilaya.trim()) {
+      setError("Merci de renseigner la wilaya.");
+      return;
+    }
+    if (candidatsFiltresParDate.length === 0) {
+      setError("Aucun nouvel inscrit trouvé sur cette période.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const candidatsPourEnvoi = candidatsFiltresParDate.map((c) => {
+        const nomAr    = c._raw?.nom_ar    || "";
+        const prenomAr = c._raw?.prenom_ar || "";
+        const nomPrenomAr = (nomAr || prenomAr) ? `${nomAr} ${prenomAr}`.trim() : "";
+
+        return {
+          nomPrenom:     `${c.prenom} ${c.nom}`,
+          nomPrenomAr,
+          dateNaissance: formatDateAr(c._raw?.date_naissance),
+          categorie:     c.categoriePermis || "",
+        };
+      });
+
+      const savedPath = await window.electron.generateListeEnvoiPDF({
+        wilaya,
+        nomEcole,
+        dateDepot: formatDateAr(dateFin),
+        candidats: candidatsPourEnvoi,
+      });
+
+      if (savedPath) {
+        // La date de fin choisie devient la nouvelle référence pour la prochaine fois
+        localStorage.setItem(ENVOI_REF_KEY, dateFin);
+
+        try {
+          const prev = JSON.parse(localStorage.getItem(ENVOI_DEFAULTS_KEY) || "{}");
+          localStorage.setItem(ENVOI_DEFAULTS_KEY, JSON.stringify({ ...prev, wilaya, nomEcole }));
+        } catch { /* ignore */ }
+
+        alert(`لائحة الإرسال enregistrée :\n${savedPath}`);
+        onClose();
+      }
+    } catch (e) {
+      console.error("Erreur génération لائحة الإرسال (candidats):", e);
+      alert("Erreur lors de la génération du document.");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      onClick={() => !loading && onClose()}
+    >
+      <div
+        style={{ background: "#fff", borderRadius: 14, padding: 24, width: 420, maxWidth: "90vw", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: 17, color: "#1F2937" }}>لائحة الإرسال — نوعي الجديد</h3>
+          <button onClick={() => !loading && onClose()} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16 }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>
+          Liste des nouveaux inscrits depuis le dernier envoi — المندوبية الولائية للأمن في الطرق
+        </p>
+
+        {derniereDate ? (
+          <div style={{ background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: "#6d28d9" }}>
+            Dernière liste envoyée jusqu'au <strong>{derniereDate}</strong>. On prendra les inscrits <strong>après</strong> cette date.
+          </div>
+        ) : (
+          <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: "#c2410c" }}>
+            Aucune liste précédente trouvée. Renseignez une date de début pour cette première fois.
+          </div>
+        )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+          {!derniereDate && (
+            <FormField
+              label="Depuis le (1ère fois uniquement)"
+              value={dateDebut}
+              onChange={setDateDebut}
+              type="date"
+              required
+            />
+          )}
+
+          <FormField
+            label="Jusqu'au"
+            value={dateFin}
+            onChange={setDateFin}
+            type="date"
+            required
+          />
+
+          <FormField
+            label="الولاية (Wilaya)"
+            value={wilaya}
+            onChange={setWilaya}
+            placeholder="Ex : بجاية / Béjaïa"
+            required
+          />
+
+          <FormField
+            label="Nom de l'auto-école (optionnel)"
+            value={nomEcole}
+            onChange={setNomEcole}
+            placeholder="Ex : Auto-École Essalem"
+          />
+        </div>
+
+        <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#475569" }}>
+          <strong style={{ color: "#1f2937" }}>Nouveaux inscrits trouvés :</strong> {candidatsFiltresParDate.length}
+        </div>
+
+        {error && (
+          <div style={{ marginTop: 10, padding: "9px 13px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontSize: 12, fontWeight: 500 }}>
+            ⚠ {error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button
+            onClick={onClose}
+            disabled={loading}
+            style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}
+          >
+            Annuler
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={loading}
+            style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#7c3aed", color: "#fff", cursor: "pointer", fontWeight: 600, fontSize: 13.5, opacity: loading ? 0.7 : 1 }}
+          >
+            {loading ? "Génération..." : "Générer لائحة الإرسال"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // Composant principal
 // ─────────────────────────────────────────────
 const Condidats = () => {
@@ -286,6 +534,7 @@ const Condidats = () => {
   const [searchQuery,      setSearchQuery]      = useState("");
   const [selectedCategorie, setSelectedCategorie] = useState("Tous"); 
   const [contactCandidat,  setContactCandidat]  = useState(null);
+  const [showEnvoiModal,   setShowEnvoiModal]   = useState(false);
 
   const th = { padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" };
   const td = { padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" };
@@ -411,6 +660,14 @@ const Condidats = () => {
     }
   };
 
+  const handleOpenEnvoiModal = () => {
+    if (candidats.length === 0) {
+      alert("Aucun candidat enregistré pour le moment.");
+      return;
+    }
+    setShowEnvoiModal(true);
+  };
+
   return (
     <div className="container">
       <div className="main">
@@ -430,7 +687,20 @@ const Condidats = () => {
               <h2>Candidats</h2>
               <p>Gérer et suivre tous les candidats</p>
             </div>
-            <Button text="+ Ajouter candidat" onClick={handleAdd} />
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={handleOpenEnvoiModal}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  background: "#7c3aed", color: "#fff", border: "none",
+                  padding: "10px 18px", borderRadius: 10, cursor: "pointer",
+                  fontSize: 14, fontWeight: 600,
+                }}
+              >
+                <FileText size={16} /> لائحة الإرسال (نوعي)
+              </button>
+              <Button text="+ Ajouter candidat" onClick={handleAdd} />
+            </div>
           </div>
 
           {/* ── DESIGN ULTRA COMPACT : RECHERCHE + SELECT SUR UNE SEULE LIGNE ──────────────────────── */}
@@ -602,6 +872,13 @@ const Condidats = () => {
         <ContactModal
           candidat={contactCandidat}
           onClose={() => setContactCandidat(null)}
+        />
+      )}
+
+      {showEnvoiModal && (
+        <EnvoiCandidatsModal
+          candidats={candidats}
+          onClose={() => setShowEnvoiModal(false)}
         />
       )}
     </div>

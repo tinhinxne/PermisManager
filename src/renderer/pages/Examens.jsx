@@ -82,26 +82,11 @@ const Examens = () => {
     dateExamen:   "",
   });
 
-  // ── لائحة الإرسال modal state ──
-  const [showEnvoiModal, setShowEnvoiModal] = useState(false);
-  const [envoiLoading,   setEnvoiLoading]   = useState(false);
-  const [envoiForm, setEnvoiForm] = useState({
-    wilaya:    "",
-    nomEcole:  "",
-    dateDepot: "",
-  });
-
   // Charge les valeurs mémorisées
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("export_pdf_defaults") || "{}");
       setExportForm(f => ({ ...f, ...saved }));
-      // Réutilise wilaya et nomEcole pour لائحة الإرسال aussi
-      setEnvoiForm(f => ({
-        ...f,
-        wilaya:   saved.wilaya   || "",
-        nomEcole: saved.nomEcole || "",
-      }));
     } catch { /* pas de valeurs sauvegardées */ }
   }, []);
 
@@ -252,70 +237,6 @@ const Examens = () => {
     setPdfLoading(false);
   };
 
-  // ── export لائحة الإرسال ──
-  const openEnvoiModal = () => {
-    if (filtered.length === 0) {
-      alert("Aucun candidat dans la liste actuelle. Ajustez les filtres.");
-      return;
-    }
-    setShowEnvoiModal(true);
-  };
-
-  const handleEnvoiFormChange = (field, value) =>
-    setEnvoiForm(f => ({ ...f, [field]: value }));
-
-  const handleConfirmEnvoi = async () => {
-    if (!envoiForm.wilaya.trim()) {
-      alert("Merci de renseigner la wilaya.");
-      return;
-    }
-
-    setEnvoiLoading(true);
-    try {
-      const candidatsPourEnvoi = filtered.map((examen) => {
-        const info = candidatsMap[String(examen.candidatId)] || {};
-        const nomAr    = info.nom_ar    || "";
-        const prenomAr = info.prenom_ar || "";
-        const nomPrenomAr = (nomAr || prenomAr)
-          ? `${nomAr} ${prenomAr}`.trim()
-          : "";
-
-        return {
-          nomPrenom:     examen.candidat,
-          nomPrenomAr,
-          dateNaissance: formatDateAr(examen.dateNaissance),
-          categorie:     examen.categoriePermis || "",
-        };
-      });
-
-      const savedPath = await window.electron.generateListeEnvoiPDF({
-        wilaya:    envoiForm.wilaya,
-        nomEcole:  envoiForm.nomEcole,
-        dateDepot: formatDateAr(envoiForm.dateDepot),
-        candidats: candidatsPourEnvoi,
-      });
-
-      // Mémorise wilaya et nomEcole
-      try {
-        const prev = JSON.parse(localStorage.getItem("export_pdf_defaults") || "{}");
-        localStorage.setItem("export_pdf_defaults", JSON.stringify({
-          ...prev,
-          wilaya:   envoiForm.wilaya,
-          nomEcole: envoiForm.nomEcole,
-        }));
-      } catch { /* ignore */ }
-
-      if (savedPath) {
-        alert(`لائحة الإرسال enregistrée :\n${savedPath}`);
-        setShowEnvoiModal(false);
-      }
-    } catch (e) {
-      console.error("Erreur génération لائحة الإرسال:", e);
-      alert("Erreur lors de la génération du document.");
-    }
-    setEnvoiLoading(false);
-  };
-
   // ─────────────────────────────────────────────
   // Rendu
   // ─────────────────────────────────────────────
@@ -350,14 +271,6 @@ const Examens = () => {
               style={{ display: "flex", alignItems: "center", gap: 8, background: "#2b537e", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600 }}
             >
               <FaFilePdf /> قائمة المترشحين
-            </button>
-
-            {/* ── Bouton لائحة الإرسال ── */}
-            <button
-              onClick={openEnvoiModal}
-              style={{ display: "flex", alignItems: "center", gap: 8, background: "#7c3aed", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600 }}
-            >
-              <FaFilePdf /> لائحة الإرسال
             </button>
 
             {isAdmin && (
@@ -561,7 +474,7 @@ const Examens = () => {
       <ExamenModal examen={selectedExamen} onClose={() => setSelectedExamen(null)} />
 
       {/* ══════════════════════════════════════════════
-          Modal export قائمة المترشحين (inchangé)
+          Modal export قائمة المترشحين
       ══════════════════════════════════════════════ */}
       {showExportModal && (
         <div
@@ -600,81 +513,6 @@ const Examens = () => {
               </button>
               <button onClick={handleConfirmExport} disabled={pdfLoading} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#2b537e", color: "#fff", cursor: "pointer", fontWeight: 600, fontSize: 13.5, opacity: pdfLoading ? 0.7 : 1 }}>
                 {pdfLoading ? "Génération..." : "Générer le PDF"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════════
-          Modal export لائحة الإرسال (nouveau)
-      ══════════════════════════════════════════════ */}
-      {showEnvoiModal && (
-        <div
-          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
-          onClick={() => !envoiLoading && setShowEnvoiModal(false)}
-        >
-          <div
-            style={{ background: "#fff", borderRadius: 14, padding: 24, width: 400, maxWidth: "90vw", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <h3 style={{ margin: 0, fontSize: 17, color: "#1F2937" }}>لائحة الإرسال</h3>
-              <button onClick={() => !envoiLoading && setShowEnvoiModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16 }}>
-                <FaTimes />
-              </button>
-            </div>
-
-            <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>
-              Liste d'envoi au commissaire de sécurité routière — المندوبية الولائية للأمن في الطرق
-            </p>
-
-            {/* Badge violet rappelant le destinataire */}
-            <div style={{ background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: "#6d28d9", direction: "rtl", textAlign: "right" }}>
-              الى السيد مكلف المندوبية الولائية للأمن في الطرق
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-              <FormField
-                label="الولاية (Wilaya)"
-                value={envoiForm.wilaya}
-                onChange={v => handleEnvoiFormChange("wilaya", v)}
-                placeholder="Ex : بجاية  /  Béjaïa"
-                required
-              />
-              <FormField
-                label="Nom de l'auto-école (optionnel)"
-                value={envoiForm.nomEcole}
-                onChange={v => handleEnvoiFormChange("nomEcole", v)}
-                placeholder="Ex : Auto-École Essalem"
-              />
-              <FormField
-                label="Date de dépôt — القصر في"
-                value={envoiForm.dateDepot}
-                onChange={v => handleEnvoiFormChange("dateDepot", v)}
-                type="date"
-              />
-            </div>
-
-            <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#475569" }}>
-              <strong style={{ color: "#1f2937" }}>Candidats :</strong> {filtered.length} dossier(s)
-              {typeFilter !== "Tous" && <> · Type : <strong>{typeFilter}</strong></>}
-            </div>
-
-            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-              <button
-                onClick={() => setShowEnvoiModal(false)}
-                disabled={envoiLoading}
-                style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handleConfirmEnvoi}
-                disabled={envoiLoading}
-                style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#7c3aed", color: "#fff", cursor: "pointer", fontWeight: 600, fontSize: 13.5, opacity: envoiLoading ? 0.7 : 1 }}
-              >
-                {envoiLoading ? "Génération..." : "Générer لائحة الإرسال"}
               </button>
             </div>
           </div>
