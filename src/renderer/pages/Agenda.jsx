@@ -506,6 +506,8 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
 
   // Vérification congé annuel sur la date saisie dans le formulaire
   const dateEnCongeAnnuel = !!(seanceDateObj && isCongeAnnuel(seanceDateObj));
+const today = new Date(); today.setHours(0,0,0,0);
+const dateEstPassee = !!(seanceDateObj && seanceDateObj < today);
 
   const isMoniteurAbsent = (m) => !!(seanceDateObj && isMoniteurEnConge(m.id, seanceDateObj));
 
@@ -565,6 +567,12 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
 
   const handleSubmit = () => {
     if (!form.date || !form.heure || !form.type) return;
+
+
+    if (dateEstPassee) {
+  setAlertInfo({ icon:"📅", title:"Date dans le passé", message:"Vous ne pouvez pas planifier une séance à une date déjà passée. Veuillez choisir une date à partir d'aujourd'hui.", color:"#ef4444" });
+  return;
+}
 
     // ── Bloquer si congé annuel ───────────────────────────────────────────
     if (dateEnCongeAnnuel) {
@@ -697,6 +705,17 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
           )}
 
 
+          {dateEstPassee && !dateEnCongeAnnuel && (
+  <div style={{ padding:"10px 14px", borderRadius:10, background:"#fef2f2", border:"1.5px solid #fca5a5", fontSize:"0.78rem", color:"#dc2626", fontWeight:700, display:"flex", alignItems:"center", gap:8 }}>
+    <span style={{ fontSize:18 }}>📅</span>
+    <div>
+      <div>Date dans le passé</div>
+      <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>Vous ne pouvez pas créer une séance à une date déjà passée.</div>
+    </div>
+  </div>
+)}
+
+
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Candidat <span style={{ color:"#ef4444" }}>*</span></label>
@@ -749,7 +768,7 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Date <span style={{ color:"#ef4444" }}>*</span></label>
-              <input style={{ ...inpS, borderColor: dateEnCongeAnnuel ? "#fed7aa" : "#cbd5e1", background: dateEnCongeAnnuel ? "#fff7ed" : "#fff" }} type="date" value={form.date} onChange={handleDateChange} />
+             <input style={{ ...inpS, borderColor: dateEstPassee ? "#fca5a5" : dateEnCongeAnnuel ? "#fed7aa" : "#cbd5e1", background: dateEstPassee ? "#fef2f2" : dateEnCongeAnnuel ? "#fff7ed" : "#fff" }} type="date" value={form.date} onChange={handleDateChange} />
             </div>
           </div>
 
@@ -789,10 +808,10 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
 
         <div style={{ padding:"14px 24px", borderTop:"1px solid #e2e8f0", display:"flex", justifyContent:"flex-end", gap:10 }}>
           <button onClick={onClose} disabled={saving} style={{ padding:"9px 20px", borderRadius:8, background:"#f1f5f9", border:"1px solid #e2e8f0", color:"#64748b", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", cursor:"pointer", fontWeight:500 }}>Annuler</button>
-          <button onClick={handleSubmit} disabled={saving || dateEnCongeAnnuel} style={{ padding:"9px 22px", borderRadius:8, background: dateEnCongeAnnuel ? "#94a3b8" : saving ? "#93c5fd" : "#2563eb", border:"none", color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", fontWeight:600, cursor: saving || dateEnCongeAnnuel ? "not-allowed" : "pointer", boxShadow: dateEnCongeAnnuel ? "none" : "0 4px 14px rgba(37,99,235,0.35)", display:"flex", alignItems:"center", gap:8 }}>
-            {saving && <div style={{ width:14, height:14, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.4)", borderTop:"2px solid #fff", animation:"spin 0.7s linear infinite" }} />}
-            {dateEnCongeAnnuel ? "🏖️ Période fermée" : editing ? "Enregistrer" : "Créer la séance"}
-          </button>
+          <button onClick={handleSubmit} disabled={saving || dateEnCongeAnnuel || dateEstPassee} style={{ padding:"9px 22px", borderRadius:8, background: dateEnCongeAnnuel || dateEstPassee ? "#94a3b8" : saving ? "#93c5fd" : "#2563eb", border:"none", color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", fontWeight:600, cursor: saving || dateEnCongeAnnuel || dateEstPassee ? "not-allowed" : "pointer", boxShadow: dateEnCongeAnnuel || dateEstPassee ? "none" : "0 4px 14px rgba(37,99,235,0.35)", display:"flex", alignItems:"center", gap:8 }}>
+  {saving && <div style={{ width:14, height:14, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.4)", borderTop:"2px solid #fff", animation:"spin 0.7s linear infinite" }} />}
+  {dateEnCongeAnnuel ? "🏖️ Période fermée" : dateEstPassee ? "📅 Date passée" : editing ? "Enregistrer" : "Créer la séance"}
+</button>
         </div>
       </div>
       {alertInfo && <AlertModal icon={alertInfo.icon} title={alertInfo.title} message={alertInfo.message} color={alertInfo.color} onClose={() => setAlertInfo(null)} />}

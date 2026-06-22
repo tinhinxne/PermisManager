@@ -314,6 +314,13 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
     // Historique d'examens du candidat sélectionné
+
+
+   const seanceDateObj = form.date ? new Date(form.date + "T12:00:00") : null;
+const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+const dateEstPassee = !!(seanceDateObj && seanceDateObj < todayMidnight);
+
+
   const examsCandidat = (examensList || []).filter(
     e => String(e.candidatId) === String(form.candidatId)
   );
@@ -458,10 +465,15 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
   </option>
 </select>
             </div>
-            <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
-              <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Date <span style={{ color:"#ef4444" }}>*</span></label>
-              <input style={inpS} type="date" value={form.date} onChange={e => set("date", e.target.value)} />
-            </div>
+           <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+  <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Date <span style={{ color:"#ef4444" }}>*</span></label>
+  <input style={{ ...inpS, borderColor: dateEstPassee ? "#fca5a5" : "#cbd5e1", background: dateEstPassee ? "#fef2f2" : "#fff" }} type="date" value={form.date} onChange={e => set("date", e.target.value)} />
+  {dateEstPassee && (
+    <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:"0.72rem", color:"#dc2626", fontWeight:600 }}>
+      <span>📅</span> Date dans le passé
+    </div>
+  )}
+</div>
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
@@ -498,14 +510,14 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
               color:"#64748b", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", cursor:"pointer", fontWeight:500 }}>
             Annuler
           </button>
-          <button onClick={handleSubmit} disabled={saving}
-            style={{ padding:"9px 22px", borderRadius:8, background: saving?"#93c5fd":"#2563eb",
-              border:"none", color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem",
-              fontWeight:600, cursor: saving?"not-allowed":"pointer",
-              boxShadow:"0 4px 14px rgba(37,99,235,0.35)", display:"flex", alignItems:"center", gap:8 }}>
-            {saving && <div style={{ width:14, height:14, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.4)", borderTop:"2px solid #fff", animation:"spin 0.7s linear infinite" }} />}
-            {editing ? "Enregistrer" : "Créer la séance"}
-          </button>
+      <button onClick={handleSubmit} disabled={saving || dateEstPassee}
+  style={{ padding:"9px 22px", borderRadius:8, background: dateEstPassee ? "#94a3b8" : saving ? "#93c5fd" : "#2563eb",
+    border:"none", color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem",
+    fontWeight:600, cursor: saving || dateEstPassee ? "not-allowed" : "pointer",
+    boxShadow: dateEstPassee ? "none" : "0 4px 14px rgba(37,99,235,0.35)", display:"flex", alignItems:"center", gap:8 }}>
+  {saving && <div style={{ width:14, height:14, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.4)", borderTop:"2px solid #fff", animation:"spin 0.7s linear infinite" }} />}
+  {dateEstPassee ? "📅 Date passée" : editing ? "Enregistrer" : "Créer la séance"}
+</button>
         </div>
       </div>
     </div>
