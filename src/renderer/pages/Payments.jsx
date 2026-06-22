@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import PaymentModal from "../components/PaymentModal";
+import SeanceSupModal from "../components/SeanceSupModal";
 import InvoiceGenerator from "../components/Invoicegenerator";
 import { jsPDF } from "jspdf";
 import ConnexionImg from "../../assets/Connexion.png";
@@ -361,6 +362,16 @@ function ExportModal({ fiches, onClose }) {
   const [selectAll,     setSelectAll]     = useState(false);
   const [format,        setFormat]        = useState("pdf");
 
+  // ── NOUVEAU : étape d'aperçu avant export final ──────────────────────────
+  const [step,        setStep]        = useState("form"); // "form" | "preview"
+  const [previewDoc,  setPreviewDoc]  = useState(null);   // instance jsPDF
+  const [previewUrl,  setPreviewUrl]  = useState(null);   // blob url pour l'iframe
+
+  // Nettoie l'URL blob quand elle change ou que la modale se ferme (évite les fuites mémoire)
+  useEffect(() => {
+    return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
+  }, [previewUrl]);
+
   const fichesFiltrees = fiches.filter(f => {
     const nom = `${f.prenom || ""} ${f.nom || ""}`.toLowerCase();
     return nom.includes(recherche.toLowerCase());
@@ -392,18 +403,6 @@ function ExportModal({ fiches, onClose }) {
 
   const fichesExport = fiches.filter(f => selectedIds.has(f.idCandidat));
 
-  const handleExport = () => {
-    if (fichesExport.length === 0) return;
-    if (format === "pdf" || format === "both") {
-      const doc = genererRapportGroupePDF(fichesExport, dateDebut, dateFin);
-      doc.save(`Rapport_Paiements_${new Date().toISOString().slice(0, 10)}.pdf`);
-    }
-    if (format === "csv" || format === "both") {
-      exporterCSV(fichesExport, dateDebut, dateFin);
-    }
-    onClose();
-  };
-
   const totalVersementsExport = fichesExport.reduce((s, f) => {
     return s + f.versements.filter(v => {
       const d = new Date(v.dateVersement);
@@ -418,6 +417,42 @@ function ExportModal({ fiches, onClose }) {
     }).length;
   }, 0);
 
+  // ── Étape 1 → Étape 2 : génère le PDF et l'affiche en aperçu ────────────
+  const handlePreview = () => {
+    if (fichesExport.length === 0 || nbVersementsExport === 0) return;
+
+    // Le CSV n'a pas d'aperçu visuel pertinent : export direct dans ce cas précis
+    if (format === "csv") {
+      exporterCSV(fichesExport, dateDebut, dateFin);
+      onClose();
+      return;
+    }
+
+    const doc = genererRapportGroupePDF(fichesExport, dateDebut, dateFin);
+    const url = doc.output("bloburl");
+    setPreviewDoc(doc);
+    setPreviewUrl(url);
+    setStep("preview");
+  };
+
+  // ── Téléchargement final depuis l'aperçu ─────────────────────────────────
+  const handleTelecharger = () => {
+    if (previewDoc) {
+      previewDoc.save(`Rapport_Paiements_${new Date().toISOString().slice(0, 10)}.pdf`);
+    }
+    if (format === "both") {
+      exporterCSV(fichesExport, dateDebut, dateFin);
+    }
+    onClose();
+  };
+
+  const handleRetour = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setPreviewDoc(null);
+    setStep("form");
+  };
+
   const inp = {
     padding: "9px 12px", border: "1.5px solid #e2e8f0", borderRadius: 9,
     fontSize: 13, outline: "none", background: "#f8fafc", color: "#1e293b", width: "100%", boxSizing: "border-box",
@@ -428,130 +463,175 @@ function ExportModal({ fiches, onClose }) {
       onClick={e => e.target === e.currentTarget && onClose()}
       style={{ position: "fixed", inset: 0, zIndex: 2000, background: "rgba(15,23,42,0.65)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
     >
-      <div style={{ background: "#fff", borderRadius: 18, width: "100%", maxWidth: 580, maxHeight: "92vh", display: "flex", flexDirection: "column", boxShadow: "0 32px 80px rgba(0,0,0,0.25)", overflow: "hidden" }}>
+      <div style={{
+        background: "#fff", borderRadius: 18, width: "100%",
+        maxWidth: step === "preview" ? 820 : 580,
+        maxHeight: "92vh", display: "flex", flexDirection: "column",
+        boxShadow: "0 32px 80px rgba(0,0,0,0.25)", overflow: "hidden",
+        transition: "max-width .2s ease",
+      }}>
         <div style={{ background: "linear-gradient(135deg,#2b537e,#1e3a5f)", padding: "18px 22px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>Export des paiements</div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", marginTop: 2 }}>PDF · CSV · Filtrage par période et candidat</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>
+              {step === "form" ? "Export des paiements" : "Aperçu du rapport"}
+            </div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", marginTop: 2 }}>
+              {step === "form" ? "PDF · CSV · Filtrage par période et candidat" : "Vérifiez avant de télécharger"}
+            </div>
           </div>
           <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 8, width: 32, height: 32, cursor: "pointer", color: "#fff", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
         </div>
 
-        <div style={{ overflowY: "auto", flex: 1, padding: "20px 22px", display: "flex", flexDirection: "column", gap: 18 }}>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Période</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        {/* ── ÉTAPE 1 : formulaire (inchangé) ── */}
+        {step === "form" && (
+          <>
+            <div style={{ overflowY: "auto", flex: 1, padding: "20px 22px", display: "flex", flexDirection: "column", gap: 18 }}>
               <div>
-                <label style={{ fontSize: 11, color: "#94a3b8", display: "block", marginBottom: 4 }}>Date début</label>
-                <input type="date" value={dateDebut} onChange={e => setDateDebut(e.target.value)} style={inp} />
-              </div>
-              <div>
-                <label style={{ fontSize: 11, color: "#94a3b8", display: "block", marginBottom: 4 }}>Date fin</label>
-                <input type="date" value={dateFin} onChange={e => setDateFin(e.target.value)} style={inp} />
-              </div>
-            </div>
-            {(dateDebut || dateFin) && (
-              <button onClick={() => { setDateDebut(""); setDateFin(""); }} style={{ marginTop: 6, background: "none", border: "none", fontSize: 11, color: "#94a3b8", cursor: "pointer", padding: 0 }}>
-                ✕ Effacer la période
-              </button>
-            )}
-          </div>
-
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Format d'export</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              {[["pdf", "📄 PDF"], ["csv", "📊 Excel/CSV"], ["both", "📄+📊 Les deux"]].map(([val, label]) => (
-                <button key={val} onClick={() => setFormat(val)} style={{
-                  flex: 1, padding: "9px 6px", borderRadius: 9, border: `2px solid ${format === val ? "#2b537e" : "#e2e8f0"}`,
-                  background: format === val ? "#eff6ff" : "#f8fafc",
-                  color: format === val ? "#2b537e" : "#64748b",
-                  fontWeight: format === val ? 700 : 500, fontSize: 12, cursor: "pointer",
-                }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-              Candidats — {selectedIds.size} sélectionné{selectedIds.size !== 1 ? "s" : ""}
-            </div>
-            <input
-              type="text"
-              placeholder="🔍 Filtrer les candidats…"
-              value={recherche}
-              onChange={e => setRecherche(e.target.value)}
-              style={{ ...inp, marginBottom: 8 }}
-            />
-            <div
-              onClick={toggleAll}
-              style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 8, background: "#f1f5f9", cursor: "pointer", marginBottom: 6, userSelect: "none" }}
-            >
-              <div style={{ width: 17, height: 17, borderRadius: 4, border: `2px solid ${selectAll ? "#2b537e" : "#cbd5e1"}`, background: selectAll ? "#2b537e" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                {selectAll && <span style={{ color: "#fff", fontSize: 11, lineHeight: 1 }}>✓</span>}
-              </div>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "#334155" }}>Sélectionner tous ({fichesFiltrees.length})</span>
-            </div>
-            <div style={{ maxHeight: 200, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10, background: "#f8fafc" }}>
-              {fichesFiltrees.map((f, i) => (
-                <div
-                  key={f.idCandidat}
-                  onClick={() => toggleCandidat(f.idCandidat)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 10, padding: "9px 12px",
-                    cursor: "pointer", borderBottom: i < fichesFiltrees.length - 1 ? "1px solid #e2e8f0" : "none",
-                    background: selectedIds.has(f.idCandidat) ? "#eff6ff" : "transparent",
-                    userSelect: "none",
-                  }}
-                >
-                  <div style={{ width: 17, height: 17, borderRadius: 4, border: `2px solid ${selectedIds.has(f.idCandidat) ? "#2b537e" : "#cbd5e1"}`, background: selectedIds.has(f.idCandidat) ? "#2b537e" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    {selectedIds.has(f.idCandidat) && <span style={{ color: "#fff", fontSize: 11, lineHeight: 1 }}>✓</span>}
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Période</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: "#94a3b8", display: "block", marginBottom: 4 }}>Date début</label>
+                    <input type="date" value={dateDebut} onChange={e => setDateDebut(e.target.value)} style={inp} />
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b" }}>{f.prenom} {f.nom}</div>
-                    <div style={{ fontSize: 11, color: "#94a3b8" }}>{f.versements.length} versement{f.versements.length !== 1 ? "s" : ""} · {fDA(f.totalVerse)}</div>
+                  <div>
+                    <label style={{ fontSize: 11, color: "#94a3b8", display: "block", marginBottom: 4 }}>Date fin</label>
+                    <input type="date" value={dateFin} onChange={e => setDateFin(e.target.value)} style={inp} />
                   </div>
-                  <span style={{ padding: "2px 8px", borderRadius: 20, fontSize: 10, fontWeight: 700, background: f.statut.bg, color: f.statut.color }}>
-                    {f.statut.label}
-                  </span>
                 </div>
-              ))}
-              {fichesFiltrees.length === 0 && (
-                <div style={{ padding: 20, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>Aucun candidat trouvé</div>
+                {(dateDebut || dateFin) && (
+                  <button onClick={() => { setDateDebut(""); setDateFin(""); }} style={{ marginTop: 6, background: "none", border: "none", fontSize: 11, color: "#94a3b8", cursor: "pointer", padding: 0 }}>
+                    ✕ Effacer la période
+                  </button>
+                )}
+              </div>
+
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Format d'export</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {[["pdf", "📄 PDF"], ["csv", "📊 Excel/CSV"], ["both", "📄+📊 Les deux"]].map(([val, label]) => (
+                    <button key={val} onClick={() => setFormat(val)} style={{
+                      flex: 1, padding: "9px 6px", borderRadius: 9, border: `2px solid ${format === val ? "#2b537e" : "#e2e8f0"}`,
+                      background: format === val ? "#eff6ff" : "#f8fafc",
+                      color: format === val ? "#2b537e" : "#64748b",
+                      fontWeight: format === val ? 700 : 500, fontSize: 12, cursor: "pointer",
+                    }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Candidats — {selectedIds.size} sélectionné{selectedIds.size !== 1 ? "s" : ""}
+                </div>
+                <input
+                  type="text"
+                  placeholder="🔍 Filtrer les candidats…"
+                  value={recherche}
+                  onChange={e => setRecherche(e.target.value)}
+                  style={{ ...inp, marginBottom: 8 }}
+                />
+                <div
+                  onClick={toggleAll}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 8, background: "#f1f5f9", cursor: "pointer", marginBottom: 6, userSelect: "none" }}
+                >
+                  <div style={{ width: 17, height: 17, borderRadius: 4, border: `2px solid ${selectAll ? "#2b537e" : "#cbd5e1"}`, background: selectAll ? "#2b537e" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    {selectAll && <span style={{ color: "#fff", fontSize: 11, lineHeight: 1 }}>✓</span>}
+                  </div>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#334155" }}>Sélectionner tous ({fichesFiltrees.length})</span>
+                </div>
+                <div style={{ maxHeight: 200, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10, background: "#f8fafc" }}>
+                  {fichesFiltrees.map((f, i) => (
+                    <div
+                      key={f.idCandidat}
+                      onClick={() => toggleCandidat(f.idCandidat)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10, padding: "9px 12px",
+                        cursor: "pointer", borderBottom: i < fichesFiltrees.length - 1 ? "1px solid #e2e8f0" : "none",
+                        background: selectedIds.has(f.idCandidat) ? "#eff6ff" : "transparent",
+                        userSelect: "none",
+                      }}
+                    >
+                      <div style={{ width: 17, height: 17, borderRadius: 4, border: `2px solid ${selectedIds.has(f.idCandidat) ? "#2b537e" : "#cbd5e1"}`, background: selectedIds.has(f.idCandidat) ? "#2b537e" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        {selectedIds.has(f.idCandidat) && <span style={{ color: "#fff", fontSize: 11, lineHeight: 1 }}>✓</span>}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b" }}>{f.prenom} {f.nom}</div>
+                        <div style={{ fontSize: 11, color: "#94a3b8" }}>{f.versements.length} versement{f.versements.length !== 1 ? "s" : ""} · {fDA(f.totalVerse)}</div>
+                      </div>
+                      <span style={{ padding: "2px 8px", borderRadius: 20, fontSize: 10, fontWeight: 700, background: f.statut.bg, color: f.statut.color }}>
+                        {f.statut.label}
+                      </span>
+                    </div>
+                  ))}
+                  {fichesFiltrees.length === 0 && (
+                    <div style={{ padding: 20, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>Aucun candidat trouvé</div>
+                  )}
+                </div>
+              </div>
+
+              {selectedIds.size > 0 && (
+                <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 10, padding: "12px 16px" }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#0369a1", marginBottom: 8 }}>Aperçu de l'export</div>
+                  <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+                    <div><span style={{ fontSize: 11, color: "#94a3b8" }}>Candidats : </span><strong style={{ color: "#0369a1" }}>{selectedIds.size}</strong></div>
+                    <div><span style={{ fontSize: 11, color: "#94a3b8" }}>Versements : </span><strong style={{ color: "#0369a1" }}>{nbVersementsExport}</strong></div>
+                    <div><span style={{ fontSize: 11, color: "#94a3b8" }}>Total : </span><strong style={{ color: "#166534" }}>{fDA(totalVersementsExport)}</strong></div>
+                  </div>
+                </div>
               )}
             </div>
-          </div>
 
-          {selectedIds.size > 0 && (
-            <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 10, padding: "12px 16px" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#0369a1", marginBottom: 8 }}>Aperçu de l'export</div>
-              <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-                <div><span style={{ fontSize: 11, color: "#94a3b8" }}>Candidats : </span><strong style={{ color: "#0369a1" }}>{selectedIds.size}</strong></div>
-                <div><span style={{ fontSize: 11, color: "#94a3b8" }}>Versements : </span><strong style={{ color: "#0369a1" }}>{nbVersementsExport}</strong></div>
-                <div><span style={{ fontSize: 11, color: "#94a3b8" }}>Total : </span><strong style={{ color: "#166534" }}>{fDA(totalVersementsExport)}</strong></div>
-              </div>
+            <div style={{ padding: "14px 22px", borderTop: "1px solid #e2e8f0", display: "flex", gap: 10, flexShrink: 0, background: "#f8fafc" }}>
+              <button onClick={onClose} style={{ flex: 1, padding: 11, borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
+                Annuler
+              </button>
+              <button
+                onClick={handlePreview}
+                disabled={selectedIds.size === 0 || nbVersementsExport === 0}
+                style={{
+                  flex: 2, padding: 11, borderRadius: 10, border: "none",
+                  background: selectedIds.size === 0 || nbVersementsExport === 0 ? "#94a3b8" : "#2b537e",
+                  color: "#fff", fontWeight: 700, fontSize: 13,
+                  cursor: selectedIds.size === 0 || nbVersementsExport === 0 ? "not-allowed" : "pointer",
+                }}
+              >
+                {nbVersementsExport === 0
+                  ? "Aucun versement dans la période"
+                  : format === "csv"
+                    ? `Exporter le CSV (${nbVersementsExport} versement${nbVersementsExport > 1 ? "s" : ""})`
+                    : `👁 Aperçu (${nbVersementsExport} versement${nbVersementsExport > 1 ? "s" : ""})`}
+              </button>
             </div>
-          )}
-        </div>
+          </>
+        )}
 
-        <div style={{ padding: "14px 22px", borderTop: "1px solid #e2e8f0", display: "flex", gap: 10, flexShrink: 0, background: "#f8fafc" }}>
-          <button onClick={onClose} style={{ flex: 1, padding: 11, borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
-            Annuler
-          </button>
-          <button
-            onClick={handleExport}
-            disabled={selectedIds.size === 0 || nbVersementsExport === 0}
-            style={{
-              flex: 2, padding: 11, borderRadius: 10, border: "none",
-              background: selectedIds.size === 0 || nbVersementsExport === 0 ? "#94a3b8" : "#2b537e",
-              color: "#fff", fontWeight: 700, fontSize: 13,
-              cursor: selectedIds.size === 0 || nbVersementsExport === 0 ? "not-allowed" : "pointer",
-            }}
-          >
-            {nbVersementsExport === 0 ? "Aucun versement dans la période" : `Exporter (${nbVersementsExport} versement${nbVersementsExport > 1 ? "s" : ""})`}
-          </button>
-        </div>
+        {/* ── ÉTAPE 2 : aperçu du PDF avant téléchargement ── */}
+        {step === "preview" && (
+          <>
+            <div style={{ flex: 1, background: "#525659", padding: 12, overflow: "hidden" }}>
+              {previewUrl && (
+                <iframe
+                  src={previewUrl}
+                  title="Aperçu du rapport"
+                  style={{ width: "100%", height: "100%", minHeight: 420, border: "none", borderRadius: 6, background: "#fff" }}
+                />
+              )}
+            </div>
+            <div style={{ padding: "14px 22px", borderTop: "1px solid #e2e8f0", display: "flex", gap: 10, flexShrink: 0, background: "#f8fafc" }}>
+              <button onClick={handleRetour} style={{ flex: 1, padding: 11, borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
+                ← Modifier
+              </button>
+              <button
+                onClick={handleTelecharger}
+                style={{ flex: 2, padding: 11, borderRadius: 10, border: "none", background: "#166534", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+              >
+                ⬇ Télécharger{format === "both" ? " (PDF + CSV)" : " le PDF"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -644,6 +724,7 @@ const Payments = () => {
   const [showModal,    setShowModal]    = useState(false);
   const [showInvoices, setShowInvoices] = useState(false);
   const [showExport,   setShowExport]   = useState(false);
+  const [showSeanceSup, setShowSeanceSup] = useState(false);
   const [rappelCand,   setRappelCand]   = useState(null);
   const [searchTerm,   setSearchTerm]   = useState("");
   const [filtreStatut, setFiltreStatut] = useState("tous");
@@ -821,6 +902,12 @@ const Payments = () => {
           <button onClick={() => { setSelected(null); setShowModal(true); }} style={{ padding: "10px 18px", borderRadius: 10, background: "#166534", color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
             + Versement
           </button>
+          <button
+  onClick={() => setShowSeanceSup(true)}
+  style={{ padding: "10px 18px", borderRadius: 10, background: "#d97706", color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+>
+  ➕ Séance Sup.
+</button>
         </div>
 
         {/* Compteur */}
@@ -1027,6 +1114,21 @@ const Payments = () => {
         {showExport && (
           <ExportModal fiches={fichesCandidats} onClose={() => setShowExport(false)} />
         )}
+        {showSeanceSup && (
+  <SeanceSupModal
+    onClose={() => setShowSeanceSup(false)}
+    onAddPayment={async (paymentData) => {
+      const result = await window.electron.addPayment(paymentData);
+      if (result?.success) {
+        setShowSeanceSup(false);
+        await fetchData();
+        showToast(`Séance supplémentaire enregistrée — ${Number(paymentData.montant).toLocaleString("fr-DZ")} DA !`);
+      } else {
+        alert("Erreur : " + (result?.message || "Action impossible"));
+      }
+    }}
+  />
+)}
 
         {showInvoices && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1500, overflowY: "auto" }}>

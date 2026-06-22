@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 import Sidebar from "../components/Sidebar";
 import Button from "../components/Button";
 import { useCongeCtx } from "../context/CongeContext";
+import { useExamenCtx } from "../context/ExamenContext";
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
 const HOURS      = [7,8,9,10,11,12,13,14,15,16,17,18];
@@ -456,6 +457,8 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
   const [moniteurs, setMoniteurs] = useState([]);
   const [alertInfo, setAlertInfo] = useState(null);
   const { isMoniteurEnConge, isCongeAnnuel, congeAnnuel } = useCongeCtx();
+  const { examensList } = useExamenCtx();
+  
 
   useEffect(() => {
     async function loadData() {
@@ -489,6 +492,13 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
   });
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  // Historique d'examens du candidat sélectionné
+  const examsCandidat = (examensList || []).filter(
+    e => String(e.candidatId) === String(form.candidatId)
+  );
+  const aReussiCode    = examsCandidat.some(e => e.type === "Code"    && e.status === "Passed");
+  const aReussiCreneau = examsCandidat.some(e => e.type === "Créneau" && e.status === "Passed");
+
 
   const selectedCandidatObj = candidats.find(c => String(c.idCandidat) === String(form.candidatId));
   const candidatCat = selectedCandidatObj ? candidatCategorie(selectedCandidatObj) : "";
@@ -496,6 +506,8 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
 
   // Vérification congé annuel sur la date saisie dans le formulaire
   const dateEnCongeAnnuel = !!(seanceDateObj && isCongeAnnuel(seanceDateObj));
+const today = new Date(); today.setHours(0,0,0,0);
+const dateEstPassee = !!(seanceDateObj && seanceDateObj < today);
 
   const isMoniteurAbsent = (m) => !!(seanceDateObj && isMoniteurEnConge(m.id, seanceDateObj));
 
@@ -556,6 +568,12 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
   const handleSubmit = () => {
     if (!form.date || !form.heure || !form.type) return;
 
+
+    if (dateEstPassee) {
+  setAlertInfo({ icon:"📅", title:"Date dans le passé", message:"Vous ne pouvez pas planifier une séance à une date déjà passée. Veuillez choisir une date à partir d'aujourd'hui.", color:"#ef4444" });
+  return;
+}
+
     // ── Bloquer si congé annuel ───────────────────────────────────────────
     if (dateEnCongeAnnuel) {
       setAlertInfo({
@@ -567,9 +585,28 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
       return;
     }
 
-    if (!form.candidatId) { setAlertInfo({ icon:"🧑", title:"Candidat manquant", message:"Veuillez sélectionner un candidat avant d'enregistrer la séance.", color:"#ef4444" }); return; }
+ if (!form.candidatId) { setAlertInfo({ icon:"🧑", title:"Candidat manquant", message:"Veuillez sélectionner un candidat avant d'enregistrer la séance.", color:"#ef4444" }); return; }
     if (!form.moniteur_id) { setAlertInfo({ icon:"🧑‍🏫", title:"Moniteur manquant", message:"Veuillez sélectionner un moniteur avant d'enregistrer la séance.", color:"#ef4444" }); return; }
 
+    // ── Progression obligatoire : Code → Créneau → Circulation ──────────────
+    if (form.type === "creneau" && !aReussiCode) {
+      setAlertInfo({
+        icon: "🚫",
+        title: "Examen Code non validé",
+        color: "#ef4444",
+        message: `${form.candidat || "Ce candidat"} doit d'abord réussir l'examen du Code de la route avant de pouvoir programmer une séance de Créneau.`,
+      });
+      return;
+    }
+    if (form.type === "circulation" && !aReussiCreneau) {
+      setAlertInfo({
+        icon: "🚫",
+        title: "Examen Créneau non validé",
+        color: "#ef4444",
+        message: `${form.candidat || "Ce candidat"} doit d'abord réussir l'examen du Créneau avant de pouvoir programmer une séance de Circulation.`,
+      });
+      return;
+    }
     const moniteurSel = moniteurs.find(m => String(m.id) === String(form.moniteur_id));
     if (selectedCandidatObj && moniteurSel && !moniteurCategories(moniteurSel).includes(candidatCat)) {
       setAlertInfo({ icon:"🎓", title:"Catégorie incompatible", color:"#3b82f6", message:`Ce moniteur n'est pas habilité pour la catégorie ${candidatCat}.` });
@@ -667,6 +704,18 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
             </div>
           )}
 
+
+          {dateEstPassee && !dateEnCongeAnnuel && (
+  <div style={{ padding:"10px 14px", borderRadius:10, background:"#fef2f2", border:"1.5px solid #fca5a5", fontSize:"0.78rem", color:"#dc2626", fontWeight:700, display:"flex", alignItems:"center", gap:8 }}>
+    <span style={{ fontSize:18 }}>📅</span>
+    <div>
+      <div>Date dans le passé</div>
+      <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>Vous ne pouvez pas créer une séance à une date déjà passée.</div>
+    </div>
+  </div>
+)}
+
+
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Candidat <span style={{ color:"#ef4444" }}>*</span></label>
@@ -705,15 +754,21 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Type <span style={{ color:"#ef4444" }}>*</span></label>
-              <select style={inpS} value={form.type} onChange={e => set("type", e.target.value)}>
-                <option value="code">Code</option>
-                <option value="circulation">Circulation</option>
-                <option value="creneau">Créneau</option>
-              </select>
+           <select style={inpS} value={form.type} onChange={e => set("type", e.target.value)}>
+  <option value="code" disabled={aReussiCode}>
+    Code {aReussiCode ? "(déjà réussi)" : ""}
+  </option>
+  <option value="creneau" disabled={!aReussiCode || aReussiCreneau}>
+    Créneau {aReussiCreneau ? "(déjà réussi)" : !aReussiCode ? "(Code requis)" : ""}
+  </option>
+  <option value="circulation" disabled={!aReussiCreneau}>
+    Circulation {!aReussiCreneau ? "(Créneau requis)" : ""}
+  </option>
+</select>
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Date <span style={{ color:"#ef4444" }}>*</span></label>
-              <input style={{ ...inpS, borderColor: dateEnCongeAnnuel ? "#fed7aa" : "#cbd5e1", background: dateEnCongeAnnuel ? "#fff7ed" : "#fff" }} type="date" value={form.date} onChange={handleDateChange} />
+             <input style={{ ...inpS, borderColor: dateEstPassee ? "#fca5a5" : dateEnCongeAnnuel ? "#fed7aa" : "#cbd5e1", background: dateEstPassee ? "#fef2f2" : dateEnCongeAnnuel ? "#fff7ed" : "#fff" }} type="date" value={form.date} onChange={handleDateChange} />
             </div>
           </div>
 
@@ -753,10 +808,10 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
 
         <div style={{ padding:"14px 24px", borderTop:"1px solid #e2e8f0", display:"flex", justifyContent:"flex-end", gap:10 }}>
           <button onClick={onClose} disabled={saving} style={{ padding:"9px 20px", borderRadius:8, background:"#f1f5f9", border:"1px solid #e2e8f0", color:"#64748b", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", cursor:"pointer", fontWeight:500 }}>Annuler</button>
-          <button onClick={handleSubmit} disabled={saving || dateEnCongeAnnuel} style={{ padding:"9px 22px", borderRadius:8, background: dateEnCongeAnnuel ? "#94a3b8" : saving ? "#93c5fd" : "#2563eb", border:"none", color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", fontWeight:600, cursor: saving || dateEnCongeAnnuel ? "not-allowed" : "pointer", boxShadow: dateEnCongeAnnuel ? "none" : "0 4px 14px rgba(37,99,235,0.35)", display:"flex", alignItems:"center", gap:8 }}>
-            {saving && <div style={{ width:14, height:14, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.4)", borderTop:"2px solid #fff", animation:"spin 0.7s linear infinite" }} />}
-            {dateEnCongeAnnuel ? "🏖️ Période fermée" : editing ? "Enregistrer" : "Créer la séance"}
-          </button>
+          <button onClick={handleSubmit} disabled={saving || dateEnCongeAnnuel || dateEstPassee} style={{ padding:"9px 22px", borderRadius:8, background: dateEnCongeAnnuel || dateEstPassee ? "#94a3b8" : saving ? "#93c5fd" : "#2563eb", border:"none", color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", fontWeight:600, cursor: saving || dateEnCongeAnnuel || dateEstPassee ? "not-allowed" : "pointer", boxShadow: dateEnCongeAnnuel || dateEstPassee ? "none" : "0 4px 14px rgba(37,99,235,0.35)", display:"flex", alignItems:"center", gap:8 }}>
+  {saving && <div style={{ width:14, height:14, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.4)", borderTop:"2px solid #fff", animation:"spin 0.7s linear infinite" }} />}
+  {dateEnCongeAnnuel ? "🏖️ Période fermée" : dateEstPassee ? "📅 Date passée" : editing ? "Enregistrer" : "Créer la séance"}
+</button>
         </div>
       </div>
       {alertInfo && <AlertModal icon={alertInfo.icon} title={alertInfo.title} message={alertInfo.message} color={alertInfo.color} onClose={() => setAlertInfo(null)} />}
@@ -1193,7 +1248,7 @@ export default function AgendaPage() {
             <input style={{ width:"100%", boxSizing:"border-box", padding:"8px 12px 8px 32px", background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:8, color:"#1e293b", fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", outline:"none" }}
               type="text" placeholder="Rechercher candidat ou moniteur..." value={search} onChange={e=>setSearch(e.target.value)} />
           </div>
-          <span style={{ fontSize:"0.75rem", color:"#94a3b8", fontWeight:500 }}>Type :</span>
+        <span style={{ fontSize:"0.75rem", color:"#94a3b8", fontWeight:500 }}>Type :</span>
           <select style={{ padding:"7px 10px", borderRadius:8, background:"#f8fafc", border:"1px solid #e2e8f0", color:"#334155", fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", outline:"none", cursor:"pointer" }}
             value={filterType} onChange={e=>setFilterType(e.target.value)}>
             <option value="">Tous</option>
