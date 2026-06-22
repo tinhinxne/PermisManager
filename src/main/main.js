@@ -1543,3 +1543,42 @@ ipcMain.handle("send-rappel-paiement", async (event, data) => {
     return { success: false, error: err.message };
   }
 });
+// ── Revenus mensuels (pour le graphique du dashboard) ──────────────────────
+ipcMain.handle("get-revenus-mensuels", async () => {
+  return new Promise((resolve) => {
+    const sql = `
+      SELECT 
+        DATE_FORMAT(dateVersement, '%Y-%m') AS ym,
+        DATE_FORMAT(dateVersement, '%b')    AS n,
+        SUM(montant) AS v
+      FROM Versement
+      WHERE dateVersement >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+      GROUP BY DATE_FORMAT(dateVersement, '%Y-%m'), DATE_FORMAT(dateVersement, '%b')
+      ORDER BY ym ASC
+    `;
+    db.query(sql, (err, res) => {
+      if (err) { console.error("get-revenus-mensuels:", err); resolve([]); }
+      else resolve(res.map(r => ({ n: r.n, v: Number(r.v) })));
+    });
+  });
+});
+
+// ── Séances par jour, mois en cours (pour le graphique du dashboard) ───────
+ipcMain.handle("get-seances-mois", async () => {
+  return new Promise((resolve) => {
+    const sql = `
+      SELECT 
+        DAY(date) AS n,
+        COUNT(*) AS v
+      FROM Seance
+      WHERE MONTH(date) = MONTH(CURDATE())
+        AND YEAR(date) = YEAR(CURDATE())
+      GROUP BY DAY(date)
+      ORDER BY DAY(date) ASC
+    `;
+    db.query(sql, (err, res) => {
+      if (err) { console.error("get-seances-mois:", err); resolve([]); }
+      else resolve(res.map(r => ({ n: String(r.n), v: Number(r.v) })));
+    });
+  });
+});

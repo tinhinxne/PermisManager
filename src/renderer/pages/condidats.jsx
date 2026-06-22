@@ -4,8 +4,9 @@ import Button from "../components/Button";
 import "../../styles/condidats.css";
 import ConnexionImg from "../../assets/Connexion.png";
 import SmallCar from "../../assets/SmallCar.png";
-import { SquarePen, Trash, Phone, Mail, X, Send, PlusCircle, Filter, FileText } from "lucide-react"; 
 import AddCandidatModal from "../components/addCondidat";
+import { useExamenCtx } from "../context/ExamenContext";
+import { SquarePen, Trash, Phone, Mail, X, Send, PlusCircle, Filter, FileText, History } from "lucide-react";
 
 // ─────────────────────────────────────────────
 // LISTE COMPLÈTE DES CATÉGORIES DE PERMIS
@@ -298,6 +299,125 @@ function ContactModal({ candidat, onClose }) {
     </div>
   );
 }
+// ─────────────────────────────────────────────
+// Modale Historique des examens d'un candidat
+// ─────────────────────────────────────────────
+const STATUS_CONFIG_HISTO = {
+  Scheduled: { bg: "#e3f2fd", color: "#1565c0", label: "Programmé" },
+  Passed:    { bg: "#e8f5e9", color: "#2e7d32", label: "Réussi"    },
+  Failed:    { bg: "#ffebee", color: "#c62828", label: "Échoué"    },
+};
+
+function HistoriqueExamensModal({ candidat, examensList, onClose }) {
+  const nomComplet = `${candidat.prenom} ${candidat.nom}`;
+
+  const historique = examensList
+    .filter((e) => String(e.candidatId) === String(candidat.id))
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{
+        background: "#fff", borderRadius: 16,
+        width: 560, maxWidth: "95vw", maxHeight: "80vh",
+        boxShadow: "0 20px 60px rgba(0,0,0,0.18)",
+        display: "flex", flexDirection: "column", overflow: "hidden",
+      }}>
+        {/* Header */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "18px 22px 14px", borderBottom: "1px solid #e2e8f0",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: "50%",
+              background: "#ede9fe", color: "#6d28d9",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 13, fontWeight: 700,
+            }}>
+              {getInitials(candidat.prenom, candidat.nom)}
+            </div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>
+                Historique des examens — {nomComplet}
+              </div>
+              <div style={{ fontSize: 12, color: "#64748b" }}>
+                {historique.length} session{historique.length !== 1 ? "s" : ""} d'examen
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background: "#f1f5f9", border: "none", borderRadius: 8,
+            width: 32, height: 32, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#64748b",
+          }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "16px 22px", overflowY: "auto" }}>
+          {historique.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "30px 0", color: "#94a3b8", fontSize: 13 }}>
+              Aucun examen enregistré pour ce candidat.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {historique.map((ex) => {
+                const st = STATUS_CONFIG_HISTO[ex.status] || STATUS_CONFIG_HISTO.Scheduled;
+                return (
+                  <div key={ex.id} style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "12px 14px", borderRadius: 10,
+                    border: "1px solid #e2e8f0", background: "#f8fafc",
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, color: "#1e293b" }}>
+                        {ex.type}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                        {ex.date} {ex.heure ? `· ${ex.heure}` : ""} {ex.lieu ? `· ${ex.lieu}` : ""}
+                      </div>
+                    </div>
+                    <span style={{
+                      background: st.bg, color: st.color,
+                      padding: "4px 12px", borderRadius: 20,
+                      fontSize: 12, fontWeight: 700,
+                    }}>
+                      {st.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          display: "flex", justifyContent: "flex-end",
+          padding: "14px 22px 18px", borderTop: "1px solid #e2e8f0",
+        }}>
+          <button onClick={onClose} style={{
+            padding: "9px 22px", borderRadius: 10,
+            background: "#2b537e", border: "none", color: "#fff",
+            fontSize: 13, fontWeight: 700, cursor: "pointer",
+          }}>
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────
 // Sous-composant champ formulaire (réutilisé par la modale لائحة الإرسال)
@@ -535,6 +655,9 @@ const Condidats = () => {
   const [selectedCategorie, setSelectedCategorie] = useState("Tous"); 
   const [contactCandidat,  setContactCandidat]  = useState(null);
   const [showEnvoiModal,   setShowEnvoiModal]   = useState(false);
+  const [historiqueCandidat, setHistoriqueCandidat]  = useState(null); // ← nouveau
+
+  const { examensList } = useExamenCtx(); // ← nouveau
 
   const th = { padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" };
   const td = { padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" };
@@ -841,6 +964,13 @@ const Condidats = () => {
                               title={c._raw?.email ? `Envoyer un email à ${c.prenom} ${c.nom}` : "Pas d'email enregistré"}
                               onClick={() => { if (c._raw?.email) setContactCandidat(c); }}
                             />
+                            <History
+                              size={17}
+                              color="#7c3aed"
+                              style={{ cursor: "pointer" }}
+                              title="Historique des examens"
+                              onClick={() => setHistoriqueCandidat(c)}
+                            />
 
                             <Trash
                               size={17} color="red"
@@ -879,6 +1009,13 @@ const Condidats = () => {
         <EnvoiCandidatsModal
           candidats={candidats}
           onClose={() => setShowEnvoiModal(false)}
+        />
+      )}
+      {historiqueCandidat && (
+        <HistoriqueExamensModal
+          candidat={historiqueCandidat}
+          examensList={examensList}
+          onClose={() => setHistoriqueCandidat(null)}
         />
       )}
     </div>
