@@ -325,10 +325,12 @@ const FormField = ({ label, value, onChange, placeholder, type = "text", require
 );
 
 // ─────────────────────────────────────────────
-// Modale لائحة الإرسال — nouveaux inscrits depuis la dernière liste
+// Modale لائحة الإرسال — nouveaux inscrits depuis la dernière référence
+// (la date de début est toujours visible et modifiable par l'utilisateur :
+//  elle est simplement pré-remplie avec la dernière date mémorisée)
 // ─────────────────────────────────────────────
 function EnvoiCandidatsModal({ candidats, onClose }) {
-  const [dateDebut,    setDateDebut]    = useState("");   // utilisé seulement la 1ère fois (pas de référence connue)
+  const [dateDebut,    setDateDebut]    = useState("");   // pré-remplie avec la référence si elle existe, modifiable
   const [dateFin,      setDateFin]      = useState("");
   const [wilaya,       setWilaya]       = useState("");
   const [nomEcole,     setNomEcole]     = useState("");
@@ -342,6 +344,9 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
     try {
       const ref = localStorage.getItem(ENVOI_REF_KEY);
       setDerniereDate(ref || null);
+      // Pré-remplit le champ "Depuis le" avec la référence mémorisée,
+      // mais l'utilisateur reste libre de la modifier.
+      if (ref) setDateDebut(ref);
 
       const defaults = JSON.parse(localStorage.getItem(ENVOI_DEFAULTS_KEY) || "{}");
       setWilaya(defaults.wilaya || "");
@@ -355,22 +360,22 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
   const candidatsFiltresParDate = candidats.filter((c) => {
     const insc = toComparableDate(c._raw?.date_inscription);
     if (!insc) return false;
+    if (!dateDebut || !dateFin) return false;
 
-    const debutEffectif = derniereDate || dateDebut; // priorité à la référence mémorisée
-    if (!debutEffectif || !dateFin) return false;
-
-    // Si on a une référence mémorisée, on prend strictement après celle-ci.
-    // Sinon (1ère fois, saisie manuelle), on inclut la date de début elle-même.
-    return derniereDate
-      ? insc > debutEffectif && insc <= dateFin
-      : insc >= debutEffectif && insc <= dateFin;
+    // Si la date de début saisie est exactement celle mémorisée (non modifiée
+    // par l'utilisateur), on exclut cette date elle-même pour ne pas reprendre
+    // un candidat déjà inclus dans l'envoi précédent. Si l'utilisateur l'a
+    // changée manuellement, on l'inclut normalement (>=).
+    return dateDebut === derniereDate
+      ? insc > dateDebut && insc <= dateFin
+      : insc >= dateDebut && insc <= dateFin;
   });
 
   const handleConfirm = async () => {
     setError("");
 
-    if (!derniereDate && !dateDebut) {
-      setError("Merci de renseigner la date de début (aucune référence précédente trouvée).");
+    if (!dateDebut) {
+      setError("Merci de renseigner la date de début.");
       return;
     }
     if (!dateFin) {
@@ -449,24 +454,22 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
 
         {derniereDate ? (
           <div style={{ background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: "#6d28d9" }}>
-            Dernière liste envoyée jusqu'au <strong>{derniereDate}</strong>. On prendra les inscrits <strong>après</strong> cette date.
+            Dernière liste envoyée jusqu'au <strong>{derniereDate}</strong>. La date de début ci-dessous est pré-remplie avec cette référence, mais vous pouvez la modifier librement.
           </div>
         ) : (
           <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: "#c2410c" }}>
-            Aucune liste précédente trouvée. Renseignez une date de début pour cette première fois.
+            Aucune liste précédente trouvée. Renseignez une date de début.
           </div>
         )}
 
         <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-          {!derniereDate && (
-            <FormField
-              label="Depuis le (1ère fois uniquement)"
-              value={dateDebut}
-              onChange={setDateDebut}
-              type="date"
-              required
-            />
-          )}
+          <FormField
+            label="Depuis le"
+            value={dateDebut}
+            onChange={setDateDebut}
+            type="date"
+            required
+          />
 
           <FormField
             label="Jusqu'au"
