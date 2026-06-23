@@ -398,8 +398,12 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
           prenom:      candidat.prenom      || "",
           nom_ar:      candidat.nom_ar      || "",
           prenom_ar:   candidat.prenom_ar   || "",
-          dob:         candidat.date_naissance ? new Date(candidat.date_naissance).toISOString().split("T")[0] : "",
-          inscription: candidat.date_inscription ? new Date(candidat.date_inscription).toISOString().split("T")[0] : "",
+          // dob:         candidat.date_naissance ? new Date(candidat.date_naissance).toISOString().split("T")[0] : "",
+          // inscription: candidat.date_inscription ? new Date(candidat.date_inscription).toISOString().split("T")[0] : "",
+          dob: candidat.date_naissance
+  ? new Date(candidat.date_naissance).toLocaleDateString("en-CA") : "",
+inscription: candidat.date_inscription
+  ? new Date(candidat.date_inscription).toLocaleDateString("en-CA") : "",
           tel:         candidat.telephone    || "",
           sexe:        candidat.sexe === "M" ? "homme" : candidat.sexe === "F" ? "femme" : "",
           email:       candidat.email        || "",

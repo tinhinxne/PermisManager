@@ -3,7 +3,7 @@ const mysql = require("mysql2");
 const db = mysql.createConnection({
   host: 'localhost',
   user: 'root',
-  password: 'Fitmanager@2026',
+  password: 'root2026',
   database: 'auto_ecole_db',
   charset: 'utf8mb4',
 });

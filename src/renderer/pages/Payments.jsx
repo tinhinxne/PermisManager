@@ -12,7 +12,11 @@ const PRIX_PERMIS = 30000;
 const AUTOECOLE = { nom: "Auto-École El Amal", telephone: "0550 00 00 00", adresse: "Sétif, Algérie" };
 
 // ─── Utilitaires ──────────────────────────────────────────────────────────────
-const fDA   = (n) => `${Number(n || 0).toLocaleString("fr-DZ")} DA`;
+// const fDA   = (n) => `${Number(n || 0).toLocaleString("fr-DZ")} DA`;
+const fDA = (n) => {
+  const num = Number(n || 0);
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " DA";
+};
 const fDate = (s) => s ? new Date(s).toLocaleDateString("fr-FR") : "—";
 const mLabel = (m) => ({ ccp: "CCP", carte: "Carte", especes: "Espèces" })[m] ?? (m || "—");
 
@@ -99,7 +103,7 @@ function genererRecuPDF(versement, candidat) {
     doc.setFillColor(pct >= 100 ? 22 : 78, pct >= 100 ? 101 : 150, pct >= 100 ? 52 : 225);
     doc.roundedRect(14, y, ((W - 28) * pct) / 100, 5, 2, 2, "F");
   }
-  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(100, 116, 139);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(30, 41, 59);
   doc.text(`${pct}% réglé`, W - 14, y + 4, { align: "right" });
   y += 14;
 
@@ -163,7 +167,7 @@ function genererHistoriquePDF(candidat, versements) {
     doc.setFillColor(pct >= 100 ? 22 : 78, pct >= 100 ? 101 : 150, pct >= 100 ? 52 : 225);
     doc.roundedRect(14, y, ((W - 28) * pct) / 100, 5, 2, 2, "F");
   }
-  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(100, 116, 139);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(30, 41, 59);
   doc.text(`${pct}% réglé`, W - 14, y + 4, { align: "right" });
   y += 14;
 
