@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from "react";
 
-const fDA = (n) => `${Number(n || 0).toLocaleString("fr-DZ")} DA`;
-
+// const fDA = (n) => `${Number(n || 0).toLocaleString("fr-DZ")} DA`;
+const fDA = (n) => {
+  const num = Number(n || 0);
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " DA";
+};
 const normaliserType = (type) => {
   const raw = (type || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   if (raw.includes("circ")) return "circulation";
@@ -295,7 +298,8 @@ const SeanceSupModal = ({ onClose, onAddPayment }) => {
               </div>
               <div>
                 <label style={{ fontSize: 11, color: "#64748b", fontWeight: 600, display: "block", marginBottom: 4 }}>Date *</label>
-                <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                {/* <input type="date" value={date} onChange={e => setDate(e.target.value)} */}
+                <input type="date" value={date} min={new Date().toISOString().split("T")[0]} onChange={e => setDate(e.target.value)}
                   style={{ ...inpS, border: `1.5px solid ${errors.date ? "#ef4444" : "#e2e8f0"}` }} />
                 {errors.date && <p style={errStyle}>{errors.date}</p>}
               </div>
