@@ -67,9 +67,8 @@ sendMessageAdmin: (data) => ipcRenderer.invoke("send-message-admin", data),
 
   sendRappelPaiement: (data) => ipcRenderer.invoke("send-rappel-paiement", data),
    generateListeCandidatsPDF: (data) =>
-   ipcRenderer.invoke("generate-liste-candidats-pdf", data),
+    ipcRenderer.invoke("generate-liste-candidats-pdf", data),
 
-     generateListeEnvoiPDF: (data) =>
+  generateListeEnvoiPDF: (data) =>
     ipcRenderer.invoke("generate-liste-envoi-pdf", data),
-
 });
