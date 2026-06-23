@@ -44,7 +44,58 @@ function formatDateAr(isoDate) {
   const j = String(d.getDate()).padStart(2, "0");
   return `${y}/${m}/${j}`;
 }
-
+// ─────────────────────────────────────────────
+// Alerte modale (remplace les alert() natifs)
+// ─────────────────────────────────────────────
+function AlertModal({ icon, title, message, color = "#ef4444", onClose }) {
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 2000,
+        background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{
+        background: "#fff", borderRadius: 18,
+        width: 360, maxWidth: "90vw",
+        boxShadow: "0 30px 70px rgba(0,0,0,0.22)",
+        overflow: "hidden",
+        animation: "alertPop .22s cubic-bezier(.34,1.56,.64,1)",
+      }}>
+        <style>{`@keyframes alertPop{from{transform:translateY(18px) scale(.96);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}`}</style>
+        <div style={{ padding: "26px 24px 18px", textAlign: "center" }}>
+          <div style={{
+            width: 54, height: 54, borderRadius: "50%", margin: "0 auto 14px",
+            background: `${color}1A`, display: "flex", alignItems: "center",
+            justifyContent: "center", fontSize: 26,
+          }}>
+            {icon}
+          </div>
+          <div style={{ fontSize: "1rem", fontWeight: 700, color: "#1e293b", marginBottom: 8 }}>
+            {title}
+          </div>
+          <div style={{ fontSize: "0.85rem", color: "#64748b", lineHeight: 1.55 }}>
+            {message}
+          </div>
+        </div>
+        <div style={{ padding: "0 24px 24px" }}>
+          <button
+            onClick={onClose}
+            style={{
+              width: "100%", padding: "11px 0", borderRadius: 10, border: "none",
+              background: color, color: "#fff", fontSize: "0.88rem", fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            Compris
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 // ─────────────────────────────────────────────
 // Composant principal
 // ─────────────────────────────────────────────
@@ -70,6 +121,7 @@ const Examens = () => {
   const [lastGenerated,  setLastGenerated]  = useState(null);
   const [showReportes,   setShowReportes]   = useState(false);
   const [candidatsMap,   setCandidatsMap]   = useState({});
+  const [alertInfo, setAlertInfo] = useState(null);
 
   const [showExportModal, setShowExportModal] = useState(false);
   const [pdfLoading,      setPdfLoading]      = useState(false);
@@ -129,12 +181,28 @@ const Examens = () => {
     }
   };
 
-  const handleToggle = (id, e) => {
+const handleToggle = (id, e) => {
     e.stopPropagation();
     if (!perms.CAN_TOGGLE_STATUS) return;
+
+    const examen = examensList.find((x) => x.id === id);
+    if (!examen) return;
+
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const examDate = new Date((examen.date || "") + "T00:00:00");
+
+    if (!isNaN(examDate) && examDate > today) {
+      setAlertInfo({
+        icon: "📅",
+        title: "Examen pas encore passé",
+        color: "#f97316",
+        message: `Cet examen est programmé pour le ${examen.date}. Vous ne pouvez modifier le résultat qu'à partir de cette date.`,
+      });
+      return;
+    }
+
     toggleExamenStatus(id);
   };
-
   // ── filtres ──
   const filtered = examensList.filter(e => {
     const matchStatus = statusFilter === "Tous" || e.status === statusFilter;
@@ -472,6 +540,15 @@ const Examens = () => {
 
       {/* ── Modal détail examen ── */}
       <ExamenModal examen={selectedExamen} onClose={() => setSelectedExamen(null)} />
+        {alertInfo && (
+        <AlertModal
+          icon={alertInfo.icon}
+          title={alertInfo.title}
+          message={alertInfo.message}
+          color={alertInfo.color}
+          onClose={() => setAlertInfo(null)}
+        />
+      )}
 
       {/* ══════════════════════════════════════════════
           Modal export قائمة المترشحين
