@@ -41,6 +41,19 @@ function formatDateAr(rawDate) {
   return `${y}/${m}/${j}`;
 }
 
+// Formate un timestamp ISO en date + heure lisibles (ex: "24/06/2026 à 14:32")
+function formatDateHeure(isoString) {
+  if (!isoString) return "";
+  const d = new Date(isoString);
+  if (isNaN(d)) return "";
+  const j = String(d.getDate()).padStart(2, "0");
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const y = d.getFullYear();
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${j}/${m}/${y} à ${h}:${min}`;
+}
+
 // Convertit une date (Date | string ISO | "YYYY-MM-DD") en string comparable "YYYY-MM-DD"
 function toComparableDate(rawDate) {
   if (!rawDate) return "";
@@ -444,76 +457,77 @@ const FormField = ({ label, value, onChange, placeholder, type = "text", require
   </div>
 );
 
+
 // ─────────────────────────────────────────────
-// Modale لائحة الإرسال — nouveaux inscrits depuis la dernière référence
-// (la date de début est toujours visible et modifiable par l'utilisateur :
-//  elle est simplement pré-remplie avec la dernière date mémorisée)
+// Nouvelle clé : liste des IDs déjà envoyés (le vrai garde-fou anti-oubli)
+// ENVOI_REF_KEY et ENVOI_DEFAULTS_KEY sont déjà déclarés en haut du fichier
+// ─────────────────────────────────────────────
+const ENVOI_IDS_KEY = "liste_envoi_ids_envoyes";
+const ENVOI_TIMESTAMP_KEY = "liste_envoi_derniere_generation"; // date+heure ISO de la dernière génération réussie
+// ─────────────────────────────────────────────
+// Modale لائحة الإرسال — filtrée par date, mais sans jamais oublier
+// un candidat (suivi par ID en plus de la date)
 // ─────────────────────────────────────────────
 function EnvoiCandidatsModal({ candidats, onClose }) {
-  const [dateDebut,    setDateDebut]    = useState("");   // pré-remplie avec la référence si elle existe, modifiable
-  const [dateFin,      setDateFin]      = useState("");
-  const [wilaya,       setWilaya]       = useState("");
-  const [nomEcole,     setNomEcole]     = useState("");
-  const [loading,      setLoading]      = useState(false);
-  const [error,        setError]        = useState("");
-
-  // Référence mémorisée depuis le dernier envoi (date de fin précédente)
-  const [derniereDate, setDerniereDate] = useState(null);
+  const [dateDebut, setDateDebut] = useState(""); // pré-rempli avec la référence, modifiable
+  const [dateFin,   setDateFin]   = useState("");
+  const [wilaya,    setWilaya]    = useState("");
+  const [nomEcole,  setNomEcole]  = useState("");
+  const [loading,   setLoading]   = useState(false);
+  const [error,     setError]     = useState("");
+  const [sentIds,   setSentIds]   = useState([]); // IDs déjà inclus dans une liste précédente
+  const [derniereGeneration, setDerniereGeneration] = useState(""); // date+heure ISO de la dernière liste générée
 
   useEffect(() => {
     try {
       const ref = localStorage.getItem(ENVOI_REF_KEY);
-      setDerniereDate(ref || null);
-      // Pré-remplit le champ "Depuis le" avec la référence mémorisée,
-      // mais l'utilisateur reste libre de la modifier.
       if (ref) setDateDebut(ref);
+
+      const ids = JSON.parse(localStorage.getItem(ENVOI_IDS_KEY) || "[]");
+      setSentIds(Array.isArray(ids) ? ids : []);
 
       const defaults = JSON.parse(localStorage.getItem(ENVOI_DEFAULTS_KEY) || "{}");
       setWilaya(defaults.wilaya || "");
       setNomEcole(defaults.nomEcole || "");
+
+      const ts = localStorage.getItem(ENVOI_TIMESTAMP_KEY);
+      if (ts) setDerniereGeneration(ts);
     } catch {
-      setDerniereDate(null);
+      setSentIds([]);
     }
   }, []);
 
-  // Candidats dont la date d'inscription tombe dans la plage choisie
-  const candidatsFiltresParDate = candidats.filter((c) => {
+  // ✅ Tous les candidats DONT la date d'inscription tombe dans la période choisie
+  //    (bornes INCLUSIVES des deux côtés). Le PDF inclura TOUS ces candidats,
+  //    qu'ils aient déjà été envoyés avant ou non.
+  const candidatsFiltres = candidats.filter((c) => {
     const insc = toComparableDate(c._raw?.date_inscription);
     if (!insc) return false;
     if (!dateDebut || !dateFin) return false;
-
-    // Si la date de début saisie est exactement celle mémorisée (non modifiée
-    // par l'utilisateur), on exclut cette date elle-même pour ne pas reprendre
-    // un candidat déjà inclus dans l'envoi précédent. Si l'utilisateur l'a
-    // changée manuellement, on l'inclut normalement (>=).
-    return dateDebut === derniereDate
-      ? insc > dateDebut && insc <= dateFin
-      : insc >= dateDebut && insc <= dateFin;
+    return insc >= dateDebut && insc <= dateFin; // bornes inclusives
   });
+
+  const periodeVide =
+    !!dateDebut && !!dateFin &&
+    candidatsFiltres.length === 0;
 
   const handleConfirm = async () => {
     setError("");
 
-    if (!dateDebut) {
-      setError("Merci de renseigner la date de début.");
+    if (!dateDebut) { setError("Merci de renseigner la date de début.");                    return; }
+    if (!dateFin)   { setError("Merci de choisir la date jusqu'à laquelle inclure les inscrits."); return; }
+    if (!wilaya.trim()) { setError("Merci de renseigner la wilaya.");                        return; }
+
+    if (candidatsFiltres.length === 0) {
+      setError("Aucun candidat inscrit sur cette période.");
       return;
     }
-    if (!dateFin) {
-      setError("Merci de choisir la date jusqu'à laquelle inclure les inscrits.");
-      return;
-    }
-    if (!wilaya.trim()) {
-      setError("Merci de renseigner la wilaya.");
-      return;
-    }
-    if (candidatsFiltresParDate.length === 0) {
-      setError("Aucun nouvel inscrit trouvé sur cette période.");
-      return;
-    }
+    // La génération inclut toujours tous les candidats inscrits sur la période,
+    // qu'ils aient déjà été envoyés avant ou non.
 
     setLoading(true);
     try {
-      const candidatsPourEnvoi = candidatsFiltresParDate.map((c) => {
+      const candidatsPourEnvoi = candidatsFiltres.map((c) => {
         const nomAr    = c._raw?.nom_ar    || "";
         const prenomAr = c._raw?.prenom_ar || "";
         const nomPrenomAr = (nomAr || prenomAr) ? `${nomAr} ${prenomAr}`.trim() : "";
@@ -534,8 +548,17 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
       });
 
       if (savedPath) {
-        // La date de fin choisie devient la nouvelle référence pour la prochaine fois
+        // La date de fin choisie devient la nouvelle référence (pour pré-remplir la prochaine fois)
         localStorage.setItem(ENVOI_REF_KEY, dateFin);
+
+        // ✅ On AJOUTE les IDs qu'on vient d'inclure (jamais on ne remplace), dédupliqués
+        const nouveauxIds = Array.from(new Set([...sentIds, ...candidatsFiltres.map((c) => c.id)]));
+        localStorage.setItem(ENVOI_IDS_KEY, JSON.stringify(nouveauxIds));
+
+        // ✅ On mémorise la date et l'heure exactes de cette génération
+        const nowIso = new Date().toISOString();
+        localStorage.setItem(ENVOI_TIMESTAMP_KEY, nowIso);
+        setDerniereGeneration(nowIso);
 
         try {
           const prev = JSON.parse(localStorage.getItem(ENVOI_DEFAULTS_KEY) || "{}");
@@ -569,18 +592,14 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
         </div>
 
         <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>
-          Liste des nouveaux inscrits depuis le dernier envoi — المندوبية الولائية للأمن في الطرق
+          Liste de tous les candidats inscrits sur la période choisie — المندوبية الولائية للأمن في الطرق
         </p>
 
-        {derniereDate ? (
-          <div style={{ background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: "#6d28d9" }}>
-            Dernière liste envoyée jusqu'au <strong>{derniereDate}</strong>. La date de début ci-dessous est pré-remplie avec cette référence, mais vous pouvez la modifier librement.
-          </div>
-        ) : (
-          <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: "#c2410c" }}>
-            Aucune liste précédente trouvée. Renseignez une date de début.
-          </div>
-        )}
+        <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: "#475569" }}>
+          {derniereGeneration
+            ? <>Dernière liste générée le <strong>{formatDateHeure(derniereGeneration)}</strong></>
+            : "Aucune liste générée pour le moment."}
+        </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
           <FormField
@@ -615,9 +634,16 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
           />
         </div>
 
-        <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#475569" }}>
-          <strong style={{ color: "#1f2937" }}>Nouveaux inscrits trouvés :</strong> {candidatsFiltresParDate.length}
-        </div>
+        {/* ── Bandeau d'état : période vide / total trouvé ── */}
+        {periodeVide ? (
+          <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#64748b" }}>
+            Aucun candidat inscrit sur cette période.
+          </div>
+        ) : (
+          <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#475569" }}>
+            <strong style={{ color: "#1f2937" }}>Candidats trouvés sur cette période :</strong> {candidatsFiltres.length}
+          </div>
+        )}
 
         {error && (
           <div style={{ marginTop: 10, padding: "9px 13px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontSize: 12, fontWeight: 500 }}>
@@ -636,7 +662,14 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
           <button
             onClick={handleConfirm}
             disabled={loading}
-            style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#7c3aed", color: "#fff", cursor: "pointer", fontWeight: 600, fontSize: 13.5, opacity: loading ? 0.7 : 1 }}
+            style={{
+              flex: 1, padding: "10px 0", borderRadius: 8, border: "none",
+              background: "#7c3aed",
+              color: "#fff",
+              cursor: loading ? "not-allowed" : "pointer",
+              fontWeight: 600, fontSize: 13.5,
+              opacity: loading ? 0.7 : 1,
+            }}
           >
             {loading ? "Génération..." : "Générer لائحة الإرسال"}
           </button>
