@@ -4,23 +4,27 @@ const cors    = require("cors");
 const crypto  = require("crypto");
 
 const app = express();
-app.use(express.json());
 app.use(cors());
 
 // ─── CONFIG CHARGILY ──────────────────────────────────────────────────────────
-const CHARGILY_SECRET_KEY = process.env.CHARGILY_SECRET_KEY || "test_sk_VUBUlBXWwpNYUOtySb4WDBuJgPAogzXfGJsp4R";
-const APP_URL             = process.env.APP_URL             || "http://localhost:3000";
+// Cette instance serveur tourne en LOCAL sur le poste d'une seule auto-école
+// (un tunnel ngrok / APP_URL par poste). La clé Chargily n'est plus fixée en
+// .env : elle est envoyée par l'app Electron (qui la lit dans sa propre DB
+// locale) à chaque requête. On la garde aussi en mémoire pour pouvoir
+// vérifier la signature du webhook (qui n'a pas accès au body en clair avant
+// vérification, et qui ne reçoit pas la clé directement de Chargily).
+const APP_URL = process.env.APP_URL || "https://lesser-flashcard-unfazed.ngrok-free.dev";
 
-// Mode test → pay.chargily.net/test/api/v2
-// Mode live → pay.chargily.net/api/v2
-const CHARGILY_BASE_URL = process.env.CHARGILY_MODE === "live"
-  ? "https://pay.chargily.net/api/v2"
-  : "https://pay.chargily.net/test/api/v2";
+// Mémorise la dernière clé/mode utilisés sur ce poste, pour la vérification webhook.
+// Mis à jour chaque fois que /chargily/payer est appelé.
+let lastChargilyKey  = null;
+let lastChargilyMode = "test";
 
-const chargilyHeaders = {
-  "Authorization": `Bearer ${CHARGILY_SECRET_KEY}`,
-  "Content-Type":  "application/json",
-};
+function getBaseUrl(mode) {
+  return mode === "live"
+    ? "https://pay.chargily.net/api/v2"
+    : "https://pay.chargily.net/test/api/v2";
+}
 
 // ─── Commandes confirmées (polling) ───────────────────────────────────────────
 const confirmedCheckouts = new Map(); // checkoutId → { success, orderInfo }
@@ -28,32 +32,44 @@ const confirmedCheckouts = new Map(); // checkoutId → { success, orderInfo }
 // ─────────────────────────────────────────────────────────────────────────────
 // ROUTE 1 — Electron appelle cette route pour créer un checkout Chargily
 // POST /chargily/payer
-// Body : { idCandidat, montant, nomCandidat }
+// Body : { idCandidat, montant, nomCandidat, chargilyKey, chargilyMode }
 // ─────────────────────────────────────────────────────────────────────────────
-app.post("/chargily/payer", async (req, res) => {
-  const { idCandidat, montant, nomCandidat } = req.body;
+app.post("/chargily/payer", express.json(), async (req, res) => {
+  const { idCandidat, montant, nomCandidat, chargilyKey, chargilyMode } = req.body;
 
-  if (!idCandidat || !montant) {
-    return res.status(400).json({ success: false, message: "Paramètres manquants" });
+  if (!idCandidat || !montant || !chargilyKey) {
+    return res.status(400).json({ success: false, message: "Paramètres manquants (idCandidat, montant et chargilyKey requis)" });
   }
+
+  const mode    = chargilyMode === "live" ? "live" : "test";
+  const baseUrl = getBaseUrl(mode);
+
+  // On retient la clé/le mode pour la vérification de signature du webhook.
+  lastChargilyKey  = chargilyKey;
+  lastChargilyMode = mode;
 
   try {
     const response = await axios.post(
-      `${CHARGILY_BASE_URL}/checkouts`,
+      `${baseUrl}/checkouts`,
       {
-        amount:       montant,        // en DA directement (pas de centimes !)
-        currency:     "dzd",
-        success_url:  `${APP_URL}/chargily/retour?status=success`,
-        failure_url:  `${APP_URL}/chargily/retour?status=failed`,
+        amount:           montant,        // en DA directement (pas de centimes !)
+        currency:         "dzd",
+        success_url:      `${APP_URL}/chargily/retour?status=success`,
+        failure_url:      `${APP_URL}/chargily/retour?status=failed`,
         webhook_endpoint: `${APP_URL}/chargily/webhook`,
-        locale:       "fr",
-        description:  `Formation permis — Candidat ${nomCandidat || idCandidat}`,
+        locale:           "fr",
+        description:      `Formation permis — Candidat ${nomCandidat || idCandidat}`,
         metadata: {
           idCandidat: String(idCandidat),
           montant:    String(montant),
         },
       },
-      { headers: chargilyHeaders }
+      {
+        headers: {
+          "Authorization": `Bearer ${chargilyKey}`,
+          "Content-Type":  "application/json",
+        },
+      }
     );
 
     const checkout = response.data;
@@ -65,6 +81,7 @@ app.post("/chargily/payer", async (req, res) => {
     });
 
   } catch (err) {
+    // On ne logue jamais la clé elle-même, seulement le message d'erreur Chargily.
     console.error("Erreur Chargily /checkouts:", err.response?.data || err.message);
     return res.status(500).json({ success: false, message: "Erreur serveur Chargily" });
   }
@@ -101,14 +118,23 @@ app.get("/chargily/retour", (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // ROUTE 3 — Webhook Chargily (confirmation automatique serveur → serveur)
 // POST /chargily/webhook
+// Note : on vérifie la signature avec la dernière clé connue pour ce poste
+// (lastChargilyKey). Comme chaque instance ne sert qu'une seule auto-école
+// (un ngrok/APP_URL par poste), c'est cohérent — mais ça suppose qu'au moins
+// un /chargily/payer ait été appelé depuis le démarrage du serveur avant que
+// le premier webhook n'arrive.
 // ─────────────────────────────────────────────────────────────────────────────
 app.post("/chargily/webhook", express.raw({ type: "application/json" }), (req, res) => {
-  // Vérification signature Chargily
   const signature = req.headers["signature"];
   const payload   = req.body;
 
+  if (!lastChargilyKey) {
+    console.error("Webhook reçu mais aucune clé Chargily connue pour ce poste (aucun /chargily/payer effectué encore).");
+    return res.status(401).send("Unauthorized");
+  }
+
   const computedSig = crypto
-    .createHmac("sha256", CHARGILY_SECRET_KEY)
+    .createHmac("sha256", lastChargilyKey)
     .update(payload)
     .digest("hex");
 
@@ -134,9 +160,16 @@ app.post("/chargily/webhook", express.raw({ type: "application/json" }), (req, r
 // ─────────────────────────────────────────────────────────────────────────────
 // ROUTE 4 — Electron interroge cette route (polling) pour savoir si c'est payé
 // GET /chargily/statut/:checkoutId
+// Headers requis : x-chargily-key, x-chargily-mode
 // ─────────────────────────────────────────────────────────────────────────────
 app.get("/chargily/statut/:checkoutId", async (req, res) => {
   const { checkoutId } = req.params;
+  const chargilyKey  = req.headers["x-chargily-key"];
+  const chargilyMode = req.headers["x-chargily-mode"] === "live" ? "live" : "test";
+
+  if (!chargilyKey) {
+    return res.status(400).json({ status: "error", message: "Header x-chargily-key manquant" });
+  }
 
   // 1. Vérifier d'abord dans les confirmations webhook reçues
   const webhookResult = confirmedCheckouts.get(checkoutId);
@@ -146,10 +179,17 @@ app.get("/chargily/statut/:checkoutId", async (req, res) => {
   }
 
   // 2. Sinon interroger l'API Chargily directement
+  const baseUrl = getBaseUrl(chargilyMode);
+
   try {
     const response = await axios.get(
-      `${CHARGILY_BASE_URL}/checkouts/${checkoutId}`,
-      { headers: chargilyHeaders }
+      `${baseUrl}/checkouts/${checkoutId}`,
+      {
+        headers: {
+          "Authorization": `Bearer ${chargilyKey}`,
+          "Content-Type":  "application/json",
+        },
+      }
     );
     const checkout = response.data;
 
