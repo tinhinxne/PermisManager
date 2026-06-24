@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from "react";
-import { TrendingUp, Users, Plus, Trash2 } from "lucide-react";
+import { TrendingUp, Users, Plus, Trash2, FileText, X } from "lucide-react";
 import ConnexionImg from "../../assets/Connexion.png";
 import SmallCar from "../../assets/SmallCar.png";
 import { useAuth } from "../context/AuthContext";
@@ -8,7 +7,167 @@ import { useMyPermissions } from "../context/PermissionsContext";
 import AddCandidatModal from "../components/addCondidat";
 
 // ─────────────────────────────────────────────
-// Helpers
+// Helpers pour le bordereau
+// ─────────────────────────────────────────────
+const ENVOI_REF_KEY = "liste_envoi_derniere_date";
+const ENVOI_DEFAULTS_KEY = "export_pdf_defaults";
+
+function formatDateAr(rawDate) {
+  if (!rawDate) return "";
+  const str = rawDate instanceof Date ? rawDate.toISOString() : String(rawDate);
+  const d = new Date(str.includes("T") ? str : str + "T12:00:00");
+  if (isNaN(d)) return str;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const j = String(d.getDate()).padStart(2, "0");
+  return `${y}/${m}/${j}`;
+}
+
+function toComparableDate(rawDate) {
+  if (!rawDate) return "";
+  const str = rawDate instanceof Date ? rawDate.toISOString() : String(rawDate);
+  return str.slice(0, 10);
+}
+
+// ─────────────────────────────────────────────
+// Modale Bordereau d'envoi intégrée
+// ─────────────────────────────────────────────
+function EnvoiCandidatsModal({ candidats, onClose }) {
+  const [dateDebut, setDateDebut] = useState("");
+  const [dateFin, setDateFin] = useState("");
+  const [wilaya, setWilaya] = useState("");
+  const [nomEcole, setNomEcole] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [derniereDate, setDerniereDate] = useState(null);
+
+  useEffect(() => {
+    try {
+      const ref = localStorage.getItem(ENVOI_REF_KEY);
+      setDerniereDate(ref || null);
+      if (ref) setDateDebut(ref);
+      const defaults = JSON.parse(localStorage.getItem(ENVOI_DEFAULTS_KEY) || "{}");
+      setWilaya(defaults.wilaya || "");
+      setNomEcole(defaults.nomEcole || "");
+    } catch {
+      setDerniereDate(null);
+    }
+  }, []);
+
+  const candidatsFiltresParDate = candidats.filter((c) => {
+    const insc = toComparableDate(c._raw?.date_inscription);
+    if (!insc || !dateDebut || !dateFin) return false;
+    return dateDebut === derniereDate
+      ? insc > dateDebut && insc <= dateFin
+      : insc >= dateDebut && insc <= dateFin;
+  });
+
+  const handleConfirm = async () => {
+    setError("");
+    if (!dateDebut) return setError("Merci de renseigner la date de début.");
+    if (!dateFin) return setError("Merci de choisir la date jusqu'à laquelle inclure les inscrits.");
+    if (!wilaya.trim()) return setError("Merci de renseigner la wilaya.");
+    if (candidatsFiltresParDate.length === 0) return setError("Aucun nouvel inscrit trouvé sur cette période.");
+
+    setLoading(true);
+    try {
+      const candidatsPourEnvoi = candidatsFiltresParDate.map((c) => ({
+        nomPrenom: `${c.prenom} ${c.nom}`,
+        nomPrenomAr: (c._raw?.nom_ar || "") + " " + (c._raw?.prenom_ar || ""),
+        dateNaissance: formatDateAr(c._raw?.date_naissance),
+        categorie: c.categoriePermis || "",
+      }));
+
+      const savedPath = await window.electron.generateListeEnvoiPDF({
+        wilaya,
+        nomEcole,
+        dateDepot: formatDateAr(dateFin),
+        candidats: candidatsPourEnvoi,
+      });
+
+      if (savedPath) {
+        localStorage.setItem(ENVOI_REF_KEY, dateFin);
+        localStorage.setItem(ENVOI_DEFAULTS_KEY, JSON.stringify({ wilaya, nomEcole }));
+        alert(`لائحة الإرسال enregistrée :\n${savedPath}`);
+        onClose();
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Erreur lors de la génération du document.");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      onClick={() => !loading && onClose()}
+    >
+      <div
+        style={{ background: "#fff", borderRadius: 14, padding: 24, width: 420, maxWidth: "90vw", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: 17, color: "#1F2937" }}>لائحة الإرسال — نوعي الجديد</h3>
+          <button onClick={() => !loading && onClose()} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16 }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>
+          Liste des nouveaux inscrits depuis le dernier envoi — المندوبية الولائية للأمن في الطرق
+        </p>
+
+        {derniereDate ? (
+          <div style={{ background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: "#6d28d9" }}>
+            Dernière liste envoyée jusqu'au <strong>{derniereDate}</strong>.
+          </div>
+        ) : (
+          <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: "#c2410c" }}>
+            Aucune liste précédente trouvée.
+          </div>
+        )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>Depuis le <span style={{ color: "#dc2626" }}>*</span></label>
+            <input type="date" value={dateDebut} onChange={(e) => setDateDebut(e.target.value)} style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13.5, outline: "none" }} />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>Jusqu'au <span style={{ color: "#dc2626" }}>*</span></label>
+            <input type="date" value={dateFin} onChange={(e) => setDateFin(e.target.value)} style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13.5, outline: "none" }} />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>الولاية (Wilaya) <span style={{ color: "#dc2626" }}>*</span></label>
+            <input type="text" value={wilaya} onChange={(e) => setWilaya(e.target.value)} placeholder="Ex : بجاية / Béjaïa" style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13.5, outline: "none" }} />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>Nom de l'auto-école (optionnel)</label>
+            <input type="text" value={nomEcole} onChange={(e) => setNomEcole(e.target.value)} placeholder="Ex : Auto-École Essalem" style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13.5, outline: "none" }} />
+          </div>
+        </div>
+
+        <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#475569" }}>
+          <strong style={{ color: "#1f2937" }}>Nouveaux inscrits trouvés :</strong> {candidatsFiltresParDate.length}
+        </div>
+
+        {error && (
+          <div style={{ marginTop: 10, padding: "9px 13px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontSize: 12, fontWeight: 500 }}>
+            ⚠ {error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button onClick={onClose} disabled={loading} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>Annuler</button>
+          <button onClick={handleConfirm} disabled={loading} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#7c3aed", color: "#fff", cursor: "pointer", fontWeight: 600, fontSize: 13.5, opacity: loading ? 0.7 : 1 }}>{loading ? "Génération..." : "Générer لائحة الإرسال"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Helpers pour le reste
 // ─────────────────────────────────────────────
 const getInitials = (nom) =>
   nom.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
@@ -22,30 +181,29 @@ const AVATAR_COLORS = [
 ];
 
 // ─────────────────────────────────────────────
-// Component
+// Composant principal
 // ─────────────────────────────────────────────
 const MesCandidats = () => {
   const { currentUser } = useAuth();
   const { CAN_VIEW_ALL_CANDIDATES, CAN_REMOVE_CANDIDAT } = useMyPermissions();
 
-  const [search,       setSearch]       = useState("");
-  const [candidats,    setCandidats]    = useState([]);
-  const [loading,      setLoading]      = useState(true);
-  const [showModal,    setShowModal]    = useState(false);
+  const [search, setSearch] = useState("");
+  const [candidats, setCandidats] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
   const [editCandidat, setEditCandidat] = useState(null);
+  const [showEnvoiModal, setShowEnvoiModal] = useState(false);
 
   // ── Chargement ───────────────────────────────────────────────────────────────
   const loadData = async () => {
     try {
       setLoading(true);
-
       const [rawCandidats, rawSeances] = await Promise.all([
         window.electron.getCandidats(),
         window.electron.getSeances(),
       ]);
 
       const moniteurId = currentUser?.id;
-
       const mesSeances = CAN_VIEW_ALL_CANDIDATES
         ? rawSeances
         : moniteurId
@@ -99,6 +257,7 @@ const MesCandidats = () => {
           return {
             id:          c.idCandidat,
             nom:         `${c.prenom} ${c.nom}`,
+            prenom:      c.prenom,
             tel:         c.telephone,
             sessions:    nbSessions,
             total:       20,
@@ -149,6 +308,15 @@ const MesCandidats = () => {
     } else {
       alert("Erreur lors de la suppression du candidat.");
     }
+  };
+
+  // ── Bordereau d'envoi ──────────────────────────────────────────────────────
+  const handleOpenEnvoiModal = () => {
+    if (candidats.length === 0) {
+      alert("Aucun candidat enregistré pour le moment.");
+      return;
+    }
+    setShowEnvoiModal(true);
   };
 
   // ── Stats ────────────────────────────────────────────────────────────────────
@@ -233,23 +401,38 @@ const MesCandidats = () => {
               </p>
             </div>
 
-            {CAN_VIEW_ALL_CANDIDATES && (
-              <button
-                onClick={handleAdd}
-                style={{
-                  display: "flex", alignItems: "center", gap: 7,
-                  padding: "10px 20px", borderRadius: 10,
-                  background: "#2b537e", border: "none", color: "#fff",
-                  fontFamily: "inherit", fontSize: "0.85rem", fontWeight: 700,
-                  cursor: "pointer", boxShadow: "0 4px 14px rgba(43,83,126,0.3)",
-                }}
-              >
-                <Plus size={15} /> Ajouter candidat
-              </button>
-            )}
+            <div style={{ display: "flex", gap: 10 }}>
+              {CAN_VIEW_ALL_CANDIDATES && (
+                <>
+                  <button
+                    onClick={handleOpenEnvoiModal}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      background: "#7c3aed", color: "#fff", border: "none",
+                      padding: "10px 18px", borderRadius: 10, cursor: "pointer",
+                      fontSize: 14, fontWeight: 600,
+                    }}
+                  >
+                    <FileText size={16} /> لائحة الإرسال (نوعي)
+                  </button>
+                  <button
+                    onClick={handleAdd}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 7,
+                      padding: "10px 20px", borderRadius: 10,
+                      background: "#2b537e", border: "none", color: "#fff",
+                      fontFamily: "inherit", fontSize: "0.85rem", fontWeight: 700,
+                      cursor: "pointer", boxShadow: "0 4px 14px rgba(43,83,126,0.3)",
+                    }}
+                  >
+                    <Plus size={15} /> Ajouter candidat
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
-          {/* BARRE DE RECHERCHE — même style que Payments */}
+          {/* BARRE DE RECHERCHE */}
           <div style={{ display: "flex", gap: "15px", marginBottom: "20px", alignItems: "center" }}>
             <div style={{
               flex: 1,
@@ -358,13 +541,21 @@ const MesCandidats = () => {
         </div>
       </div>
 
-      {/* MODALE */}
+      {/* MODALE AJOUT */}
       {CAN_VIEW_ALL_CANDIDATES && (
         <AddCandidatModal
           showModal={showModal}
           setShowModal={setShowModal}
           candidat={editCandidat}
           onSave={handleSave}
+        />
+      )}
+
+      {/* MODALE BORDEREAU D'ENVOI */}
+      {showEnvoiModal && (
+        <EnvoiCandidatsModal
+          candidats={candidats}
+          onClose={() => setShowEnvoiModal(false)}
         />
       )}
     </div>
