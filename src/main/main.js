@@ -1722,8 +1722,7 @@ ipcMain.handle("test-chargily-config", async (event, { key, mode }) => {
       headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
     });
     const data = await res.json();
-    if (data.currency) return { success: true };
-    return { success: false, message: data.message || "Clé invalide" };
+if (data.wallets || data.entity === "balance") return { success: true };    return { success: false, message: data.message || "Clé invalide" };
   } catch (err) {
     return { success: false, message: err.message };
   }
