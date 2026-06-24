@@ -5,7 +5,7 @@ import SmallCar from "../../assets/SmallCar.png";
 import Button from "../components/Button";
 import AddMoniteurModal from "../components/addMoniteur";
 import { useCongeCtx } from "../context/CongeContext";
-import { CalendarOff, X, Save, Plus, Trash } from "lucide-react";
+import { CalendarOff, X, Save, Plus, Trash, Clock, Check, X as XIcon } from "lucide-react";
 
 /* ── Couleurs par famille de permis ─────────────────────────────────────── */
 const CATEGORY_COLORS = {
@@ -53,31 +53,40 @@ const formatDate = (iso) => {
   });
 };
 
+const nbJours = (d1, d2) => {
+  if (!d1 || !d2) return 0;
+  return Math.max(0, Math.round((new Date(d2) - new Date(d1)) / 86400000) + 1);
+};
+
 const CONGE_PULSE_CSS = `@keyframes congePulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.3); } }`;
 
 /* ── Mini-modale congé rapide ────────────────────────────────────────────── */
 const CongeQuickModal = ({ moniteur, onClose }) => {
-  const { getCongesMoniteur, addCongeMoniteur, removeCongeMoniteur } = useCongeCtx();
-  const [conges, setConges]     = useState(getCongesMoniteur(moniteur.id));
+  const { congesMoniteurs, addCongeMoniteur, removeCongeMoniteur, refreshMoniteur } = useCongeCtx();
+  const conges = congesMoniteurs[String(moniteur.id)] || [];
+
   const [showForm, setShowForm] = useState(false);
   const [form, setForm]         = useState({ dateDebut: "", dateFin: "", raison: "maladie", precision: "" });
   const [error, setError]       = useState("");
 
-  const refresh = () => setTimeout(() => setConges(getCongesMoniteur(moniteur.id)), 50);
+  useEffect(() => {
+    refreshMoniteur(moniteur.id);
+  }, [moniteur.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!form.dateDebut || !form.dateFin) { setError("Renseignez les deux dates."); return; }
     if (new Date(form.dateFin) < new Date(form.dateDebut)) { setError("La fin doit être après le début."); return; }
     if (form.raison === "autre" && !form.precision.trim()) { setError("Précisez la raison du congé."); return; }
-    addCongeMoniteur(moniteur.id, { ...form, precision: form.precision.trim() });
-    refresh();
+    await addCongeMoniteur(moniteur.id, { ...form, precision: form.precision.trim() });
     setForm({ dateDebut: "", dateFin: "", raison: "maladie", precision: "" });
     setShowForm(false);
     setError("");
   };
 
-  const isActive  = (d, f) => { const now = new Date(); return new Date(d) <= now && now <= new Date(f); };
-  const isExpired = (f)    => new Date(f) < new Date();
+  const handleRemove = (congeId) => removeCongeMoniteur(moniteur.id, congeId);
+
+  const isActive  = (d, f) => { const now = new Date(); return new Date(d) <= now && now <= new Date(f + "T23:59:59"); };
+  const isExpired = (f)    => new Date(f + "T23:59:59") < new Date();
 
   return (
     <div
@@ -93,7 +102,7 @@ const CongeQuickModal = ({ moniteur, onClose }) => {
       }}>
         {/* Header */}
         <div style={{
-          background: "linear-gradient(135deg, #f97316, #fb923c)",
+          background: "linear-gradient(135deg, #2b537e, #3a6da0)",
           padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
@@ -120,27 +129,33 @@ const CongeQuickModal = ({ moniteur, onClose }) => {
             {conges.length === 0 ? (
               <div style={{ textAlign: "center", padding: "26px 0", color: "#94a3b8", fontSize: 12 }}>
                 <div style={{
-                  width: 48, height: 48, borderRadius: "50%", background: "#fff7ed",
+                  width: 48, height: 48, borderRadius: "50%", background: "#f0f5fa",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   margin: "0 auto 8px",
                 }}>
-                  <CalendarOff size={22} color="#fdba74" strokeWidth={2} />
+                  <CalendarOff size={22} color="#90b4d6" strokeWidth={2} />
                 </div>
                 Aucun congé enregistré pour ce moniteur
               </div>
             ) : (
               conges.map((c) => {
-                const r      = RAISONS.find(x => x.value === c.raison) || RAISONS[3];
-                const actif  = isActive(c.dateDebut, c.dateFin);
-                const expire = isExpired(c.dateFin);
-                const titre  = c.raison === "autre" && c.precision ? c.precision : r.label.slice(3);
+                const r       = RAISONS.find(x => x.value === c.raison) || RAISONS[3];
+                const attente = c.statut === "en_attente";
+                const refuse  = c.statut === "refusee";
+                const actif   = !attente && !refuse && isActive(c.dateDebut, c.dateFin);
+                const expire  = !attente && !refuse && isExpired(c.dateFin);
+                const titre   = c.raison === "autre" && c.precision ? c.precision : r.label.slice(3);
+                const jours   = nbJours(c.dateDebut, c.dateFin);
+
+                const bg     = refuse ? "#fef2f2" : attente ? "#fffbeb" : actif ? "#f0fdf4" : expire ? "#f8fafc" : "#fefce8";
+                const border = refuse ? "#fecaca" : attente ? "#fde68a" : actif ? "#bbf7d0" : expire ? "#e2e8f0" : "#fde68a";
+
                 return (
                   <div key={c.id} style={{
                     display: "flex", alignItems: "center", gap: 9,
                     padding: "8px 10px", borderRadius: 10, marginBottom: 6,
-                    background: actif ? "#f0fdf4" : expire ? "#f8fafc" : "#fefce8",
-                    border: `1px solid ${actif ? "#bbf7d0" : expire ? "#e2e8f0" : "#fde68a"}`,
-                    opacity: expire ? 0.65 : 1,
+                    background: bg, border: `1px solid ${border}`,
+                    opacity: (expire || refuse) ? 0.65 : 1,
                   }}>
                     <div style={{
                       width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
@@ -155,29 +170,30 @@ const CongeQuickModal = ({ moniteur, onClose }) => {
                         {titre}
                       </div>
                       <div style={{ fontSize: 11, color: "#64748b" }}>
-                        {formatDate(c.dateDebut)} → {formatDate(c.dateFin)}
+                        {formatDate(c.dateDebut)} → {formatDate(c.dateFin)} · {jours}j
                       </div>
+                      {refuse && c.motifRefus && (
+                        <div style={{ fontSize: 10, color: "#dc2626", marginTop: 2, fontStyle: "italic" }}>
+                          Motif : {c.motifRefus}
+                        </div>
+                      )}
                     </div>
-                    {actif && (
-                      <span style={{
-                        fontSize: 10, fontWeight: 700, padding: "2px 7px",
-                        borderRadius: 20, background: "#dcfce7", color: "#16a34a",
-                        whiteSpace: "nowrap",
-                      }}>En cours</span>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, padding: "2px 7px",
+                      borderRadius: 20, whiteSpace: "nowrap",
+                      background: refuse ? "#fee2e2" : attente ? "#fef9c3" : actif ? "#dcfce7" : expire ? "#f1f5f9" : "#fef9c3",
+                      color: refuse ? "#dc2626" : attente ? "#a16207" : actif ? "#16a34a" : expire ? "#94a3b8" : "#a16207",
+                    }}>
+                      {refuse ? "Refusé" : attente ? "En attente" : actif ? "En cours" : expire ? "Expiré" : "À venir"}
+                    </span>
+                    {!attente && (
+                      <button
+                        onClick={() => handleRemove(c.id)}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", padding: 2, flexShrink: 0 }}
+                      >
+                        <Trash size={12} />
+                      </button>
                     )}
-                    {!actif && !expire && (
-                      <span style={{
-                        fontSize: 10, fontWeight: 700, padding: "2px 7px",
-                        borderRadius: 20, background: "#fef9c3", color: "#a16207",
-                        whiteSpace: "nowrap",
-                      }}>À venir</span>
-                    )}
-                    <button
-                      onClick={() => { removeCongeMoniteur(moniteur.id, c.id); refresh(); }}
-                      style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", padding: 2, flexShrink: 0 }}
-                    >
-                      <Trash size={12} />
-                    </button>
                   </div>
                 );
               })
@@ -277,7 +293,7 @@ const CongeQuickModal = ({ moniteur, onClose }) => {
                   onClick={handleAdd}
                   style={{
                     flex: 2, padding: "7px", borderRadius: 7, border: "none",
-                    background: "#f97316", color: "white",
+                    background: "#2b537e", color: "white",
                     fontSize: 12, fontWeight: 700, cursor: "pointer",
                     display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
                   }}
@@ -291,8 +307,8 @@ const CongeQuickModal = ({ moniteur, onClose }) => {
               onClick={() => setShowForm(true)}
               style={{
                 width: "100%", padding: "8px", borderRadius: 8,
-                border: "1.5px dashed #fed7aa", background: "#fff7ed",
-                color: "#f97316", fontWeight: 600, fontSize: 12,
+                border: "1.5px dashed #c3d6e8", background: "#f0f5fa",
+                color: "#2b537e", fontWeight: 600, fontSize: 12,
                 cursor: "pointer", display: "flex", alignItems: "center",
                 justifyContent: "center", gap: 6,
               }}
@@ -370,9 +386,11 @@ const MoniteurCard = ({ moniteur, onDelete, onEdit }) => {
               initials
             )}
           </div>
-          <span className={`status-pill-proto ${enConge ? "inactif" : moniteur.statut}`}>
-            {enConge ? "En congé" : moniteur.statut === "actif" ? "Active" : "Inactive"}
-          </span>
+          {!enConge && (
+            <span className={`status-pill-proto ${moniteur.statut}`}>
+              {moniteur.statut === "actif" ? "Active" : "Inactive"}
+            </span>
+          )}
         </div>
 
         <div className="card-body-proto">
@@ -453,6 +471,26 @@ const Moniteur = () => {
   const [showModal,      setShowModal]      = useState(false);
   const [selectedMoniteur, setSelectedMoniteur] = useState(null);
 
+  const {
+    congesEnAttente,
+    refreshCongesEnAttente,
+    validerCongeMoniteur,
+    refuserCongeMoniteur,
+  } = useCongeCtx();
+
+  const [refusingId, setRefusingId] = useState(null);
+  const [motifRefus, setMotifRefus] = useState("");
+
+  const handleValider = async (id, moniteurId) => {
+    await validerCongeMoniteur(id, moniteurId);
+  };
+
+  const handleRefuser = async (id, moniteurId) => {
+    await refuserCongeMoniteur(id, moniteurId, motifRefus.trim() || null);
+    setRefusingId(null);
+    setMotifRefus("");
+  };
+
   const loadMoniteurs = async () => {
     try {
       const data = await window.electron.getMoniteurs();
@@ -462,7 +500,10 @@ const Moniteur = () => {
     }
   };
 
-  useEffect(() => { loadMoniteurs(); }, []);
+  useEffect(() => {
+    loadMoniteurs();
+    refreshCongesEnAttente();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSave = async (data) => {
     try {
@@ -512,6 +553,91 @@ const Moniteur = () => {
           <h1><img src={SmallCar} alt="" width={40} /> Panneau de contrôle</h1>
           <p>Gérer les moniteurs de l'auto-école</p>
         </div>
+
+        {/* ── Demandes de congé en attente ── */}
+        {congesEnAttente.length > 0 && (
+          <div style={{
+            background: "#fffbeb", border: "1.5px solid #fde68a",
+            borderRadius: 14, padding: "16px 20px", marginBottom: 20,
+          }}>
+            <div style={{
+              display: "flex", alignItems: "center", gap: 9, marginBottom: 14,
+              fontSize: 14, fontWeight: 700, color: "#a16207",
+            }}>
+              <Clock size={17} />
+              {congesEnAttente.length} demande{congesEnAttente.length > 1 ? "s" : ""} de congé en attente
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {congesEnAttente.map((d) => (
+                <div key={d.id} style={{
+                  background: "white", border: "1px solid #fde68a", borderRadius: 10,
+                  padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                    <div style={{ fontSize: 13 }}>
+                      <strong style={{ color: "#1e293b" }}>{d.moniteurNom}</strong>
+                      <span style={{ color: "#64748b" }}>
+                        {" "}— {formatDate(d.dateDebut)} → {formatDate(d.dateFin)}
+                        {" "}({d.raison === "autre" && d.precision ? d.precision : d.raison})
+                      </span>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 7 }}>
+                      <button
+                        onClick={() => handleValider(d.id, d.moniteur_id)}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 5,
+                          padding: "5px 11px", borderRadius: 7, border: "none",
+                          background: "#22c55e", color: "white",
+                          fontSize: 12, fontWeight: 700, cursor: "pointer",
+                        }}
+                      >
+                        <Check size={13} /> Valider
+                      </button>
+                      <button
+                        onClick={() => setRefusingId(refusingId === d.id ? null : d.id)}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 5,
+                          padding: "5px 11px", borderRadius: 7,
+                          border: "1px solid #ef4444", background: "white",
+                          color: "#ef4444", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                        }}
+                      >
+                        <XIcon size={13} /> Refuser
+                      </button>
+                    </div>
+                  </div>
+
+                  {refusingId === d.id && (
+                    <div style={{ display: "flex", gap: 7 }}>
+                      <input
+                        type="text"
+                        placeholder="Motif du refus (optionnel)"
+                        value={motifRefus}
+                        onChange={(e) => setMotifRefus(e.target.value)}
+                        style={{
+                          flex: 1, padding: "6px 10px", borderRadius: 7,
+                          border: "1px solid #e2e8f0", fontSize: 12, outline: "none",
+                        }}
+                      />
+                      <button
+                        onClick={() => handleRefuser(d.id, d.moniteur_id)}
+                        style={{
+                          padding: "6px 12px", borderRadius: 7, border: "none",
+                          background: "#ef4444", color: "white",
+                          fontSize: 12, fontWeight: 700, cursor: "pointer",
+                        }}
+                      >
+                        Confirmer le refus
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="content-section">
           <div className="section-header">

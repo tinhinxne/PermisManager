@@ -3,7 +3,7 @@ const { ipcMain } = require('electron');
 
 function registerAdminHandlers(db) {
 
-  // ── Revenus par mois (12 derniers mois) ──────────────────────────
+  // ── Revenus par mois (12 derniers mois) ──────────────────────────────────
   ipcMain.handle("get-revenus-mensuels", async () => {
     return new Promise((resolve) => {
       db.query(
@@ -24,7 +24,7 @@ function registerAdminHandlers(db) {
     });
   });
 
-  // ── Séances par semaine du mois courant ──────────────────────────
+  // ── Séances par semaine du mois courant ──────────────────────────────────
   ipcMain.handle("get-seances-mois", async () => {
     return new Promise((resolve) => {
       db.query(

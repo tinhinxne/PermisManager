@@ -4,8 +4,9 @@ import Button from "../components/Button";
 import "../../styles/condidats.css";
 import ConnexionImg from "../../assets/Connexion.png";
 import SmallCar from "../../assets/SmallCar.png";
-import { SquarePen, Trash, Phone, Mail, X, Send, PlusCircle, Filter } from "lucide-react"; 
 import AddCandidatModal from "../components/addCondidat";
+import { useExamenCtx } from "../context/ExamenContext";
+import { SquarePen, Trash, Phone, Mail, X, Send, PlusCircle, Filter, FileText, History } from "lucide-react";
 
 // ─────────────────────────────────────────────
 // LISTE COMPLÈTE DES CATÉGORIES DE PERMIS
@@ -17,11 +18,48 @@ const TOUTES_CATEGORIES = [
   "C1E", "CE", "DE",
 ];
 
+// Clé localStorage utilisée pour mémoriser la dernière date de référence
+// de la liste d'envoi (لائحة الإرسال) — voir handleConfirmEnvoiCandidats
+const ENVOI_REF_KEY = "liste_envoi_derniere_date";
+const ENVOI_DEFAULTS_KEY = "export_pdf_defaults"; // réutilise les mêmes infos wilaya/école que la page Examens
+
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
 const getInitials = (prenom, nom) =>
   `${prenom?.[0] || ""}${nom?.[0] || ""}`.toUpperCase();
+
+// Formate une date ISO/Date en YYYY/MM/DD pour le PDF arabe
+function formatDateAr(rawDate) {
+  if (!rawDate) return "";
+  const str = rawDate instanceof Date ? rawDate.toISOString() : String(rawDate);
+  const d = new Date(str.includes("T") ? str : str + "T12:00:00");
+  if (isNaN(d)) return str;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const j = String(d.getDate()).padStart(2, "0");
+  return `${y}/${m}/${j}`;
+}
+
+// Formate un timestamp ISO en date + heure lisibles (ex: "24/06/2026 à 14:32")
+function formatDateHeure(isoString) {
+  if (!isoString) return "";
+  const d = new Date(isoString);
+  if (isNaN(d)) return "";
+  const j = String(d.getDate()).padStart(2, "0");
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const y = d.getFullYear();
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${j}/${m}/${y} à ${h}:${min}`;
+}
+
+// Convertit une date (Date | string ISO | "YYYY-MM-DD") en string comparable "YYYY-MM-DD"
+function toComparableDate(rawDate) {
+  if (!rawDate) return "";
+  const str = rawDate instanceof Date ? rawDate.toISOString() : String(rawDate);
+  return str.slice(0, 10); // garde juste "YYYY-MM-DD"
+}
 
 // ─────────────────────────────────────────────
 // Modale Contact Email
@@ -274,6 +312,372 @@ function ContactModal({ candidat, onClose }) {
     </div>
   );
 }
+// ─────────────────────────────────────────────
+// Modale Historique des examens d'un candidat
+// ─────────────────────────────────────────────
+const STATUS_CONFIG_HISTO = {
+  Scheduled: { bg: "#e3f2fd", color: "#1565c0", label: "Programmé" },
+  Passed:    { bg: "#e8f5e9", color: "#2e7d32", label: "Réussi"    },
+  Failed:    { bg: "#ffebee", color: "#c62828", label: "Échoué"    },
+};
+
+function HistoriqueExamensModal({ candidat, examensList, onClose }) {
+  const nomComplet = `${candidat.prenom} ${candidat.nom}`;
+
+  const historique = examensList
+    .filter((e) => String(e.candidatId) === String(candidat.id))
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{
+        background: "#fff", borderRadius: 16,
+        width: 560, maxWidth: "95vw", maxHeight: "80vh",
+        boxShadow: "0 20px 60px rgba(0,0,0,0.18)",
+        display: "flex", flexDirection: "column", overflow: "hidden",
+      }}>
+        {/* Header */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "18px 22px 14px", borderBottom: "1px solid #e2e8f0",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: "50%",
+              background: "#ede9fe", color: "#6d28d9",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 13, fontWeight: 700,
+            }}>
+              {getInitials(candidat.prenom, candidat.nom)}
+            </div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>
+                Historique des examens — {nomComplet}
+              </div>
+              <div style={{ fontSize: 12, color: "#64748b" }}>
+                {historique.length} session{historique.length !== 1 ? "s" : ""} d'examen
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background: "#f1f5f9", border: "none", borderRadius: 8,
+            width: 32, height: 32, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#64748b",
+          }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "16px 22px", overflowY: "auto" }}>
+          {historique.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "30px 0", color: "#94a3b8", fontSize: 13 }}>
+              Aucun examen enregistré pour ce candidat.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {historique.map((ex) => {
+                const st = STATUS_CONFIG_HISTO[ex.status] || STATUS_CONFIG_HISTO.Scheduled;
+                return (
+                  <div key={ex.id} style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "12px 14px", borderRadius: 10,
+                    border: "1px solid #e2e8f0", background: "#f8fafc",
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, color: "#1e293b" }}>
+                        {ex.type}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                        {ex.date} {ex.heure ? `· ${ex.heure}` : ""} {ex.lieu ? `· ${ex.lieu}` : ""}
+                      </div>
+                    </div>
+                    <span style={{
+                      background: st.bg, color: st.color,
+                      padding: "4px 12px", borderRadius: 20,
+                      fontSize: 12, fontWeight: 700,
+                    }}>
+                      {st.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          display: "flex", justifyContent: "flex-end",
+          padding: "14px 22px 18px", borderTop: "1px solid #e2e8f0",
+        }}>
+          <button onClick={onClose} style={{
+            padding: "9px 22px", borderRadius: 10,
+            background: "#2b537e", border: "none", color: "#fff",
+            fontSize: 13, fontWeight: 700, cursor: "pointer",
+          }}>
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Sous-composant champ formulaire (réutilisé par la modale لائحة الإرسال)
+// ─────────────────────────────────────────────
+const FormField = ({ label, value, onChange, placeholder, type = "text", required = false, disabled = false }) => (
+  <div>
+    <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
+      {label}{required && <span style={{ color: "#dc2626" }}> *</span>}
+    </label>
+    <input
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      disabled={disabled}
+      style={{
+        width: "100%", padding: "9px 12px", borderRadius: 8,
+        border: "1px solid #d1d5db", fontSize: 13.5,
+        color: disabled ? "#94a3b8" : "#1F2937",
+        background: disabled ? "#f1f5f9" : "#fff",
+        outline: "none", boxSizing: "border-box",
+      }}
+    />
+  </div>
+);
+
+
+// ─────────────────────────────────────────────
+// Nouvelle clé : liste des IDs déjà envoyés (le vrai garde-fou anti-oubli)
+// ENVOI_REF_KEY et ENVOI_DEFAULTS_KEY sont déjà déclarés en haut du fichier
+// ─────────────────────────────────────────────
+const ENVOI_IDS_KEY = "liste_envoi_ids_envoyes";
+const ENVOI_TIMESTAMP_KEY = "liste_envoi_derniere_generation"; // date+heure ISO de la dernière génération réussie
+// ─────────────────────────────────────────────
+// Modale لائحة الإرسال — filtrée par date, mais sans jamais oublier
+// un candidat (suivi par ID en plus de la date)
+// ─────────────────────────────────────────────
+function EnvoiCandidatsModal({ candidats, onClose }) {
+  const [dateDebut, setDateDebut] = useState(""); // pré-rempli avec la référence, modifiable
+  const [dateFin,   setDateFin]   = useState("");
+  const [wilaya,    setWilaya]    = useState("");
+  const [nomEcole,  setNomEcole]  = useState("");
+  const [loading,   setLoading]   = useState(false);
+  const [error,     setError]     = useState("");
+  const [sentIds,   setSentIds]   = useState([]); // IDs déjà inclus dans une liste précédente
+  const [derniereGeneration, setDerniereGeneration] = useState(""); // date+heure ISO de la dernière liste générée
+
+  useEffect(() => {
+    try {
+      const ref = localStorage.getItem(ENVOI_REF_KEY);
+      if (ref) setDateDebut(ref);
+
+      const ids = JSON.parse(localStorage.getItem(ENVOI_IDS_KEY) || "[]");
+      setSentIds(Array.isArray(ids) ? ids : []);
+
+      const defaults = JSON.parse(localStorage.getItem(ENVOI_DEFAULTS_KEY) || "{}");
+      setWilaya(defaults.wilaya || "");
+      setNomEcole(defaults.nomEcole || "");
+
+      const ts = localStorage.getItem(ENVOI_TIMESTAMP_KEY);
+      if (ts) setDerniereGeneration(ts);
+    } catch {
+      setSentIds([]);
+    }
+  }, []);
+
+  // ✅ Tous les candidats DONT la date d'inscription tombe dans la période choisie
+  //    (bornes INCLUSIVES des deux côtés). Le PDF inclura TOUS ces candidats,
+  //    qu'ils aient déjà été envoyés avant ou non.
+  const candidatsFiltres = candidats.filter((c) => {
+    const insc = toComparableDate(c._raw?.date_inscription);
+    if (!insc) return false;
+    if (!dateDebut || !dateFin) return false;
+    return insc >= dateDebut && insc <= dateFin; // bornes inclusives
+  });
+
+  const periodeVide =
+    !!dateDebut && !!dateFin &&
+    candidatsFiltres.length === 0;
+
+  const handleConfirm = async () => {
+    setError("");
+
+    if (!dateDebut) { setError("Merci de renseigner la date de début.");                    return; }
+    if (!dateFin)   { setError("Merci de choisir la date jusqu'à laquelle inclure les inscrits."); return; }
+    if (!wilaya.trim()) { setError("Merci de renseigner la wilaya.");                        return; }
+
+    if (candidatsFiltres.length === 0) {
+      setError("Aucun candidat inscrit sur cette période.");
+      return;
+    }
+    // La génération inclut toujours tous les candidats inscrits sur la période,
+    // qu'ils aient déjà été envoyés avant ou non.
+
+    setLoading(true);
+    try {
+      const candidatsPourEnvoi = candidatsFiltres.map((c) => {
+        const nomAr    = c._raw?.nom_ar    || "";
+        const prenomAr = c._raw?.prenom_ar || "";
+        const nomPrenomAr = (nomAr || prenomAr) ? `${nomAr} ${prenomAr}`.trim() : "";
+
+        return {
+          nomPrenom:     `${c.prenom} ${c.nom}`,
+          nomPrenomAr,
+          dateNaissance: formatDateAr(c._raw?.date_naissance),
+          categorie:     c.categoriePermis || "",
+        };
+      });
+
+      const savedPath = await window.electron.generateListeEnvoiPDF({
+        wilaya,
+        nomEcole,
+        dateDepot: formatDateAr(dateFin),
+        candidats: candidatsPourEnvoi,
+      });
+
+      if (savedPath) {
+        // La date de fin choisie devient la nouvelle référence (pour pré-remplir la prochaine fois)
+        localStorage.setItem(ENVOI_REF_KEY, dateFin);
+
+        // ✅ On AJOUTE les IDs qu'on vient d'inclure (jamais on ne remplace), dédupliqués
+        const nouveauxIds = Array.from(new Set([...sentIds, ...candidatsFiltres.map((c) => c.id)]));
+        localStorage.setItem(ENVOI_IDS_KEY, JSON.stringify(nouveauxIds));
+
+        // ✅ On mémorise la date et l'heure exactes de cette génération
+        const nowIso = new Date().toISOString();
+        localStorage.setItem(ENVOI_TIMESTAMP_KEY, nowIso);
+        setDerniereGeneration(nowIso);
+
+        try {
+          const prev = JSON.parse(localStorage.getItem(ENVOI_DEFAULTS_KEY) || "{}");
+          localStorage.setItem(ENVOI_DEFAULTS_KEY, JSON.stringify({ ...prev, wilaya, nomEcole }));
+        } catch { /* ignore */ }
+
+        alert(`لائحة الإرسال enregistrée :\n${savedPath}`);
+        onClose();
+      }
+    } catch (e) {
+      console.error("Erreur génération لائحة الإرسال (candidats):", e);
+      alert("Erreur lors de la génération du document.");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      onClick={() => !loading && onClose()}
+    >
+      <div
+        style={{ background: "#fff", borderRadius: 14, padding: 24, width: 420, maxWidth: "90vw", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: 17, color: "#1F2937" }}>لائحة الإرسال — نوعي الجديد</h3>
+          <button onClick={() => !loading && onClose()} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16 }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>
+          Liste de tous les candidats inscrits sur la période choisie — المندوبية الولائية للأمن في الطرق
+        </p>
+
+        <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: "#475569" }}>
+          {derniereGeneration
+            ? <>Dernière liste générée le <strong>{formatDateHeure(derniereGeneration)}</strong></>
+            : "Aucune liste générée pour le moment."}
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+          <FormField
+            label="Depuis le"
+            value={dateDebut}
+            onChange={setDateDebut}
+            type="date"
+            required
+          />
+
+          <FormField
+            label="Jusqu'au"
+            value={dateFin}
+            onChange={setDateFin}
+            type="date"
+            required
+          />
+
+          <FormField
+            label="الولاية (Wilaya)"
+            value={wilaya}
+            onChange={setWilaya}
+            placeholder="Ex : بجاية / Béjaïa"
+            required
+          />
+
+          <FormField
+            label="Nom de l'auto-école (optionnel)"
+            value={nomEcole}
+            onChange={setNomEcole}
+            placeholder="Ex : Auto-École Essalem"
+          />
+        </div>
+
+        {/* ── Bandeau d'état : période vide / total trouvé ── */}
+        {periodeVide ? (
+          <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#64748b" }}>
+            Aucun candidat inscrit sur cette période.
+          </div>
+        ) : (
+          <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#475569" }}>
+            <strong style={{ color: "#1f2937" }}>Candidats trouvés sur cette période :</strong> {candidatsFiltres.length}
+          </div>
+        )}
+
+        {error && (
+          <div style={{ marginTop: 10, padding: "9px 13px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontSize: 12, fontWeight: 500 }}>
+            ⚠ {error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button
+            onClick={onClose}
+            disabled={loading}
+            style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}
+          >
+            Annuler
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={loading}
+            style={{
+              flex: 1, padding: "10px 0", borderRadius: 8, border: "none",
+              background: "#7c3aed",
+              color: "#fff",
+              cursor: loading ? "not-allowed" : "pointer",
+              fontWeight: 600, fontSize: 13.5,
+              opacity: loading ? 0.7 : 1,
+            }}
+          >
+            {loading ? "Génération..." : "Générer لائحة الإرسال"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────
 // Composant principal
@@ -286,6 +690,10 @@ const Condidats = () => {
   const [searchQuery,      setSearchQuery]      = useState("");
   const [selectedCategorie, setSelectedCategorie] = useState("Tous"); 
   const [contactCandidat,  setContactCandidat]  = useState(null);
+  const [showEnvoiModal,   setShowEnvoiModal]   = useState(false);
+  const [historiqueCandidat, setHistoriqueCandidat]  = useState(null); // ← nouveau
+
+  const { examensList } = useExamenCtx(); // ← nouveau
 
   const th = { padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" };
   const td = { padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" };
@@ -411,6 +819,14 @@ const Condidats = () => {
     }
   };
 
+  const handleOpenEnvoiModal = () => {
+    if (candidats.length === 0) {
+      alert("Aucun candidat enregistré pour le moment.");
+      return;
+    }
+    setShowEnvoiModal(true);
+  };
+
   return (
     <div className="container">
       <div className="main">
@@ -430,7 +846,20 @@ const Condidats = () => {
               <h2>Candidats</h2>
               <p>Gérer et suivre tous les candidats</p>
             </div>
-            <Button text="+ Ajouter candidat" onClick={handleAdd} />
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={handleOpenEnvoiModal}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  background: "#7c3aed", color: "#fff", border: "none",
+                  padding: "10px 18px", borderRadius: 10, cursor: "pointer",
+                  fontSize: 14, fontWeight: 600,
+                }}
+              >
+                <FileText size={16} /> لائحة الإرسال (نوعي)
+              </button>
+              <Button text="+ Ajouter candidat" onClick={handleAdd} />
+            </div>
           </div>
 
           {/* ── DESIGN ULTRA COMPACT : RECHERCHE + SELECT SUR UNE SEULE LIGNE ──────────────────────── */}
@@ -571,6 +1000,13 @@ const Condidats = () => {
                               title={c._raw?.email ? `Envoyer un email à ${c.prenom} ${c.nom}` : "Pas d'email enregistré"}
                               onClick={() => { if (c._raw?.email) setContactCandidat(c); }}
                             />
+                            <History
+                              size={17}
+                              color="#7c3aed"
+                              style={{ cursor: "pointer" }}
+                              title="Historique des examens"
+                              onClick={() => setHistoriqueCandidat(c)}
+                            />
 
                             <Trash
                               size={17} color="red"
@@ -602,6 +1038,20 @@ const Condidats = () => {
         <ContactModal
           candidat={contactCandidat}
           onClose={() => setContactCandidat(null)}
+        />
+      )}
+
+      {showEnvoiModal && (
+        <EnvoiCandidatsModal
+          candidats={candidats}
+          onClose={() => setShowEnvoiModal(false)}
+        />
+      )}
+      {historiqueCandidat && (
+        <HistoriqueExamensModal
+          candidat={historiqueCandidat}
+          examensList={examensList}
+          onClose={() => setHistoriqueCandidat(null)}
         />
       )}
     </div>

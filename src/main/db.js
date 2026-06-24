@@ -4,7 +4,8 @@ const db = mysql.createConnection({
   host: 'localhost',
   user: 'root',
   password: 'Fitmanager@2026',
-  database: 'auto_ecole_db'
+  database: 'auto_ecole_db',
+  charset: 'utf8mb4',
 });
 
 db.connect((err) => {

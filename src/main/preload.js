@@ -1,5 +1,4 @@
   const { contextBridge, ipcRenderer } = require('electron');
-
   contextBridge.exposeInMainWorld('electron', {
   // Auth
   login: (creds) => ipcRenderer.invoke('login', creds),
@@ -50,11 +49,34 @@
 
 // Congés moniteurs
   getCongesMoniteur:   (moniteurId) => ipcRenderer.invoke("get-conges-moniteur", moniteurId),
+   getCongesEnAttente:    ()              => ipcRenderer.invoke("get-conges-en-attente"),
   getAllConges:         ()           => ipcRenderer.invoke("get-all-conges"),
   addCongeMoniteur:    (data)       => ipcRenderer.invoke("add-conge-moniteur", data),
+  requestCongeMoniteur:  (data)          => ipcRenderer.invoke("request-conge-moniteur", data),
+   validerCongeMoniteur:  (congeId)            => ipcRenderer.invoke("valider-conge-moniteur", congeId),
   removeCongeMoniteur: (congeId)    => ipcRenderer.invoke("remove-conge-moniteur", congeId),
+refuserCongeMoniteur: (congeId, motif) => ipcRenderer.invoke("refuser-conge-moniteur", congeId, motif),
+annulerMaDemandeConge: (congeId, moniteurId) => ipcRenderer.invoke("annuler-ma-demande-conge", congeId, moniteurId),  
+   getDemandesCongeAttente: () => ipcRenderer.invoke("get-demandes-conge-attente"),
+updateStatutConge: (congeId, statut, motifRefus) => ipcRenderer.invoke("update-statut-conge", congeId, statut, motifRefus),
+sendMessageAdmin: (data) => ipcRenderer.invoke("send-message-admin", data),
 
   // Congé annuel
   getCongeAnnuel: ()     => ipcRenderer.invoke("get-conge-annuel"),
   setCongeAnnuel: (data) => ipcRenderer.invoke("set-conge-annuel", data),
+
+  sendRappelPaiement: (data) => ipcRenderer.invoke("send-rappel-paiement", data),
+   generateListeCandidatsPDF: (data) =>
+    ipcRenderer.invoke("generate-liste-candidats-pdf", data),
+
+  generateListeEnvoiPDF: (data) =>
+    ipcRenderer.invoke("generate-liste-envoi-pdf", data),
+
+ouvrirFenetrePaiement: (url) => ipcRenderer.invoke("ouvrir-fenetre-paiement", url),
+fermerFenetrePaiement: ()    => ipcRenderer.invoke("fermer-fenetre-paiement"),
+payerChargily:   (data)       => ipcRenderer.invoke("payer-chargily", data),
+statutChargily:  (checkoutId) => ipcRenderer.invoke("statut-chargily", checkoutId),
+getChargilyConfig:  ()     => ipcRenderer.invoke("get-chargily-config"),
+setChargilyConfig:  (data) => ipcRenderer.invoke("set-chargily-config", data),
+testChargilyConfig: (data) => ipcRenderer.invoke("test-chargily-config", data),
 });

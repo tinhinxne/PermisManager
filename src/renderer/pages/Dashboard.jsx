@@ -1,14 +1,16 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState ,useRef} from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import { CalendarOff } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer
 } from "recharts";
+import { useCongeCtx } from "../context/CongeContext";
 import {
   FiUsers, FiActivity, FiCalendar, FiClock,
   FiUserPlus, FiPlusCircle, FiDollarSign,
-  FiClipboard, FiSettings
+  FiClipboard, FiSettings,FiBell, FiCheckCircle, FiAlertTriangle
 } from "react-icons/fi";
 import ConnexionImg from "../../assets/Connexion.png";
 import SmallCar from "../../assets/SmallCar.png";
@@ -40,13 +42,56 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const { examensList, generateExamens } = useExamenCtx();
 
+
+
   const [stats, setStats]                       = useState({ totalCandidats: 0, sessionsToday: 0, revenuMois: 0 });
   const [seances, setSeances]                   = useState([]);
   const [loading, setLoading]                   = useState(true);
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [revenusData, setRevenusData]           = useState([]);
   const [seancesData, setSeancesData]           = useState([]);
+  const { congesEnAttente, refreshCongesEnAttente, validerCongeMoniteur, refuserCongeMoniteur } = useCongeCtx();
+  const [refusingId, setRefusingId] = useState(null);
+const [motifRefus, setMotifRefus] = useState("");
+const [showNotifs, setShowNotifs] = useState(false);
 
+const notifRef = useRef(null);
+const formatDate = (iso) => {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString("fr-DZ", {
+    day: "2-digit", month: "short", year: "numeric",
+  });
+};
+const notifications = congesEnAttente.map(d => ({
+  id: `conge-${d.id}`,
+  congeId: d.id,
+  icon: <CalendarOff size={15} />,
+  color: "#f97316",
+  text: `${d.moniteurNom ?? "Un moniteur"} demande un congé du ${formatDate(d.dateDebut)} au ${formatDate(d.dateFin)}`,
+  moniteurId: d.moniteur_id,
+}));
+const handleValiderNotif = async (congeId, moniteurId) => {
+  await validerCongeMoniteur(congeId, moniteurId);
+};
+
+const handleRefuserNotif = async (congeId, moniteurId) => {
+  await refuserCongeMoniteur(congeId, moniteurId, motifRefus.trim() || null);
+  setRefusingId(null);
+  setMotifRefus("");
+};
+
+// Fermer le dropdown si on clique en dehors
+useEffect(() => {
+  const handleClickOutside = (e) => {
+    if (notifRef.current && !notifRef.current.contains(e.target)) {
+      setShowNotifs(false);
+    }
+  };
+  document.addEventListener("mousedown", handleClickOutside);
+  return () => document.removeEventListener("mousedown", handleClickOutside);
+}, []);
+const [seenIds, setSeenIds] = useState(new Set());
+const unseenCount = notifications.filter(n => !seenIds.has(n.id)).length;
   // Examens à venir = status "Scheduled", triés par date
   const examensAVenir = examensList
     .filter(e => e.status === "Scheduled")
@@ -81,6 +126,7 @@ const Dashboard = () => {
     }
     loadAll();
   }, []);
+
 
   const cardData = [
     {
@@ -142,25 +188,148 @@ const Dashboard = () => {
       bg: "#F5F3FF",
       action: () => navigate("/examens"),
     },
+    {
+    label: "Gestion congés",
+    icon: <CalendarOff size={22} />,
+    color: "#f97316",
+    bg: "#FFF7ED",
+    action: () => navigate("/parametres", { state: { openModal: "conges" } }),
+  },
   ];
 
   return (
     <div className="dashboard-wrapper">
 
       {/* ── TOPBAR ── */}
-      <div className="dashboard-topbar">
-        <span className="topbar-title">Tableau de bord</span>
-        <motion.button
-          className="settings-btn"
-          onClick={() => navigate("/parametres")}
-          whileHover={{ rotate: 45, scale: 1.1 }}
-          whileTap={{ scale: 0.9 }}
-          transition={{ type: "spring", stiffness: 300 }}
-          title="Paramètres"
+      {/* ── TOPBAR ── */}
+<div className="dashboard-topbar">
+  <span className="topbar-title">Tableau de bord</span>
+  <div className="topbar-icons">
+
+    <div className="notif-wrapper" ref={notifRef}>
+    <motion.button
+  className="settings-btn"
+  onClick={() => {
+    setShowNotifs(prev => {
+      const next = !prev;
+      if (next) {
+        // Marque toutes les notifs actuelles comme vues à l'ouverture
+        setSeenIds(new Set(notifications.map(n => n.id)));
+      }
+      return next;
+    });
+  }}
+  whileHover={{ scale: 1.1 }}
+  whileTap={{ scale: 0.9 }}
+  transition={{ type: "spring", stiffness: 300 }}
+  title="Notifications"
+>
+  <FiBell size={20} />
+  {unseenCount > 0 && (
+    <span className="notif-badge">{unseenCount}</span>
+  )}
+</motion.button>
+
+      {showNotifs && (
+        <motion.div
+          className="notif-dropdown"
+          initial={{ opacity: 0, y: -8, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.18 }}
         >
-          <FiSettings size={20} />
-        </motion.button>
+         <div className="notif-dropdown-header">
+  <strong>Notifications</strong>
+  {notifications.length > 0 && (
+    <span className="notif-count">{notifications.length}</span>
+  )}
+</div>
+
+          <div className="notif-dropdown-list">
+            {notifications.length === 0 ? (
+              <div className="notif-empty">
+                <FiCheckCircle size={22} />
+                <p>Aucune notification</p>
+              </div>
+            ) : (
+ notifications.map(n => (
+  <div key={n.id} className="notif-item" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+      <span className="notif-item-icon" style={{ color: n.color, background: n.color + "15" }}>
+        {n.icon}
+      </span>
+      <span className="notif-item-text">{n.text}</span>
+    </div>
+
+    <div style={{ display: "flex", gap: 7, paddingLeft: 40 }}>
+      <button
+        onClick={(e) => { e.stopPropagation(); handleValiderNotif(n.congeId, n.moniteurId); }}
+        style={{
+          display: "flex", alignItems: "center", gap: 4,
+          padding: "4px 10px", borderRadius: 6, border: "none",
+          background: "#22c55e", color: "white",
+          fontSize: 11, fontWeight: 700, cursor: "pointer",
+        }}
+      >
+        ✓ Valider
+      </button>
+      <button
+        onClick={(e) => { e.stopPropagation(); setRefusingId(refusingId === n.congeId ? null : n.congeId); }}
+        style={{
+          display: "flex", alignItems: "center", gap: 4,
+          padding: "4px 10px", borderRadius: 6,
+          border: "1px solid #ef4444", background: "white",
+          color: "#ef4444", fontSize: 11, fontWeight: 700, cursor: "pointer",
+        }}
+      >
+        ✕ Refuser
+      </button>
+    </div>
+
+    {refusingId === n.congeId && (
+      <div style={{ display: "flex", gap: 6, paddingLeft: 40 }} onClick={(e) => e.stopPropagation()}>
+        <input
+          type="text"
+          placeholder="Motif du refus (optionnel)"
+          value={motifRefus}
+          onChange={(e) => setMotifRefus(e.target.value)}
+          style={{
+            flex: 1, padding: "5px 8px", borderRadius: 6,
+            border: "1px solid #e2e8f0", fontSize: 11, outline: "none",
+          }}
+        />
+        <button
+          onClick={() => handleRefuserNotif(n.congeId, n.moniteurId)}
+          style={{
+            padding: "5px 10px", borderRadius: 6, border: "none",
+            background: "#ef4444", color: "white",
+            fontSize: 11, fontWeight: 700, cursor: "pointer",
+          }}
+        >
+          Confirmer
+        </button>
       </div>
+    )}
+  </div>
+))
+            )}
+          </div>
+        </motion.div>
+      )}
+    </div>
+
+    <motion.button
+      className="settings-btn"
+      onClick={() => navigate("/parametres")}
+      whileHover={{ rotate: 45, scale: 1.1 }}
+      whileTap={{ scale: 0.9 }}
+      transition={{ type: "spring", stiffness: 300 }}
+      title="Paramètres"
+    >
+      <FiSettings size={20} />
+    </motion.button>
+
+  </div>
+</div>
 
       {/* ── BANNIÈRE ── */}
       <motion.div

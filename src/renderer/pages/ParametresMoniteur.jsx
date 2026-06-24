@@ -6,6 +6,7 @@ import {
   User, Phone, Mail, Lock, Eye, EyeOff,
   Save, X, Check, ShieldCheck, AlertCircle,
 } from "lucide-react";
+import { MessageCircle } from "lucide-react";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 const getInitials = (prenom = "", nom = "") =>
@@ -43,6 +44,7 @@ const InfoRow = ({ icon, label, value }) => (
   </div>
 );
 
+
 // ─── Champ mot de passe ──────────────────────────────────────────────────────
 const PasswordInput = ({ label, value, onChange, show, onToggle, placeholder }) => (
   <div style={{ marginBottom: 14 }}>
@@ -78,6 +80,35 @@ const PasswordInput = ({ label, value, onChange, show, onToggle, placeholder }) 
 // ─── Composant principal ─────────────────────────────────────────────────────
 const ParametresMoniteur = () => {
   const { currentUser } = useAuth();
+  // ─── Couleurs par famille de permis ────────────────────────────────────────
+const CATEGORY_COLORS = {
+  A1: { bg: "#FEF3C7", color: "#92400E", border: "#FCD34D" },
+  A:  { bg: "#FEF3C7", color: "#92400E", border: "#FCD34D" },
+  B:  { bg: "#DBEAFE", color: "#1E40AF", border: "#93C5FD" },
+  BE: { bg: "#EDE9FE", color: "#5B21B6", border: "#C4B5FD" },
+  C1: { bg: "#D1FAE5", color: "#065F46", border: "#6EE7B7" },
+  C:  { bg: "#D1FAE5", color: "#065F46", border: "#6EE7B7" },
+  C1E:{ bg: "#ECFDF5", color: "#047857", border: "#A7F3D0" },
+  CE: { bg: "#ECFDF5", color: "#047857", border: "#A7F3D0" },
+  D:  { bg: "#FCE7F3", color: "#9D174D", border: "#F9A8D4" },
+  DE: { bg: "#FDF2F8", color: "#831843", border: "#F0ABFC" },
+  F:  { bg: "#F1F5F9", color: "#475569", border: "#CBD5E1" },
+};
+
+const CategoryBadge = ({ cat }) => {
+  const colors = CATEGORY_COLORS[cat] || { bg: "#F1F5F9", color: "#475569", border: "#CBD5E1" };
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center",
+      padding: "2px 9px", borderRadius: "20px",
+      fontSize: "11px", fontWeight: "700", letterSpacing: "0.4px",
+      background: colors.bg, color: colors.color,
+      border: `1.5px solid ${colors.border}`,
+    }}>
+      {cat}
+    </span>
+  );
+};
 
   const [profile, setProfile]   = useState(null);
   const [loading, setLoading]   = useState(true);
@@ -91,6 +122,32 @@ const ParametresMoniteur = () => {
   const [showOld,  setShowOld]  = useState(false);
   const [showNew,  setShowNew]  = useState(false);
   const [showConf, setShowConf] = useState(false);
+  const [showContactModal, setShowContactModal] = useState(false);
+const [contactSujet, setContactSujet]         = useState("");
+const [contactMessage, setContactMessage]     = useState("");
+const [contactSending, setContactSending]     = useState(false);
+const [contactStatus, setContactStatus]       = useState(null);
+const handleSendContact = async () => {
+  if (!contactMessage.trim()) {
+    return setContactStatus({ type: "error", message: "Veuillez écrire un message." });
+  }
+  setContactSending(true);
+  const result = await window.electron.sendMessageAdmin({
+    moniteurId: currentUser.id,
+    sujet: contactSujet.trim(),
+    message: contactMessage.trim(),
+  });
+  setContactSending(false);
+
+  if (result.success) {
+    setContactStatus({ type: "success", message: "Message envoyé à l'administrateur !" });
+    setContactSujet("");
+    setContactMessage("");
+    setTimeout(() => { setShowContactModal(false); setContactStatus(null); }, 1500);
+  } else {
+    setContactStatus({ type: "error", message: result.message || "Erreur lors de l'envoi." });
+  }
+};
 
   // Feedback
   const [pwdStatus, setPwdStatus] = useState(null); // { type: 'success'|'error', message }
@@ -149,6 +206,7 @@ const ParametresMoniteur = () => {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
+     <>
     <div className="container">
       <div className="main">
 
@@ -229,17 +287,56 @@ const ParametresMoniteur = () => {
                 label="Rôle"
                 value="Moniteur"
               />
+              {/* Catégories de permis */}
+<div style={{
+  display: "flex", alignItems: "center", gap: 14,
+  padding: "14px 18px",
+  background: "#f8faff",
+  border: "1px solid #e2eaf6",
+  borderRadius: 12,
+  marginBottom: 10,
+}}>
+  <div style={{
+    width: 36, height: 36, borderRadius: "50%",
+    background: "rgba(43,83,126,0.08)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    flexShrink: 0,
+  }}>
+    <ShieldCheck size={16} color="#2b537e" />
+  </div>
+  <div style={{ flex: 1 }}>
+    <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, marginBottom: 6 }}>
+      HABILITATIONS (PERMIS)
+    </div>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      {(profile.categories_habilitees
+        ? profile.categories_habilitees.split(",").map(c => c.trim()).filter(Boolean)
+        : ["B"]
+      ).map(cat => <CategoryBadge key={cat} cat={cat} />)}
+    </div>
+  </div>
+</div>
 
               {/* Note */}
-              <div style={{
-                marginTop: 16, padding: "10px 14px",
-                background: "rgba(43,83,126,0.05)",
-                border: "1px solid rgba(43,83,126,0.12)",
-                borderRadius: 10, fontSize: 12, color: "#64748b",
-              }}>
-                💡 Pour modifier vos informations personnelles (nom, téléphone, email),
-                contactez l'administrateur de l'auto-école.
-              </div>
+             <div style={{
+  marginTop: 16, padding: "10px 14px",
+  background: "rgba(43,83,126,0.05)",
+  border: "1px solid rgba(43,83,126,0.12)",
+  borderRadius: 10, fontSize: 12, color: "#64748b",
+}}>
+  💡 Pour modifier vos informations personnelles (nom, téléphone, email), contactez l'administrateur de l'auto-école.
+  <button
+    onClick={() => setShowContactModal(true)}
+    style={{
+      display: "flex", alignItems: "center", gap: 6,
+      marginTop: 10, padding: "7px 14px", borderRadius: 8,
+      border: "1px solid #2b537e", background: "white",
+      color: "#2b537e", fontSize: 12, fontWeight: 700, cursor: "pointer",
+    }}
+  >
+    <MessageCircle size={13} /> Contacter l'administrateur
+  </button>
+</div>
             </div>
 
             {/* ── CARTE MOT DE PASSE ── */}
@@ -379,8 +476,102 @@ const ParametresMoniteur = () => {
           </div>
         )}
       </div>
+      
     </div>
+    {showContactModal && (
+  <div
+    style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
+    }}
+    onClick={(e) => e.target === e.currentTarget && setShowContactModal(false)}
+  >
+    <div style={{
+      background: "white", borderRadius: 16, width: 420, maxWidth: "94vw",
+      boxShadow: "0 20px 60px rgba(0,0,0,0.18)", overflow: "hidden",
+    }}>
+      <div style={{
+        background: "#2b537e", padding: "16px 20px",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+      }}>
+        <span style={{ color: "white", fontWeight: 700, fontSize: 15 }}>
+          Contacter l'administrateur
+        </span>
+        <button
+          onClick={() => setShowContactModal(false)}
+          style={{ background: "rgba(255,255,255,0.18)", border: "none", borderRadius: 7, width: 26, height: 26, cursor: "pointer" }}
+        >
+          <X size={14} color="white" />
+        </button>
+      </div>
+
+      <div style={{ padding: 20 }}>
+        <label style={{ fontSize: 12, fontWeight: 600, color: "#475569", display: "block", marginBottom: 6 }}>
+          Sujet (optionnel)
+        </label>
+        <input
+          type="text"
+          value={contactSujet}
+          onChange={e => setContactSujet(e.target.value)}
+          placeholder="Ex : Demande de modification de téléphone"
+          style={{
+            width: "100%", padding: "9px 12px", borderRadius: 9,
+            border: "1px solid #e2eaf6", fontSize: 13, outline: "none",
+            background: "#f8faff", marginBottom: 14, boxSizing: "border-box",
+          }}
+        />
+
+        <label style={{ fontSize: 12, fontWeight: 600, color: "#475569", display: "block", marginBottom: 6 }}>
+          Message
+        </label>
+        <textarea
+          value={contactMessage}
+          onChange={e => setContactMessage(e.target.value)}
+          placeholder="Écrivez votre message ici..."
+          rows={5}
+          style={{
+            width: "100%", padding: "9px 12px", borderRadius: 9,
+            border: "1px solid #e2eaf6", fontSize: 13, outline: "none",
+            background: "#f8faff", marginBottom: 14, boxSizing: "border-box",
+            fontFamily: "inherit", resize: "vertical",
+          }}
+        />
+
+        {contactStatus && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "9px 12px", borderRadius: 9, marginBottom: 14,
+            fontSize: 12, fontWeight: 500,
+            background: contactStatus.type === "success" ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)",
+            border: `1px solid ${contactStatus.type === "success" ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"}`,
+            color: contactStatus.type === "success" ? "#166534" : "#dc2626",
+          }}>
+            {contactStatus.type === "success" ? <Check size={14} /> : <AlertCircle size={14} />}
+            {contactStatus.message}
+          </div>
+        )}
+
+        <button
+          onClick={handleSendContact}
+          disabled={contactSending}
+          style={{
+            width: "100%", padding: "10px 0", borderRadius: 9, border: "none",
+            background: contactSending ? "#94a3b8" : "#2b537e",
+            color: "#fff", fontSize: 13, fontWeight: 700,
+            cursor: contactSending ? "not-allowed" : "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+          }}
+        >
+          <Save size={14} /> {contactSending ? "Envoi…" : "Envoyer le message"}
+        </button>
+      </div>
+    </div>
+  </div>
+)}</>
+    
+    
   );
+  
 };
 
 export default ParametresMoniteur;

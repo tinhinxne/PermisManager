@@ -3,11 +3,12 @@ import { useAuth } from "./AuthContext";
 
 // ── VALEURS PAR DÉFAUT (tout à false = moniteur restreint par défaut) ─────────
 const PERMS_DEFAUT = {
-  CAN_ADD_SESSION:         false,
-  CAN_ADD_PAYMENT:         false,
-  CAN_TOGGLE_STATUS:       false,
-  CAN_REMOVE_CANDIDAT:     false,
-  CAN_VIEW_ALL_CANDIDATES: false,
+  CAN_ADD_SESSION:          false,
+  CAN_ADD_PAYMENT:          false,
+  CAN_TOGGLE_STATUS:        false,
+  CAN_REMOVE_CANDIDAT:      false,
+  CAN_VIEW_ALL_CANDIDATES:  false,
+  CAN_ADD_CANDIDAT:         false,  // ← nouveau
 };
 
 const PermissionsContext = createContext(null);

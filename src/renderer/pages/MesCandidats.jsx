@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from "react";
-import { TrendingUp, Users, Plus, Trash2 } from "lucide-react";
+import { TrendingUp, Users, Plus, Trash2, FileText, X, Filter } from "lucide-react";
 import ConnexionImg from "../../assets/Connexion.png";
 import SmallCar from "../../assets/SmallCar.png";
 import { useAuth } from "../context/AuthContext";
@@ -8,7 +7,248 @@ import { useMyPermissions } from "../context/PermissionsContext";
 import AddCandidatModal from "../components/addCondidat";
 
 // ─────────────────────────────────────────────
+// Clés localStorage
+// ─────────────────────────────────────────────
+const ENVOI_REF_KEY       = "liste_envoi_derniere_date";
+const ENVOI_DEFAULTS_KEY  = "export_pdf_defaults";
+const ENVOI_IDS_KEY       = "liste_envoi_ids_envoyes";
+const ENVOI_TIMESTAMP_KEY = "liste_envoi_derniere_generation";
+
+// ─────────────────────────────────────────────
 // Helpers
+// ─────────────────────────────────────────────
+function formatDateAr(rawDate) {
+  if (!rawDate) return "";
+  const str = rawDate instanceof Date ? rawDate.toISOString() : String(rawDate);
+  const d = new Date(str.includes("T") ? str : str + "T12:00:00");
+  if (isNaN(d)) return str;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const j = String(d.getDate()).padStart(2, "0");
+  return `${y}/${m}/${j}`;
+}
+
+function formatDateHeure(isoString) {
+  if (!isoString) return "";
+  const d = new Date(isoString);
+  if (isNaN(d)) return "";
+  const j   = String(d.getDate()).padStart(2, "0");
+  const m   = String(d.getMonth() + 1).padStart(2, "0");
+  const y   = d.getFullYear();
+  const h   = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${j}/${m}/${y} à ${h}:${min}`;
+}
+
+function toComparableDate(rawDate) {
+  if (!rawDate) return "";
+  const str = rawDate instanceof Date ? rawDate.toISOString() : String(rawDate);
+  return str.slice(0, 10);
+}
+
+// ─────────────────────────────────────────────
+// Sous-composant champ formulaire
+// ─────────────────────────────────────────────
+const FormField = ({ label, value, onChange, placeholder, type = "text", required = false }) => (
+  <div>
+    <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
+      {label}{required && <span style={{ color: "#dc2626" }}> *</span>}
+    </label>
+    <input
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      style={{
+        width: "100%", padding: "9px 12px", borderRadius: 8,
+        border: "1px solid #d1d5db", fontSize: 13.5,
+        color: "#1F2937", background: "#fff",
+        outline: "none", boxSizing: "border-box",
+      }}
+    />
+  </div>
+);
+
+// ─────────────────────────────────────────────
+// Modale لائحة الإرسال
+// ─────────────────────────────────────────────
+function EnvoiCandidatsModal({ candidats, onClose }) {
+  const [dateDebut,          setDateDebut]          = useState("");
+  const [dateFin,            setDateFin]            = useState("");
+  const [wilaya,             setWilaya]             = useState("");
+  const [nomEcole,           setNomEcole]           = useState("");
+  const [loading,            setLoading]            = useState(false);
+  const [error,              setError]              = useState("");
+  const [sentIds,            setSentIds]            = useState([]);
+  const [derniereGeneration, setDerniereGeneration] = useState("");
+
+  useEffect(() => {
+    try {
+      const ref = localStorage.getItem(ENVOI_REF_KEY);
+      if (ref) setDateDebut(ref);
+
+      const ids = JSON.parse(localStorage.getItem(ENVOI_IDS_KEY) || "[]");
+      setSentIds(Array.isArray(ids) ? ids : []);
+
+      const defaults = JSON.parse(localStorage.getItem(ENVOI_DEFAULTS_KEY) || "{}");
+      setWilaya(defaults.wilaya   || "");
+      setNomEcole(defaults.nomEcole || "");
+
+      const ts = localStorage.getItem(ENVOI_TIMESTAMP_KEY);
+      if (ts) setDerniereGeneration(ts);
+    } catch {
+      setSentIds([]);
+    }
+  }, []);
+
+  const candidatsFiltres = candidats.filter((c) => {
+    const insc = toComparableDate(c._raw?.date_inscription);
+    if (!insc || !dateDebut || !dateFin) return false;
+    return insc >= dateDebut && insc <= dateFin;
+  });
+
+  const periodeVide = !!dateDebut && !!dateFin && candidatsFiltres.length === 0;
+
+  const handleConfirm = async () => {
+    setError("");
+    if (!dateDebut)       { setError("Merci de renseigner la date de début.");                           return; }
+    if (!dateFin)         { setError("Merci de choisir la date jusqu'à laquelle inclure les inscrits."); return; }
+    if (!wilaya.trim())   { setError("Merci de renseigner la wilaya.");                                  return; }
+    if (candidatsFiltres.length === 0) { setError("Aucun candidat inscrit sur cette période.");          return; }
+
+    setLoading(true);
+    try {
+      const candidatsPourEnvoi = candidatsFiltres.map((c) => {
+        const nomAr    = c._raw?.nom_ar    || "";
+        const prenomAr = c._raw?.prenom_ar || "";
+        return {
+          nomPrenom:     `${c.prenom} ${c.nom}`,
+          nomPrenomAr:   (nomAr || prenomAr) ? `${nomAr} ${prenomAr}`.trim() : "",
+          dateNaissance: formatDateAr(c._raw?.date_naissance),
+          categorie:     c.categoriePermis || "",
+        };
+      });
+
+      const savedPath = await window.electron.generateListeEnvoiPDF({
+        wilaya,
+        nomEcole,
+        dateDepot: formatDateAr(dateFin),
+        candidats: candidatsPourEnvoi,
+      });
+
+      if (savedPath) {
+        localStorage.setItem(ENVOI_REF_KEY, dateFin);
+
+        const nouveauxIds = Array.from(
+          new Set([...sentIds, ...candidatsFiltres.map((c) => c.id)])
+        );
+        localStorage.setItem(ENVOI_IDS_KEY, JSON.stringify(nouveauxIds));
+
+        const nowIso = new Date().toISOString();
+        localStorage.setItem(ENVOI_TIMESTAMP_KEY, nowIso);
+        setDerniereGeneration(nowIso);
+
+        try {
+          const prev = JSON.parse(localStorage.getItem(ENVOI_DEFAULTS_KEY) || "{}");
+          localStorage.setItem(ENVOI_DEFAULTS_KEY, JSON.stringify({ ...prev, wilaya, nomEcole }));
+        } catch { /* ignore */ }
+
+        alert(`لائحة الإرسال enregistrée :\n${savedPath}`);
+        onClose();
+      }
+    } catch (e) {
+      console.error("Erreur génération لائحة الإرسال :", e);
+      alert("Erreur lors de la génération du document.");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)",
+        display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
+      }}
+      onClick={() => !loading && onClose()}
+    >
+      <div
+        style={{
+          background: "#fff", borderRadius: 14, padding: 24,
+          width: 420, maxWidth: "90vw",
+          boxShadow: "0 20px 50px rgba(0,0,0,0.2)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: 17, color: "#1F2937" }}>لائحة الإرسال — نوعي الجديد</h3>
+          <button
+            onClick={() => !loading && onClose()}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8" }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>
+          Liste de mes candidats inscrits sur la période choisie — المندوبية الولائية للأمن في الطرق
+        </p>
+
+        <div style={{
+          background: "#f8fafc", border: "1px solid #e2e8f0",
+          borderRadius: 8, padding: "8px 12px", marginBottom: 14,
+          fontSize: 12, color: "#475569",
+        }}>
+          {derniereGeneration
+            ? <>Dernière liste générée le <strong>{formatDateHeure(derniereGeneration)}</strong></>
+            : "Aucune liste générée pour le moment."}
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+          <FormField label="Depuis le"               value={dateDebut} onChange={setDateDebut} type="date" required />
+          <FormField label="Jusqu'au"                value={dateFin}   onChange={setDateFin}   type="date" required />
+          <FormField label="الولاية (Wilaya)"        value={wilaya}    onChange={setWilaya}    placeholder="Ex : بجاية / Béjaïa" required />
+          <FormField label="Nom de l'auto-école (optionnel)" value={nomEcole} onChange={setNomEcole} placeholder="Ex : Auto-École Essalem" />
+        </div>
+
+        {periodeVide ? (
+          <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#64748b" }}>
+            Aucun de mes candidats inscrit sur cette période.
+          </div>
+        ) : (
+          <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#475569" }}>
+            <strong style={{ color: "#1f2937" }}>Mes candidats trouvés sur cette période :</strong> {candidatsFiltres.length}
+          </div>
+        )}
+
+        {error && (
+          <div style={{ marginTop: 10, padding: "9px 13px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontSize: 12, fontWeight: 500 }}>
+            ⚠ {error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button
+            onClick={onClose}
+            disabled={loading}
+            style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}
+          >
+            Annuler
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={loading}
+            style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#7c3aed", color: "#fff", cursor: loading ? "not-allowed" : "pointer", fontWeight: 600, fontSize: 13.5, opacity: loading ? 0.7 : 1 }}
+          >
+            {loading ? "Génération..." : "Générer لائحة الإرسال"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Helpers cartes
 // ─────────────────────────────────────────────
 const getInitials = (nom) =>
   nom.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
@@ -22,30 +262,29 @@ const AVATAR_COLORS = [
 ];
 
 // ─────────────────────────────────────────────
-// Component
+// Composant principal
 // ─────────────────────────────────────────────
 const MesCandidats = () => {
   const { currentUser } = useAuth();
-  const { CAN_VIEW_ALL_CANDIDATES, CAN_REMOVE_CANDIDAT } = useMyPermissions();
+  const { CAN_VIEW_ALL_CANDIDATES, CAN_REMOVE_CANDIDAT, CAN_ADD_CANDIDAT } = useMyPermissions();
 
-  const [search,       setSearch]       = useState("");
-  const [candidats,    setCandidats]    = useState([]);
-  const [loading,      setLoading]      = useState(true);
-  const [showModal,    setShowModal]    = useState(false);
-  const [editCandidat, setEditCandidat] = useState(null);
+  const [search,         setSearch]         = useState("");
+  const [candidats,      setCandidats]      = useState([]);
+  const [loading,        setLoading]        = useState(true);
+  const [showModal,      setShowModal]      = useState(false);
+  const [editCandidat,   setEditCandidat]   = useState(null);
+  const [showEnvoiModal, setShowEnvoiModal] = useState(false);
 
   // ── Chargement ───────────────────────────────────────────────────────────────
   const loadData = async () => {
     try {
       setLoading(true);
-
       const [rawCandidats, rawSeances] = await Promise.all([
         window.electron.getCandidats(),
         window.electron.getSeances(),
       ]);
 
       const moniteurId = currentUser?.id;
-
       const mesSeances = CAN_VIEW_ALL_CANDIDATES
         ? rawSeances
         : moniteurId
@@ -96,15 +335,21 @@ const MesCandidats = () => {
             ? `${new Date(nextSeance._dt).toLocaleDateString("fr-FR")} ${nextSeance.heure}`
             : "—";
 
+          const currentCat = (
+            c.categoriePermis || c.categorie || c.categorie_permis || "B"
+          ).toString().trim().toUpperCase();
+
           return {
-            id:          c.idCandidat,
-            nom:         `${c.prenom} ${c.nom}`,
-            tel:         c.telephone,
-            sessions:    nbSessions,
-            total:       20,
+            id:              c.idCandidat,
+            nom:             `${c.prenom} ${c.nom}`,
+            prenom:          c.prenom,
+            tel:             c.telephone,
+            categoriePermis: currentCat,
+            sessions:        nbSessions,
+            total:           20,
             nextSession,
-            status:      c.statut,
-            _raw:        c,
+            status:          c.statut,
+            _raw:            c,
             ...AVATAR_COLORS[index % AVATAR_COLORS.length],
           };
         });
@@ -122,13 +367,13 @@ const MesCandidats = () => {
 
   // ── Ajouter ──────────────────────────────────────────────────────────────────
   const handleAdd = () => {
-    if (!CAN_VIEW_ALL_CANDIDATES) return;
+    if (!CAN_ADD_CANDIDAT) return;
     setEditCandidat(null);
     setShowModal(true);
   };
 
   const handleSave = async (data) => {
-    if (!CAN_VIEW_ALL_CANDIDATES) return;
+    if (!CAN_ADD_CANDIDAT) return;
     if (data.idCandidat) {
       await window.electron.updateCandidat(data);
     } else {
@@ -151,9 +396,17 @@ const MesCandidats = () => {
     }
   };
 
-  // ── Stats ────────────────────────────────────────────────────────────────────
-  const onTrack = candidats.filter((c) => c.sessions / c.total >= 0.5).length;
+  // ── Bordereau ────────────────────────────────────────────────────────────────
+  const handleOpenEnvoiModal = () => {
+    if (candidats.length === 0) {
+      alert("Aucun candidat enregistré pour le moment.");
+      return;
+    }
+    setShowEnvoiModal(true);
+  };
 
+  // ── Stats + filtre ────────────────────────────────────────────────────────────
+  const onTrack  = candidats.filter((c) => c.sessions / c.total >= 0.5).length;
   const filtered = candidats.filter(
     (c) =>
       c.nom.toLowerCase().includes(search.toLowerCase()) ||
@@ -190,8 +443,8 @@ const MesCandidats = () => {
           fontWeight: 600, marginBottom: 14,
         }}>
           {CAN_VIEW_ALL_CANDIDATES
-            ? "👥 Accès complet — vous pouvez voir et ajouter des candidats"
-            : "🔒 Vue lecture seule — contactez l'admin pour ajouter des candidats"}
+            ? "👥 Accès complet — vous pouvez voir tous les candidats"
+            : "🔒 Vue lecture seule — contactez l'admin pour voir les candidats"}
         </div>
 
         {/* STATS */}
@@ -203,8 +456,7 @@ const MesCandidats = () => {
               </p>
               <h3 className="stat-number-small">{candidats.length}</h3>
             </div>
-            <div className="stat-icon-circle-small large-icon"
-              style={{ backgroundColor: "rgba(77,163,255,0.15)" }}>
+            <div className="stat-icon-circle-small large-icon" style={{ backgroundColor: "rgba(77,163,255,0.15)" }}>
               <Users size={24} color="#4da3ff" />
             </div>
           </div>
@@ -214,8 +466,7 @@ const MesCandidats = () => {
               <p className="stat-label-small">En bonne voie</p>
               <h3 className="stat-number-small">{onTrack}</h3>
             </div>
-            <div className="stat-icon-circle-small large-icon"
-              style={{ backgroundColor: "#d4edda" }}>
+            <div className="stat-icon-circle-small large-icon" style={{ backgroundColor: "#d4edda" }}>
               <TrendingUp size={24} color="green" />
             </div>
           </div>
@@ -228,54 +479,59 @@ const MesCandidats = () => {
               <h2>{CAN_VIEW_ALL_CANDIDATES ? "Tous les Candidats" : "Mes Candidats"}</h2>
               <p>
                 {CAN_VIEW_ALL_CANDIDATES
-                  ? "Voir, suivre et ajouter des candidats"
+                  ? "Voir et suivre tous les candidats"
                   : "Suivi de la progression de vos candidats"}
               </p>
             </div>
 
-            {CAN_VIEW_ALL_CANDIDATES && (
+            <div style={{ display: "flex", gap: 10 }}>
               <button
-                onClick={handleAdd}
+                onClick={handleOpenEnvoiModal}
                 style={{
-                  display: "flex", alignItems: "center", gap: 7,
-                  padding: "10px 20px", borderRadius: 10,
-                  background: "#2b537e", border: "none", color: "#fff",
-                  fontFamily: "inherit", fontSize: "0.85rem", fontWeight: 700,
-                  cursor: "pointer", boxShadow: "0 4px 14px rgba(43,83,126,0.3)",
+                  display: "flex", alignItems: "center", gap: 8,
+                  background: "#7c3aed", color: "#fff", border: "none",
+                  padding: "10px 18px", borderRadius: 10, cursor: "pointer",
+                  fontSize: 14, fontWeight: 600,
                 }}
               >
-                <Plus size={15} /> Ajouter candidat
+                <FileText size={16} /> لائحة الإرسال (نوعي)
               </button>
-            )}
+
+              {/* ← CAN_ADD_CANDIDAT ici, indépendant de CAN_VIEW_ALL_CANDIDATES */}
+              {CAN_ADD_CANDIDAT && (
+                <button
+                  onClick={handleAdd}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 7,
+                    padding: "10px 20px", borderRadius: 10,
+                    background: "#2b537e", border: "none", color: "#fff",
+                    fontFamily: "inherit", fontSize: "0.85rem", fontWeight: 700,
+                    cursor: "pointer", boxShadow: "0 4px 14px rgba(43,83,126,0.3)",
+                  }}
+                >
+                  <Plus size={15} /> Ajouter candidat
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* BARRE DE RECHERCHE — même style que Payments */}
-          <div style={{ display: "flex", gap: "15px", marginBottom: "20px", alignItems: "center" }}>
-            <div style={{
-              flex: 1,
-              background: "#fff",
-              padding: "12px 20px",
-              borderRadius: "15px",
-              display: "flex",
-              gap: "15px",
-              alignItems: "center",
-              border: "1px solid #E2E8F0"
-            }}>
-              <input
-                type="text"
-                placeholder="🔍 Rechercher un candidat..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                style={{
-                  flex: 1,
-                  padding: "10px",
-                  border: "1px solid #CBD5E0",
-                  borderRadius: "10px",
-                  outline: "none",
-                  fontSize: "14px"
-                }}
-              />
-            </div>
+          {/* BARRE DE RECHERCHE */}
+          <div style={{
+            display: "flex", gap: "12px", marginBottom: "20px",
+            background: "#fff", padding: "10px 14px",
+            borderRadius: "12px", border: "1px solid #E2E8F0", alignItems: "center",
+          }}>
+            <input
+              type="text"
+              placeholder="🔍 Rechercher un candidat (Nom, téléphone...)"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{
+                flex: 1, padding: "10px 14px",
+                border: "1px solid #E2E8F0", borderRadius: "8px",
+                outline: "none", fontSize: "14px", background: "#F8FAFC",
+              }}
+            />
           </div>
 
           {/* CARDS */}
@@ -310,6 +566,15 @@ const MesCandidats = () => {
                       </div>
                     </div>
 
+                    {/* Badge catégorie */}
+                    <span style={{
+                      fontSize: "11px", background: "#e0f2fe", color: "#0369a1",
+                      padding: "2px 8px", borderRadius: "4px", fontWeight: "bold",
+                      display: "inline-block", marginBottom: 10,
+                    }}>
+                      Catégorie {c.categoriePermis}
+                    </span>
+
                     {/* Progress */}
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
                       <span className="progress-text">Progression</span>
@@ -324,7 +589,7 @@ const MesCandidats = () => {
                       <span className={`status ${c.status}`}>{c.status}</span>
                     </div>
 
-                    {/* Next session */}
+                    {/* Prochaine session */}
                     <div style={{ fontSize: 12, color: "#64748B", marginTop: 8 }}>
                       Prochaine session :{" "}
                       <span style={{ color: "#1e293b", fontWeight: 600 }}>{c.nextSession}</span>
@@ -343,8 +608,8 @@ const MesCandidats = () => {
                           color: "#dc2626", fontSize: 12, fontWeight: 600,
                           cursor: "pointer", transition: "background 0.18s",
                         }}
-                        onMouseEnter={e => e.currentTarget.style.background = "rgba(239,68,68,0.15)"}
-                        onMouseLeave={e => e.currentTarget.style.background = "rgba(239,68,68,0.07)"}
+                        onMouseEnter={(e) => e.currentTarget.style.background = "rgba(239,68,68,0.15)"}
+                        onMouseLeave={(e) => e.currentTarget.style.background = "rgba(239,68,68,0.07)"}
                       >
                         <Trash2 size={13} /> Supprimer
                       </button>
@@ -358,13 +623,21 @@ const MesCandidats = () => {
         </div>
       </div>
 
-      {/* MODALE */}
-      {CAN_VIEW_ALL_CANDIDATES && (
+      {/* MODALE AJOUT ← CAN_ADD_CANDIDAT ici */}
+      {CAN_ADD_CANDIDAT && (
         <AddCandidatModal
           showModal={showModal}
           setShowModal={setShowModal}
           candidat={editCandidat}
           onSave={handleSave}
+        />
+      )}
+
+      {/* MODALE لائحة الإرسال */}
+      {showEnvoiModal && (
+        <EnvoiCandidatsModal
+          candidats={candidats}
+          onClose={() => setShowEnvoiModal(false)}
         />
       )}
     </div>

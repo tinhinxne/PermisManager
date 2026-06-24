@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 import Sidebar from "../components/Sidebar";
 import Button from "../components/Button";
 import { useCongeCtx } from "../context/CongeContext";
+import { useExamenCtx } from "../context/ExamenContext";
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
 const HOURS      = [7,8,9,10,11,12,13,14,15,16,17,18];
@@ -44,7 +45,6 @@ function toLocalISO(dateVal) {
   return `${year}-${month}-${day}`;
 }
 
-// ── NOUVEAU : formatage date lisible ─────────────────────────────────────────
 function formatDateFr(iso) {
   if (!iso) return "";
   return new Date(iso + "T12:00:00").toLocaleDateString("fr-DZ", {
@@ -143,153 +143,175 @@ function LoadingOverlay() {
   );
 }
 
-// ── MILESTONE MODAL ───────────────────────────────────────────────────────────
-function MilestoneModal({ type, candidatName, candidatId, onClose }) {
-  const isCompleted = type === "completed";
-
-  const [nbSeances,   setNbSeances]   = useState(1);
-  const [prixSeance,  setPrixSeance]  = useState(0);
-  const [methode,     setMethode]     = useState("especes");
-  const [sending,     setSending]     = useState(false);
-  const [billed,      setBilled]      = useState(false);
-  const [billError,   setBillError]   = useState("");
-
-  const total = nbSeances * prixSeance;
-
-  const handleFacturer = async () => {
-    if (!prixSeance || prixSeance <= 0) { setBillError("Veuillez saisir un prix par séance valide."); return; }
-    if (!candidatId)                    { setBillError("Candidat introuvable, impossible de facturer."); return; }
-    setSending(true);
-    setBillError("");
-    try {
-      const result = await window.electron.addPayment({
-        candidatId,
-        montant:      total,
-        montantTotal: total,
-        methode,
-        typePaiement: "tranche",
-        dateVersement: toLocalISO(new Date()),
-        notes: `Séances supplémentaires hors forfait : ${nbSeances} séance(s) × ${prixSeance.toLocaleString("fr-DZ")} DA`,
-      });
-      if (result?.success) setBilled(true);
-      else setBillError("Erreur lors de l'enregistrement du paiement.");
-    } catch (err) {
-      setBillError("Erreur inattendue : " + err.message);
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const inpS = {
-    width: "100%", boxSizing: "border-box",
-    padding: "9px 11px", border: "1.5px solid #e2e8f0", borderRadius: 8,
-    fontFamily: "'Poppins',sans-serif", fontSize: "0.84rem",
-    color: "#1e293b", background: "#f8fafc", outline: "none",
-  };
-
+// ── MILESTONE MODAL (20 séances atteintes) ────────────────────────────────────
+function MilestoneModal({ candidatName, onClose }) {
   return (
     <div
       style={{
-        position: "fixed", inset: 0, zIndex: 600,
-        background: "rgba(15,23,42,0.6)", backdropFilter: "blur(4px)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontFamily: "'Poppins',sans-serif",
+        position:"fixed", inset:0, zIndex:600,
+        background:"rgba(15,23,42,0.6)", backdropFilter:"blur(4px)",
+        display:"flex", alignItems:"center", justifyContent:"center",
+        fontFamily:"'Poppins',sans-serif",
       }}
       onClick={e => e.target === e.currentTarget && onClose()}
     >
       <div style={{
-        background: "#fff", borderRadius: 20,
-        width: isCompleted ? 420 : 480, maxWidth: "94vw",
-        boxShadow: "0 30px 80px rgba(0,0,0,0.2)",
-        overflow: "hidden",
-        animation: "milestoneUp .25s cubic-bezier(.34,1.56,.64,1)",
+        background:"#fff", borderRadius:20, width:420, maxWidth:"94vw",
+        boxShadow:"0 30px 80px rgba(0,0,0,0.2)", overflow:"hidden",
+        animation:"milestoneUp .25s cubic-bezier(.34,1.56,.64,1)",
       }}>
         <style>{`@keyframes milestoneUp{from{transform:translateY(24px);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>
+
+        {/* Header */}
         <div style={{
-          background: isCompleted
-            ? "linear-gradient(135deg,#22c55e,#16a34a)"
-            : "linear-gradient(135deg,#f59e0b,#d97706)",
-          padding: "22px 24px 18px", textAlign: "center",
+          background:"linear-gradient(135deg,#22c55e,#16a34a)",
+          padding:"22px 24px 18px", textAlign:"center",
         }}>
-          <div style={{ fontSize: 44, marginBottom: 4 }}>{isCompleted ? "🎓" : "➕"}</div>
-          <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#fff" }}>
-            {isCompleted ? "Permis complété !" : "Séance supplémentaire"}
+          <div style={{ fontSize:44, marginBottom:4 }}>🎓</div>
+          <div style={{ fontSize:"1.1rem", fontWeight:800, color:"#fff" }}>
+            Formation complète !
           </div>
         </div>
-        <div style={{ padding: "20px 24px" }}>
-          {isCompleted ? (
-            <>
-              <p style={{ fontSize: "0.9rem", color: "#1e293b", fontWeight: 600, margin: "0 0 8px", textAlign: "center" }}>
-                🎉 <strong>{candidatName}</strong> vient d'atteindre ses <strong>20 séances</strong> !
-              </p>
-              <p style={{ fontSize: "0.8rem", color: "#64748b", margin: "0 0 4px", textAlign: "center" }}>
-                Il peut désormais se présenter à l'examen du permis de conduire.
-              </p>
-              <div style={{ marginTop: 14, padding: "10px 16px", borderRadius: 10, background: "#f0fdf4", border: "1px solid #86efac", fontSize: "0.78rem", color: "#166534", fontWeight: 600, textAlign: "center" }}>
-                ✅ Formation théorique et pratique terminée
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 16, background: "#fffbeb", border: "1px solid #fcd34d", fontSize: "0.78rem", color: "#92400e", fontWeight: 600 }}>
-                ⚠️ <strong>{candidatName}</strong> dépasse les 20 séances du forfait permis. Cette séance est <strong>hors forfait</strong>.
-              </div>
-              {billed ? (
-                <div style={{ padding: "20px", borderRadius: 12, textAlign: "center", background: "#f0fdf4", border: "1px solid #86efac" }}>
-                  <div style={{ fontSize: 36, marginBottom: 8 }}>✅</div>
-                  <div style={{ fontSize: "0.92rem", fontWeight: 700, color: "#166534" }}>Versement enregistré avec succès !</div>
-                  <div style={{ fontSize: "0.78rem", color: "#4ade80", marginTop: 4 }}>
-                    {nbSeances} séance(s) × {prixSeance.toLocaleString("fr-DZ")} DA = <strong>{total.toLocaleString("fr-DZ")} DA</strong>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  <div style={{ fontSize: "0.8rem", fontWeight: 700, color: "#1e293b", borderBottom: "1px solid #f1f5f9", paddingBottom: 8 }}>
-                    💰 Facturer les séances supplémentaires
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                      <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4 }}>Nb de séances *</label>
-                      <input type="number" min={1} value={nbSeances} onChange={e => { setNbSeances(Math.max(1, parseInt(e.target.value) || 1)); setBillError(""); }} style={inpS} />
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                      <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4 }}>Prix / séance (DA) *</label>
-                      <input type="number" min={0} value={prixSeance} onChange={e => { setPrixSeance(parseFloat(e.target.value) || 0); setBillError(""); }} style={inpS} placeholder="ex: 150000" />
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4 }}>Méthode de paiement</label>
-                    <select value={methode} onChange={e => setMethode(e.target.value)} style={inpS}>
-                      <option value="especes">Espèces</option>
-                      <option value="ccp">CCP</option>
-                      <option value="carte">Carte</option>
-                    </select>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderRadius: 10, background: "#f8fafc", border: "1.5px solid #e2e8f0" }}>
-                    <span style={{ fontSize: "0.8rem", color: "#64748b", fontWeight: 600 }}>Total à facturer :</span>
-                    <span style={{ fontSize: "1rem", fontWeight: 800, color: "#d97706" }}>{total.toLocaleString("fr-DZ")} DA</span>
-                  </div>
-                  {billError && (
-                    <div style={{ padding: "8px 12px", borderRadius: 8, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontSize: "0.75rem", fontWeight: 500 }}>⚠ {billError}</div>
-                  )}
-                </div>
-              )}
-            </>
-          )}
+
+        {/* Body */}
+        <div style={{ padding:"20px 24px" }}>
+          <p style={{ fontSize:"0.9rem", color:"#1e293b", fontWeight:600, margin:"0 0 8px", textAlign:"center" }}>
+            🎉 <strong>{candidatName}</strong> vient d'atteindre ses <strong>20 séances</strong> !
+          </p>
+          <p style={{ fontSize:"0.8rem", color:"#64748b", margin:"0 0 4px", textAlign:"center" }}>
+            Il peut désormais se présenter à l'examen du permis de conduire.
+          </p>
+          <div style={{
+            marginTop:14, padding:"10px 16px", borderRadius:10,
+            background:"#f0fdf4", border:"1px solid #86efac",
+            fontSize:"0.78rem", color:"#166534", fontWeight:600, textAlign:"center",
+          }}>
+            ✅ Formation théorique et pratique terminée
+          </div>
         </div>
-        <div style={{ padding: "0 24px 20px", display: "flex", justifyContent: isCompleted || billed ? "center" : "space-between", gap: 10 }}>
-          {isCompleted || billed ? (
-            <button onClick={onClose} style={{ padding: "10px 36px", borderRadius: 10, background: isCompleted ? "#16a34a" : "#d97706", border: "none", color: "#fff", fontFamily: "'Poppins',sans-serif", fontSize: "0.88rem", fontWeight: 700, cursor: "pointer" }}>
-              Compris
-            </button>
-          ) : (
-            <>
-              <button onClick={onClose} style={{ padding: "9px 20px", borderRadius: 10, background: "#f1f5f9", border: "none", color: "#64748b", fontFamily: "'Poppins',sans-serif", fontSize: "0.84rem", fontWeight: 600, cursor: "pointer" }}>Ignorer</button>
-              <button onClick={handleFacturer} disabled={sending || prixSeance <= 0} style={{ padding: "9px 22px", borderRadius: 10, background: sending || prixSeance <= 0 ? "#94a3b8" : "#d97706", border: "none", color: "#fff", fontFamily: "'Poppins',sans-serif", fontSize: "0.84rem", fontWeight: 700, cursor: sending || prixSeance <= 0 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 7 }}>
-                {sending ? <><div style={{ width: 13, height: 13, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.4)", borderTop: "2px solid #fff", animation: "spin .7s linear infinite" }} />Enregistrement…</> : <>💰 Facturer {total > 0 ? `${total.toLocaleString("fr-DZ")} DA` : ""}</>}
-              </button>
-            </>
-          )}
+
+        {/* Footer */}
+        <div style={{ padding:"0 24px 20px", display:"flex", justifyContent:"center" }}>
+          <button onClick={onClose} style={{
+            padding:"10px 36px", borderRadius:10, background:"#16a34a",
+            border:"none", color:"#fff", fontFamily:"'Poppins',sans-serif",
+            fontSize:"0.88rem", fontWeight:700, cursor:"pointer",
+          }}>
+            Compris
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── SÉANCE SUPPLÉMENTAIRE MODAL (candidat permis obtenu) ──────────────────────
+function SeanceSupplementaireModal({ candidat, onClose, onConfirm }) {
+  if (!candidat) return null;
+  const nomComplet = `${candidat.prenom || ""} ${candidat.nom || ""}`.trim();
+
+  return (
+    <div
+      style={{
+        position:"fixed", inset:0, zIndex:600,
+        background:"rgba(15,23,42,0.6)", backdropFilter:"blur(4px)",
+        display:"flex", alignItems:"center", justifyContent:"center",
+        fontFamily:"'Poppins',sans-serif",
+      }}
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{
+        background:"#fff", borderRadius:20, width:440, maxWidth:"94vw",
+        boxShadow:"0 30px 80px rgba(0,0,0,0.2)", overflow:"hidden",
+        animation:"milestoneUp .25s cubic-bezier(.34,1.56,.64,1)",
+      }}>
+        {/* Header */}
+        <div style={{
+          background:"linear-gradient(135deg,#6366f1,#4f46e5)",
+          padding:"22px 24px 18px", textAlign:"center",
+        }}>
+          <div style={{ fontSize:40, marginBottom:4 }}>🚗➕</div>
+          <div style={{ fontSize:"1rem", fontWeight:800, color:"#fff" }}>
+            Séance supplémentaire
+          </div>
+          <div style={{ fontSize:"0.75rem", color:"#c7d2fe", marginTop:4 }}>
+            Candidat ayant obtenu son permis
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding:"20px 24px", display:"flex", flexDirection:"column", gap:14 }}>
+
+          {/* Infos candidat */}
+          <div style={{
+            padding:"14px 16px", borderRadius:12,
+            background:"#eef2ff", border:"1px solid #c7d2fe",
+            display:"flex", alignItems:"center", gap:12,
+          }}>
+            <div style={{
+              width:44, height:44, borderRadius:"50%",
+              background:"#6366f1", color:"#fff",
+              display:"flex", alignItems:"center", justifyContent:"center",
+              fontSize:"1rem", fontWeight:800, flexShrink:0,
+            }}>
+              {nomComplet.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase()}
+            </div>
+            <div>
+              <div style={{ fontSize:"0.9rem", fontWeight:700, color:"#1e293b" }}>{nomComplet}</div>
+              <div style={{ fontSize:"0.72rem", color:"#6366f1", fontWeight:600, marginTop:2 }}>
+                🎓 Permis obtenu — Catégorie {candidat.categoriePermis || "B"}
+              </div>
+            </div>
+          </div>
+
+          {/* Explication */}
+          <div style={{
+            padding:"12px 14px", borderRadius:10,
+            background:"#f8fafc", border:"1px solid #e2e8f0",
+            fontSize:"0.8rem", color:"#475569", lineHeight:1.6,
+          }}>
+            <strong style={{ color:"#1e293b" }}>📋 Séance hors forfait</strong><br />
+            Ce candidat a déjà complété sa formation initiale. Vous pouvez lui planifier
+            des séances supplémentaires (perfectionnement, accompagnement post-permis, etc.).<br />
+            <span style={{ color:"#6366f1", fontWeight:600 }}>
+              Le paiement de ces séances se gère depuis le module Paiements.
+            </span>
+          </div>
+
+          {/* Badges examens réussis */}
+          <div style={{ display:"flex", gap:8 }}>
+            {["Code","Créneau","Circulation"].map(t => (
+              <div key={t} style={{
+                flex:1, padding:"8px 0", borderRadius:8, textAlign:"center",
+                background:"#f0fdf4", border:"1px solid #86efac",
+                fontSize:"0.72rem", color:"#166534", fontWeight:600,
+              }}>
+                ✅ {t}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding:"0 24px 20px", display:"flex", gap:10, justifyContent:"space-between" }}>
+          <button onClick={onClose} style={{
+            padding:"10px 20px", borderRadius:10,
+            background:"#f1f5f9", border:"none", color:"#64748b",
+            fontFamily:"'Poppins',sans-serif", fontSize:"0.84rem",
+            fontWeight:600, cursor:"pointer",
+          }}>
+            Annuler
+          </button>
+          <button onClick={onConfirm} style={{
+            padding:"10px 26px", borderRadius:10,
+            background:"linear-gradient(135deg,#6366f1,#4f46e5)",
+            border:"none", color:"#fff",
+            fontFamily:"'Poppins',sans-serif", fontSize:"0.84rem",
+            fontWeight:700, cursor:"pointer",
+            boxShadow:"0 4px 14px rgba(99,102,241,0.35)",
+          }}>
+            📅 Planifier la séance
+          </button>
         </div>
       </div>
     </div>
@@ -419,7 +441,7 @@ function AlertModal({ icon, title, message, color = "#ef4444", onClose }) {
   );
 }
 
-// ── BANNIÈRE CONGÉ ANNUEL (affichée dans le calendrier) ───────────────────────
+// ── BANNIÈRE CONGÉ ANNUEL ─────────────────────────────────────────────────────
 function CongeAnnuelBanner({ congeAnnuel }) {
   if (!congeAnnuel?.actif || !congeAnnuel?.dateDebut || !congeAnnuel?.dateFin) return null;
   const now   = new Date();
@@ -429,20 +451,18 @@ function CongeAnnuelBanner({ congeAnnuel }) {
 
   return (
     <div style={{
-      margin: "0 0 12px 0",
-      padding: "12px 18px",
-      borderRadius: 12,
-      background: "linear-gradient(135deg, #fff7ed, #ffedd5)",
-      border: "1.5px solid #fed7aa",
-      display: "flex", alignItems: "center", gap: 12,
-      fontFamily: "'Poppins',sans-serif",
+      margin:"0 0 12px 0", padding:"12px 18px", borderRadius:12,
+      background:"linear-gradient(135deg, #fff7ed, #ffedd5)",
+      border:"1.5px solid #fed7aa",
+      display:"flex", alignItems:"center", gap:12,
+      fontFamily:"'Poppins',sans-serif",
     }}>
-      <div style={{ fontSize: 24, flexShrink: 0 }}>🏖️</div>
+      <div style={{ fontSize:24, flexShrink:0 }}>🏖️</div>
       <div>
-        <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#c2410c" }}>
+        <div style={{ fontSize:"0.85rem", fontWeight:700, color:"#c2410c" }}>
           {congeAnnuel.label || "Congé annuel"} — Auto-école fermée
         </div>
-        <div style={{ fontSize: "0.75rem", color: "#ea580c", marginTop: 2 }}>
+        <div style={{ fontSize:"0.75rem", color:"#ea580c", marginTop:2 }}>
           Du {formatDateFr(congeAnnuel.dateDebut)} au {formatDateFr(congeAnnuel.dateFin)} · Aucune séance ne peut être créée durant cette période.
         </div>
       </div>
@@ -451,11 +471,12 @@ function CongeAnnuelBanner({ congeAnnuel }) {
 }
 
 // ── CREATE / EDIT MODAL ───────────────────────────────────────────────────────
-function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }) {
+function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, prefillCandidatId }) {
   const [candidats, setCandidats] = useState([]);
   const [moniteurs, setMoniteurs] = useState([]);
   const [alertInfo, setAlertInfo] = useState(null);
   const { isMoniteurEnConge, isCongeAnnuel, congeAnnuel } = useCongeCtx();
+  const { examensList } = useExamenCtx();
 
   useEffect(() => {
     async function loadData() {
@@ -483,19 +504,49 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
     dur:         String(editing.dur || 1),
     notes:       "",
   } : {
-    candidat:"", candidatId:"", moniteur:"", moniteur_id:"",
-    type:"code", date: toLocalISO(new Date()),
+    candidat:"", candidatId: prefillCandidatId ? String(prefillCandidatId) : "",
+    moniteur:"", moniteur_id:"",
+    type:"code", date:toLocalISO(new Date()),
     heure:"08:00", statut:"planifiée", dur:"1", notes:"",
   });
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
+  // ── Examens du candidat ────────────────────────────────────────────────────
+  const examsCandidat = (examensList || []).filter(
+    e => String(e.candidatId) === String(form.candidatId)
+  );
+  const aReussiCode    = examsCandidat.some(e => e.type === "Code"        && e.status === "Passed");
+  const aReussiCreneau = examsCandidat.some(e => e.type === "Créneau"     && e.status === "Passed");
+  const aReussiCirc    = examsCandidat.some(e => e.type === "Circulation" && e.status === "Passed");
+
+  // Permis complètement obtenu → tous les types sont libres
+  const permisObtenu = aReussiCode && aReussiCreneau && aReussiCirc;
+
+  // Stade actuel pour les candidats en cours de formation
+  const currentStage = !aReussiCode ? "code" : !aReussiCreneau ? "creneau" : "circulation";
+
+  // Force le type au bon stade (sauf si permis obtenu)
+  useEffect(() => {
+    if (!form.candidatId) return;
+    if (permisObtenu) return;
+    if (form.type !== currentStage) set("type", currentStage);
+  }, [form.candidatId, currentStage, permisObtenu]);
+
+  // Si prefill candidat, charger le nom dès que la liste est prête
+  useEffect(() => {
+    if (!prefillCandidatId || candidats.length === 0) return;
+    const c = candidats.find(c => String(c.idCandidat) === String(prefillCandidatId));
+    if (c) set("candidat", `${c.nom} ${c.prenom}`);
+  }, [prefillCandidatId, candidats]);
+
   const selectedCandidatObj = candidats.find(c => String(c.idCandidat) === String(form.candidatId));
-  const candidatCat = selectedCandidatObj ? candidatCategorie(selectedCandidatObj) : "";
+  const candidatCat  = selectedCandidatObj ? candidatCategorie(selectedCandidatObj) : "";
   const seanceDateObj = form.date ? new Date(form.date + "T12:00:00") : null;
 
-  // Vérification congé annuel sur la date saisie dans le formulaire
   const dateEnCongeAnnuel = !!(seanceDateObj && isCongeAnnuel(seanceDateObj));
+  const today = new Date(); today.setHours(0,0,0,0);
+  const dateEstPassee = !!(seanceDateObj && seanceDateObj < today);
 
   const isMoniteurAbsent = (m) => !!(seanceDateObj && isMoniteurEnConge(m.id, seanceDateObj));
 
@@ -556,19 +607,52 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
   const handleSubmit = () => {
     if (!form.date || !form.heure || !form.type) return;
 
-    // ── Bloquer si congé annuel ───────────────────────────────────────────
-    if (dateEnCongeAnnuel) {
-      setAlertInfo({
-        icon: "🏖️",
-        title: "Auto-école fermée",
-        color: "#f97316",
-        message: `L'auto-école est fermée du ${formatDateFr(congeAnnuel.dateDebut)} au ${formatDateFr(congeAnnuel.dateFin)}${congeAnnuel.label ? ` (${congeAnnuel.label})` : ""}. Aucune séance ne peut être créée durant cette période.`,
-      });
+    if (dateEstPassee) {
+      setAlertInfo({ icon:"📅", title:"Date dans le passé", message:"Vous ne pouvez pas planifier une séance à une date déjà passée. Veuillez choisir une date à partir d'aujourd'hui.", color:"#ef4444" });
       return;
     }
 
+    if (dateEnCongeAnnuel) {
+      setAlertInfo({
+        icon:"🏖️", title:"Auto-école fermée", color:"#f97316",
+        message:`L'auto-école est fermée du ${formatDateFr(congeAnnuel.dateDebut)} au ${formatDateFr(congeAnnuel.dateFin)}${congeAnnuel.label ? ` (${congeAnnuel.label})` : ""}. Aucune séance ne peut être créée durant cette période.`,
+      });
+      return;
+    }
+    // après la vérification "moniteur en congé"
+const candidatConflict = (sessions || []).find(s => {
+  if (editing && String(s.id) === String(editing.id)) return false;
+  if (toLocalISO(s._raw?.date) !== form.date) return false;
+
+  const sCandidatIds = s._raw?.candidatsIds
+    ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
+    : [];
+  if (!sCandidatIds.includes(String(form.candidatId))) return false;
+
+  const startH = parseInt(form.heure.split(":")[0]) + parseInt(form.heure.split(":")[1] || 0) / 60;
+  const dur    = parseFloat(form.dur) || 1;
+  return startH < s.startH + s.dur && (startH + dur) > s.startH;
+});
+
+if (candidatConflict) {
+  setAlertInfo({
+    icon: "🚫", title: "Candidat déjà occupé", color: "#ef4444",
+    message: `${form.candidat || "Ce candidat"} a déjà une séance prévue de ${floatToHHMM(candidatConflict.startH)} à ${floatToHHMM(candidatConflict.startH + candidatConflict.dur)} ce jour-là. Choisissez un autre créneau.`,
+  });
+  return;
+}
+
     if (!form.candidatId) { setAlertInfo({ icon:"🧑", title:"Candidat manquant", message:"Veuillez sélectionner un candidat avant d'enregistrer la séance.", color:"#ef4444" }); return; }
     if (!form.moniteur_id) { setAlertInfo({ icon:"🧑‍🏫", title:"Moniteur manquant", message:"Veuillez sélectionner un moniteur avant d'enregistrer la séance.", color:"#ef4444" }); return; }
+
+    // Progression obligatoire uniquement pour candidats en cours (pas permis obtenu)
+    if (form.candidatId && !permisObtenu && form.type !== currentStage) {
+      setAlertInfo({
+        icon:"🚫", title:"Type de séance non autorisé", color:"#ef4444",
+        message:`${form.candidat || "Ce candidat"} est actuellement au stade "${currentStage}". Seules les séances de ce type peuvent être créées pour lui.`,
+      });
+      return;
+    }
 
     const moniteurSel = moniteurs.find(m => String(m.id) === String(form.moniteur_id));
     if (selectedCandidatObj && moniteurSel && !moniteurCategories(moniteurSel).includes(candidatCat)) {
@@ -609,34 +693,43 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
       allSlots.push(h); allSlots.push(h+0.25); allSlots.push(h+0.5); allSlots.push(h+0.75);
     }
     const occupiedIntervals = (sessions || [])
-      .filter(s => {
-        if (!form.date || !form.moniteur_id) return false;
-        const sDate = toLocalISO(s._raw?.date);
-        const isOther = editing ? String(s.id) !== String(editing.id) : true;
-        const sameMoniteur = String(s._raw?.moniteur_id) === String(form.moniteur_id);
-        return sDate === form.date && isOther && sameMoniteur;
-      })
-      .map(s => ({ start: s.startH, end: s.startH + s.dur }));
+  .filter(s => {
+    if (!form.date) return false;
+    const sDate = toLocalISO(s._raw?.date);
+    if (sDate !== form.date) return false;
+    const isOther = editing ? String(s.id) !== String(editing.id) : true;
+    if (!isOther) return false;
+
+    const sameMoniteur = !!form.moniteur_id && String(s._raw?.moniteur_id) === String(form.moniteur_id);
+
+    const sCandidatIds = s._raw?.candidatsIds
+      ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
+      : [];
+    const sameCandidat = !!form.candidatId && sCandidatIds.includes(String(form.candidatId));
+
+    return sameMoniteur || sameCandidat;
+  })
+  .map(s => ({ start: s.startH, end: s.startH + s.dur }));
 
     const formatSlot = slot => {
       const h = Math.floor(slot); const m = Math.round((slot % 1) * 60);
       return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
     };
 
-    return allSlots.map(slot => {
-      const slotEnd = slot + duree;
-      if (slotEnd > 19) return null;
-      const minutes = Math.round((slot % 1) * 60);
-      const isValid = duree === 0.75 ? [0,15,30,45].includes(minutes) : [0,30].includes(minutes);
-      if (!isValid) return null;
-      const conflict = occupiedIntervals.find(i => slot < i.end && slotEnd > i.start);
-      const startStr = formatSlot(slot); const endStr = formatSlot(slotEnd);
-      return (
-        <option key={slot} value={startStr} disabled={!!conflict} style={{ color: conflict ? "#cbd5e1" : "#1e293b" }}>
-          {conflict ? `${startStr} – ${endStr}  ✗` : `${startStr} – ${endStr}  ✓`}
-        </option>
-      );
-    });
+   return allSlots.map(slot => {
+  const slotEnd = slot + duree;
+  if (slotEnd > 19) return null;
+  const minutes = Math.round((slot % 1) * 60);
+  const isValid = duree === 0.75 ? [0,15,30,45].includes(minutes) : [0,30].includes(minutes);
+  if (!isValid) return null;
+  const conflict = occupiedIntervals.find(i => slot < i.end && slotEnd > i.start);
+  const startStr = formatSlot(slot); const endStr = formatSlot(slotEnd);
+  return (
+    <option key={slot} value={startStr} disabled={!!conflict} style={{ color: conflict ? "#cbd5e1" : "#1e293b" }}>
+      {conflict ? `${startStr} – ${endStr}  ✗` : `${startStr} – ${endStr}  ✓`}
+    </option>
+  );
+});
   };
 
   return (
@@ -644,17 +737,38 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
       onClick={e => e.target===e.currentTarget && onClose()}>
       <div style={{ background:"#fff", borderRadius:16, width:520, maxWidth:"96vw", maxHeight:"90vh", display:"flex", flexDirection:"column", boxShadow:"0 25px 60px rgba(0,0,0,0.2)", overflow:"hidden", fontFamily:"'Poppins',sans-serif", position:"relative" }}>
         {saving && <LoadingOverlay />}
+
+        {/* Header */}
         <div style={{ padding:"20px 24px 16px", borderBottom:"1px solid #e2e8f0", display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
           <div>
-            <div style={{ fontSize:"1.05rem", fontWeight:700, color:"#1e293b" }}>{editing ? "Modifier la séance" : "Créer une séance"}</div>
-            <div style={{ fontSize:"0.72rem", color:"#94a3b8", marginTop:3 }}>Planifier une nouvelle séance de conduite ou d'examen</div>
+            <div style={{ fontSize:"1.05rem", fontWeight:700, color:"#1e293b" }}>
+              {editing ? "Modifier la séance" : permisObtenu ? "🚗➕ Séance supplémentaire" : "Créer une séance"}
+            </div>
+            <div style={{ fontSize:"0.72rem", color:"#94a3b8", marginTop:3 }}>
+              {permisObtenu
+                ? "Séance hors forfait — candidat ayant obtenu son permis"
+                : "Planifier une nouvelle séance de conduite ou d'examen"}
+            </div>
           </div>
           <button onClick={onClose} style={{ background:"#f1f5f9", border:"none", color:"#64748b", width:30, height:30, borderRadius:8, cursor:"pointer", fontSize:14, display:"grid", placeItems:"center" }}>✕</button>
         </div>
 
         <div style={{ padding:"18px 24px", overflowY:"auto", display:"flex", flexDirection:"column", gap:14 }}>
 
-          {/* ── Avertissement congé annuel dans le formulaire ── */}
+          {/* Bannière permis obtenu */}
+          {permisObtenu && (
+            <div style={{ padding:"10px 14px", borderRadius:10, background:"#eef2ff", border:"1.5px solid #c7d2fe", fontSize:"0.78rem", color:"#4338ca", fontWeight:600, display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:18 }}>🎓</span>
+              <div>
+                <div>Permis obtenu — séance hors forfait</div>
+                <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>
+                  Tous les types de séance sont disponibles. Le paiement se gère dans le module Paiements.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Avertissement congé annuel */}
           {dateEnCongeAnnuel && (
             <div style={{ padding:"10px 14px", borderRadius:10, background:"#fff7ed", border:"1.5px solid #fed7aa", fontSize:"0.78rem", color:"#c2410c", fontWeight:700, display:"flex", alignItems:"center", gap:8 }}>
               <span style={{ fontSize:18 }}>🏖️</span>
@@ -667,6 +781,18 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
             </div>
           )}
 
+          {/* Avertissement date passée */}
+          {dateEstPassee && !dateEnCongeAnnuel && (
+            <div style={{ padding:"10px 14px", borderRadius:10, background:"#fef2f2", border:"1.5px solid #fca5a5", fontSize:"0.78rem", color:"#dc2626", fontWeight:700, display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:18 }}>📅</span>
+              <div>
+                <div>Date dans le passé</div>
+                <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>Vous ne pouvez pas créer une séance à une date déjà passée.</div>
+              </div>
+            </div>
+          )}
+
+          {/* Candidat / Moniteur */}
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Candidat <span style={{ color:"#ef4444" }}>*</span></label>
@@ -702,21 +828,44 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
             </div>
           )}
 
+          {/* Type / Date */}
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Type <span style={{ color:"#ef4444" }}>*</span></label>
-              <select style={inpS} value={form.type} onChange={e => set("type", e.target.value)}>
-                <option value="code">Code</option>
-                <option value="circulation">Circulation</option>
-                <option value="creneau">Créneau</option>
+              <select style={inpS} value={form.type} disabled={!form.candidatId} onChange={e => set("type", e.target.value)}>
+                {permisObtenu ? (
+                  // Permis obtenu → tous les types libres
+                  <>
+                    <option value="code">Code</option>
+                    <option value="creneau">Créneau</option>
+                    <option value="circulation">Circulation</option>
+                  </>
+                ) : (
+                  // Progression normale
+                  <>
+                    <option value="code" disabled={currentStage !== "code"}>
+                      Code {currentStage !== "code" ? "(non disponible)" : ""}
+                    </option>
+                    <option value="creneau" disabled={currentStage !== "creneau"}>
+                      Créneau {currentStage !== "creneau" ? (!aReussiCode ? "(Code requis)" : "(non disponible)") : ""}
+                    </option>
+                    <option value="circulation" disabled={currentStage !== "circulation"}>
+                      Circulation {currentStage !== "circulation" ? "(Créneau requis)" : ""}
+                    </option>
+                  </>
+                )}
               </select>
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Date <span style={{ color:"#ef4444" }}>*</span></label>
-              <input style={{ ...inpS, borderColor: dateEnCongeAnnuel ? "#fed7aa" : "#cbd5e1", background: dateEnCongeAnnuel ? "#fff7ed" : "#fff" }} type="date" value={form.date} onChange={handleDateChange} />
+              <input
+                style={{ ...inpS, borderColor: dateEstPassee ? "#fca5a5" : dateEnCongeAnnuel ? "#fed7aa" : "#cbd5e1", background: dateEstPassee ? "#fef2f2" : dateEnCongeAnnuel ? "#fff7ed" : "#fff" }}
+                type="date" value={form.date} onChange={handleDateChange}
+              />
             </div>
           </div>
 
+          {/* Durée / Heure */}
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Durée <span style={{ color:"#ef4444" }}>*</span></label>
@@ -738,6 +887,7 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
             </div>
           </div>
 
+          {/* Statut */}
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Statut</label>
@@ -747,18 +897,27 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
                 <option value="annulée">Annulée</option>
               </select>
             </div>
-            <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
-              <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Notes</label>
-              <input style={inpS} type="text" placeholder="Notes rapides..." value={form.notes} onChange={e => set("notes", e.target.value)} />
-            </div>
           </div>
         </div>
 
+        {/* Footer */}
         <div style={{ padding:"14px 24px", borderTop:"1px solid #e2e8f0", display:"flex", justifyContent:"flex-end", gap:10 }}>
           <button onClick={onClose} disabled={saving} style={{ padding:"9px 20px", borderRadius:8, background:"#f1f5f9", border:"1px solid #e2e8f0", color:"#64748b", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", cursor:"pointer", fontWeight:500 }}>Annuler</button>
-          <button onClick={handleSubmit} disabled={saving || dateEnCongeAnnuel} style={{ padding:"9px 22px", borderRadius:8, background: dateEnCongeAnnuel ? "#94a3b8" : saving ? "#93c5fd" : "#2563eb", border:"none", color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", fontWeight:600, cursor: saving || dateEnCongeAnnuel ? "not-allowed" : "pointer", boxShadow: dateEnCongeAnnuel ? "none" : "0 4px 14px rgba(37,99,235,0.35)", display:"flex", alignItems:"center", gap:8 }}>
+          <button
+            onClick={handleSubmit}
+            disabled={saving || dateEnCongeAnnuel || dateEstPassee}
+            style={{
+              padding:"9px 22px", borderRadius:8,
+              background: dateEnCongeAnnuel || dateEstPassee ? "#94a3b8" : saving ? "#93c5fd" : permisObtenu ? "linear-gradient(135deg,#6366f1,#4f46e5)" : "#2563eb",
+              border:"none", color:"#fff",
+              fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", fontWeight:600,
+              cursor: saving || dateEnCongeAnnuel || dateEstPassee ? "not-allowed" : "pointer",
+              boxShadow: dateEnCongeAnnuel || dateEstPassee ? "none" : permisObtenu ? "0 4px 14px rgba(99,102,241,0.35)" : "0 4px 14px rgba(37,99,235,0.35)",
+              display:"flex", alignItems:"center", gap:8,
+            }}
+          >
             {saving && <div style={{ width:14, height:14, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.4)", borderTop:"2px solid #fff", animation:"spin 0.7s linear infinite" }} />}
-            {dateEnCongeAnnuel ? "🏖️ Période fermée" : editing ? "Enregistrer" : "Créer la séance"}
+            {dateEnCongeAnnuel ? "🏖️ Période fermée" : dateEstPassee ? "📅 Date passée" : editing ? "Enregistrer" : permisObtenu ? "📅 Planifier la séance" : "Créer la séance"}
           </button>
         </div>
       </div>
@@ -768,7 +927,7 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions }
 }
 
 // ── CALENDAR GRID ─────────────────────────────────────────────────────────────
-function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupClick, onDrop, isMoniteurEnConge, isCongeAnnuel }) {
+function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupClick, onDrop, isMoniteurEnConge, isCongeAnnuel, onCandidatPermisClick, aObtenuPermis }) {
   const [dragging, setDragging] = React.useState(null);
   const [dragOver, setDragOver] = React.useState(null);
   const dragRef = useRef(null);
@@ -880,6 +1039,13 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
                 const widthPct = 100 / localCols;
                 const leftPct  = colIdx * widthPct;
                 const congeConflict = !!(isMoniteurEnConge && s._raw?.moniteur_id && isMoniteurEnConge(s._raw.moniteur_id, dateOfDay));
+
+                // Vérification permis obtenu pour ce candidat
+                const candidatId = s._raw?.candidatsIds
+                  ? String(s._raw.candidatsIds).split(",")[0].trim()
+                  : null;
+                const candidatAPermis = candidatId && aObtenuPermis ? aObtenuPermis(candidatId) : false;
+
                 return (
                   <div key={s.id}
                     draggable={!isClosed}
@@ -889,7 +1055,7 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
                       e.stopPropagation();
                       hasOverlap ? onGroupClick(groupSessions) : onSessionClick(s, e.currentTarget.getBoundingClientRect());
                     }}
-                    title={congeConflict ? `⚠️ ${s.monitor} est en congé ce jour-là` : undefined}
+                    title={congeConflict ? `⚠️ ${s.monitor} est en congé ce jour-là` : candidatAPermis ? "🎓 Cliquer sur le nom pour séance supp." : undefined}
                     style={{
                       position:"absolute", left:`calc(${leftPct}% + 2px)`, width:`calc(${widthPct}% - 4px)`,
                       top:topPx + 2, height:s.dur * CELL_H - 4, borderRadius:8, padding:"5px 8px",
@@ -903,7 +1069,30 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
                     onMouseEnter={e => { if (!isDragging) { e.currentTarget.style.transform="translateY(-1px)"; e.currentTarget.style.zIndex=5; }}}
                     onMouseLeave={e => { e.currentTarget.style.transform="scale(1)"; e.currentTarget.style.zIndex=2; }}
                   >
-                    <div style={{ fontSize:"0.72rem", fontWeight:700, color:colData.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{cap(s.name)}</div>
+                    {/* Nom candidat — cliquable si permis obtenu */}
+                    <div
+                      style={{
+                        fontSize:"0.72rem", fontWeight:700,
+                        color: candidatAPermis ? "#6366f1" : colData.text,
+                        whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
+                        textDecoration: candidatAPermis ? "underline dotted" : "none",
+                        cursor: candidatAPermis ? "pointer" : "inherit",
+                      }}
+                      onClick={candidatAPermis ? (e) => {
+                        e.stopPropagation();
+                        onCandidatPermisClick?.({
+                          id:              candidatId,
+                          nom:             s.name.split(" ").slice(-1)[0] || s.name,
+                          prenom:          s.name.split(" ").slice(0, -1).join(" ") || "",
+                          categoriePermis: s.categoriePermis || "B",
+                        });
+                      } : undefined}
+                      title={candidatAPermis ? "🎓 Permis obtenu — cliquer pour séance supplémentaire" : undefined}
+                    >
+                      {candidatAPermis && <span style={{ marginRight:3 }}>🎓</span>}
+                      {cap(s.name)}
+                    </div>
+
                     <div style={{ fontSize:"0.62rem", color:"#64748b", marginTop:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{s.monitor}</div>
                     {hasOverlap && (
                       <div style={{ position:"absolute", top:4, right:4, width:18, height:18, borderRadius:"50%", background:colData.bg, color:"white", fontSize:"0.6rem", fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -928,23 +1117,25 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
 
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────────
 export default function AgendaPage() {
-  const [sessions,       setSessions]       = useState([]);
-  const [loading,        setLoading]        = useState(true);
-  const [saving,         setSaving]         = useState(false);
-  const [toast,          setToast]          = useState(null);
-  const [weekBase,       setWeekBase]       = useState(() => getMondayOfWeek(new Date()));
-  const [showModal,      setShowModal]      = useState(false);
-  const [editing,        setEditing]        = useState(null);
-  const [popup,          setPopup]          = useState({ session:null, anchor:null });
-  const [groupModal,     setGroupModal]     = useState(null);
-  const [search,         setSearch]         = useState("");
-  const [filterType,     setFilterType]     = useState("");
-  const [filterMon,      setFilterMon]      = useState("");
-  const [filterCat,      setFilterCat]      = useState("");
-  const [milestoneModal, setMilestoneModal] = useState(null);
+  const [sessions,        setSessions]        = useState([]);
+  const [loading,         setLoading]         = useState(true);
+  const [saving,          setSaving]          = useState(false);
+  const [toast,           setToast]           = useState(null);
+  const [weekBase,        setWeekBase]        = useState(() => getMondayOfWeek(new Date()));
+  const [showModal,       setShowModal]       = useState(false);
+  const [editing,         setEditing]         = useState(null);
+  const [popup,           setPopup]           = useState({ session:null, anchor:null });
+  const [groupModal,      setGroupModal]      = useState(null);
+  const [search,          setSearch]          = useState("");
+  const [filterType,      setFilterType]      = useState("");
+  const [filterMon,       setFilterMon]       = useState("");
+  const [filterCat,       setFilterCat]       = useState("");
+  const [milestoneModal,  setMilestoneModal]  = useState(null); // { candidatName }
+  const [seanceSupModal,  setSeanceSupModal]  = useState(null); // { candidat }
+  const [prefillCandidatId, setPrefillCandidatId] = useState(null);
 
-  // ── Congés ────────────────────────────────────────────────────────────────
   const { isMoniteurEnConge, isCongeAnnuel, congeAnnuel } = useCongeCtx();
+  const { examensList } = useExamenCtx();
 
   const weekDates = getWeekDates(weekBase);
   const weekLabel = formatWeekLabel(weekDates);
@@ -953,6 +1144,16 @@ export default function AgendaPage() {
 
   const api = window.electron || null;
   const showToast = (message, type = "success") => setToast({ message, type });
+
+  // ── Helper : candidat a obtenu son permis ? ──────────────────────────────
+  const aObtenuPermis = useCallback((candidatId) => {
+    const exams = (examensList || []).filter(e => String(e.candidatId) === String(candidatId));
+    return (
+      exams.some(e => e.type === "Code"        && e.status === "Passed") &&
+      exams.some(e => e.type === "Créneau"     && e.status === "Passed") &&
+      exams.some(e => e.type === "Circulation" && e.status === "Passed")
+    );
+  }, [examensList]);
 
   useEffect(() => { loadSeances(); }, []);
 
@@ -992,20 +1193,17 @@ export default function AgendaPage() {
 
     const targetDateObj = new Date(toLocalISO(weekDates[day]) + "T12:00:00");
 
-    // Bloquer si congé annuel
     if (isCongeAnnuel(targetDateObj)) {
       showToast(`🏖️ L'auto-école est fermée ce jour-là — déplacement annulé.`, "error");
       return;
     }
-
-    // Bloquer si congé moniteur
     if (session._raw?.moniteur_id && isMoniteurEnConge(session._raw.moniteur_id, targetDateObj)) {
       showToast(`⚠️ ${session.monitor} est en congé ce jour-là — déplacement annulé.`, "error");
       return;
     }
 
     setSessions(p => p.map(s => s.id === id ? { ...s, day, startH: hour } : s));
-    const newDate = toLocalISO(weekDates[day]);
+    const newDate  = toLocalISO(weekDates[day]);
     const newHeure = floatToHHMM(hour);
     if (api?.updateSeance) {
       try {
@@ -1037,7 +1235,6 @@ export default function AgendaPage() {
     const newStart = startHH + startMM / 60;
     const newEnd   = newStart + parseFloat(_formData.duree);
 
-    // ── Bloquer si congé annuel ───────────────────────────────────────────
     const seanceDate = new Date(_formData.date + "T12:00:00");
     if (isCongeAnnuel(seanceDate)) {
       showToast(
@@ -1047,18 +1244,36 @@ export default function AgendaPage() {
       return;
     }
 
-    const conflict = sessions.find(s => {
-      if (editing && String(s.id) === String(editing.id)) return false;
-      if (toLocalISO(s._raw?.date) !== _formData.date) return false;
-      if (!_formData.moniteur_id || !s._raw?.moniteur_id) return false;
-      if (String(s._raw?.moniteur_id) !== String(_formData.moniteur_id)) return false;
-      return newStart < s.startH + s.dur && newEnd > s.startH;
-    });
+ const conflict = sessions.find(s => {
+  if (editing && String(s.id) === String(editing.id)) return false;
+  if (toLocalISO(s._raw?.date) !== _formData.date) return false;
 
-    if (conflict) {
-      showToast(`⚠️ Ce moniteur est déjà occupé de ${floatToHHMM(conflict.startH)} à ${floatToHHMM(conflict.startH + conflict.dur)} ce jour-là.`, "error");
-      return;
-    }
+  const sameMoniteur = !!_formData.moniteur_id && !!s._raw?.moniteur_id
+    && String(s._raw?.moniteur_id) === String(_formData.moniteur_id);
+
+  const sCandidatIds = s._raw?.candidatsIds
+    ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
+    : [];
+  const sameCandidat = !!_formData.candidatIds?.[0]
+    && sCandidatIds.includes(String(_formData.candidatIds[0]));
+
+  if (!sameMoniteur && !sameCandidat) return false;
+  return newStart < s.startH + s.dur && newEnd > s.startH;
+});
+
+if (conflict) {
+  const conflictCandidatIds = conflict._raw?.candidatsIds
+    ? String(conflict._raw.candidatsIds).split(",").map(x => x.trim())
+    : [];
+  const estCandidat = conflictCandidatIds.includes(String(_formData.candidatIds?.[0]));
+  showToast(
+    estCandidat
+      ? `⚠️ Ce candidat a déjà une séance de ${floatToHHMM(conflict.startH)} à ${floatToHHMM(conflict.startH + conflict.dur)} ce jour-là.`
+      : `⚠️ Ce moniteur est déjà occupé de ${floatToHHMM(conflict.startH)} à ${floatToHHMM(conflict.startH + conflict.dur)} ce jour-là.`,
+    "error"
+  );
+  return;
+}
 
     setSaving(true);
     try {
@@ -1089,8 +1304,8 @@ export default function AgendaPage() {
                 return ids.includes(candidatId);
               }).length;
               const nomCandidat = sessionObj.name || "Ce candidat";
-              if (nbSessions === 20)      setMilestoneModal({ type: "completed", candidatName: nomCandidat, candidatId });
-              else if (nbSessions > 20)   setMilestoneModal({ type: "extra",     candidatName: nomCandidat, candidatId });
+              // Afficher seulement la milestone "20 séances" — plus de modal "extra"
+              if (nbSessions === 20) setMilestoneModal({ candidatName: nomCandidat });
             } catch (milestoneErr) {
               console.error("Erreur vérification milestone :", milestoneErr);
             }
@@ -1110,13 +1325,21 @@ export default function AgendaPage() {
       setSaving(false);
       setShowModal(false);
       setEditing(null);
+      setPrefillCandidatId(null);
     }
   };
 
   const monitors = [...new Set(sessions.map(s=>s.monitor))].sort();
-
-  // Vérifier si la semaine courante contient des jours de congé annuel
   const semaineClosed = congeAnnuel?.actif && weekDates.some(d => isCongeAnnuel(d));
+
+  // ── Ouverture CreateModal depuis SeanceSupplementaireModal ────────────────
+  const handleConfirmSeanceSup = () => {
+    const cid = seanceSupModal?.candidat?.id;
+    setSeanceSupModal(null);
+    setPrefillCandidatId(cid || null);
+    setEditing(null);
+    setShowModal(true);
+  };
 
   return (
     <>
@@ -1186,7 +1409,7 @@ export default function AgendaPage() {
               </svg>
             </button>
           </div>
-          <Button text="+ Ajouter Séance" onClick={() => setShowModal(true)} />
+          <Button text="+ Ajouter Séance" onClick={() => { setPrefillCandidatId(null); setEditing(null); setShowModal(true); }} />
         </div>
 
         {/* FILTRES */}
@@ -1234,7 +1457,6 @@ export default function AgendaPage() {
             </div>
           )}
 
-          {/* Bannière congé annuel si semaine concernée */}
           {semaineClosed && <CongeAnnuelBanner congeAnnuel={congeAnnuel} />}
 
           <CalendarGrid
@@ -1246,6 +1468,8 @@ export default function AgendaPage() {
             onDrop={handleDrop}
             isMoniteurEnConge={isMoniteurEnConge}
             isCongeAnnuel={isCongeAnnuel}
+            aObtenuPermis={aObtenuPermis}
+            onCandidatPermisClick={(candidat) => setSeanceSupModal({ candidat })}
           />
         </div>
 
@@ -1256,6 +1480,9 @@ export default function AgendaPage() {
               <div style={{ width:12, height:12, borderRadius:3, background:col.bg }} />{cap(type)}
             </div>
           ))}
+          <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:"0.72rem", color:"#6366f1", background:"#eef2ff", border:"1px solid #c7d2fe", padding:"3px 10px", borderRadius:20 }}>
+            🎓 Permis obtenu (clic sur nom → séance supp.)
+          </div>
           {congeAnnuel?.actif && (
             <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:"0.72rem", color:"#ea580c", background:"#fff7ed", border:"1px solid #fed7aa", padding:"3px 10px", borderRadius:20 }}>
               🏖️ Congé annuel actif
@@ -1268,14 +1495,14 @@ export default function AgendaPage() {
         </div>
       </div>
 
-      {/* POPUPS & MODALES */}
+      {/* ── POPUPS & MODALES ── */}
       {popup.session && (
         <SessionPopup
           session={popup.session}
           anchor={popup.anchor}
           onClose={() => setPopup({session:null, anchor:null})}
           onDelete={handleDelete}
-          onEdit={s => { setEditing(s); setShowModal(true); setPopup({session:null,anchor:null}); }}
+          onEdit={s => { setEditing(s); setPrefillCandidatId(null); setShowModal(true); setPopup({session:null,anchor:null}); }}
         />
       )}
       {groupModal && (
@@ -1283,27 +1510,38 @@ export default function AgendaPage() {
           sessions={groupModal}
           onClose={() => setGroupModal(null)}
           onDelete={handleDelete}
-          onEdit={s => { setEditing(s); setShowModal(true); setGroupModal(null); }}
+          onEdit={s => { setEditing(s); setPrefillCandidatId(null); setShowModal(true); setGroupModal(null); }}
         />
       )}
       {showModal && (
         <CreateModal
-          onClose={() => { setShowModal(false); setEditing(null); }}
+          onClose={() => { setShowModal(false); setEditing(null); setPrefillCandidatId(null); }}
           onCreate={handleSave}
           weekDates={weekDates}
           editing={editing}
           saving={saving}
           sessions={sessions}
+          prefillCandidatId={prefillCandidatId}
         />
       )}
+
+      {/* Milestone : 20 séances atteintes */}
       {milestoneModal && (
         <MilestoneModal
-          type={milestoneModal.type}
           candidatName={milestoneModal.candidatName}
-          candidatId={milestoneModal.candidatId}
           onClose={() => setMilestoneModal(null)}
         />
       )}
+
+      {/* Séance supplémentaire : candidat permis obtenu */}
+      {seanceSupModal && (
+        <SeanceSupplementaireModal
+          candidat={seanceSupModal.candidat}
+          onClose={() => setSeanceSupModal(null)}
+          onConfirm={handleConfirmSeanceSup}
+        />
+      )}
+
       {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
     </>
   );
