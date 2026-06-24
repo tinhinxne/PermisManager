@@ -14,6 +14,7 @@ const COLORS = {
   circulation: { bg:"#10b981", light:"rgba(16,185,129,0.18)",  border:"rgba(16,185,129,0.4)",  text:"#065f46" },
 };
 
+const normCat = v => (v || "").toString().trim().toUpperCase();
 const cap = s => s.split(" ").map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(" ");
 
 function floatToHHMM(h) {
@@ -28,6 +29,7 @@ function toLocalISO(dateVal) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
+// ── dbRowToSession amélioré (identique à Agenda admin) ───────────────────────
 function dbRowToSession(row) {
   const rawDate   = toLocalISO(row.date);
   const dateObj   = new Date(rawDate + "T12:00:00");
@@ -39,11 +41,17 @@ function dbRowToSession(row) {
     name:        firstName,
     monitor:     row.moniteurNom || "—",
     moniteur_id: row.moniteur_id,
-    type:        (row.type || "code").toLowerCase(),
+    type: (() => {
+      const raw = (row.type || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (raw.includes("circ")) return "circulation";
+      if (raw.includes("cr"))   return "creneau";
+      return "code";
+    })(),
     day:         dateObj.getDay(),
     startH,
     dur:         parseFloat(row.duree) || 1,
     notes:       row.statut || "",
+    categoriePermis: normCat(row.categoriePermis || row.categorie || row.categorie_permis),
     _raw:        row,
   };
 }
@@ -112,6 +120,166 @@ function LockedTooltip({ children }) {
             borderRight:"6px solid transparent", borderTop:"6px solid #1e293b" }} />
         </div>
       )}
+    </div>
+  );
+}
+
+// ── MILESTONE MODAL (20 séances atteintes) ────────────────────────────────────
+function MilestoneModal({ candidatName, onClose }) {
+  return (
+    <div style={{
+      position:"fixed", inset:0, zIndex:600,
+      background:"rgba(15,23,42,0.6)", backdropFilter:"blur(4px)",
+      display:"flex", alignItems:"center", justifyContent:"center",
+      fontFamily:"'Poppins',sans-serif",
+    }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{
+        background:"#fff", borderRadius:20, width:420, maxWidth:"94vw",
+        boxShadow:"0 30px 80px rgba(0,0,0,0.2)", overflow:"hidden",
+        animation:"milestoneUp .25s cubic-bezier(.34,1.56,.64,1)",
+      }}>
+        <style>{`@keyframes milestoneUp{from{transform:translateY(24px);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>
+        <div style={{
+          background:"linear-gradient(135deg,#22c55e,#16a34a)",
+          padding:"22px 24px 18px", textAlign:"center",
+        }}>
+          <div style={{ fontSize:44, marginBottom:4 }}>🎓</div>
+          <div style={{ fontSize:"1.1rem", fontWeight:800, color:"#fff" }}>Formation complète !</div>
+        </div>
+        <div style={{ padding:"20px 24px" }}>
+          <p style={{ fontSize:"0.9rem", color:"#1e293b", fontWeight:600, margin:"0 0 8px", textAlign:"center" }}>
+            🎉 <strong>{candidatName}</strong> vient d'atteindre ses <strong>20 séances</strong> !
+          </p>
+          <p style={{ fontSize:"0.8rem", color:"#64748b", margin:"0 0 4px", textAlign:"center" }}>
+            Il peut désormais se présenter à l'examen du permis de conduire.
+          </p>
+          <div style={{
+            marginTop:14, padding:"10px 16px", borderRadius:10,
+            background:"#f0fdf4", border:"1px solid #86efac",
+            fontSize:"0.78rem", color:"#166534", fontWeight:600, textAlign:"center",
+          }}>
+            ✅ Formation théorique et pratique terminée
+          </div>
+        </div>
+        <div style={{ padding:"0 24px 20px", display:"flex", justifyContent:"center" }}>
+          <button onClick={onClose} style={{
+            padding:"10px 36px", borderRadius:10, background:"#16a34a",
+            border:"none", color:"#fff", fontFamily:"'Poppins',sans-serif",
+            fontSize:"0.88rem", fontWeight:700, cursor:"pointer",
+          }}>Compris</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── SÉANCE SUPPLÉMENTAIRE MODAL (candidat permis obtenu) ──────────────────────
+function SeanceSupplementaireModal({ candidat, onClose, onConfirm }) {
+  if (!candidat) return null;
+  const nomComplet = `${candidat.prenom || ""} ${candidat.nom || ""}`.trim();
+
+  return (
+    <div style={{
+      position:"fixed", inset:0, zIndex:600,
+      background:"rgba(15,23,42,0.6)", backdropFilter:"blur(4px)",
+      display:"flex", alignItems:"center", justifyContent:"center",
+      fontFamily:"'Poppins',sans-serif",
+    }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{
+        background:"#fff", borderRadius:20, width:440, maxWidth:"94vw",
+        boxShadow:"0 30px 80px rgba(0,0,0,0.2)", overflow:"hidden",
+        animation:"milestoneUp .25s cubic-bezier(.34,1.56,.64,1)",
+      }}>
+        <div style={{
+          background:"linear-gradient(135deg,#6366f1,#4f46e5)",
+          padding:"22px 24px 18px", textAlign:"center",
+        }}>
+          <div style={{ fontSize:40, marginBottom:4 }}>🚗➕</div>
+          <div style={{ fontSize:"1rem", fontWeight:800, color:"#fff" }}>Séance supplémentaire</div>
+          <div style={{ fontSize:"0.75rem", color:"#c7d2fe", marginTop:4 }}>Candidat ayant obtenu son permis</div>
+        </div>
+        <div style={{ padding:"20px 24px", display:"flex", flexDirection:"column", gap:14 }}>
+          <div style={{
+            padding:"14px 16px", borderRadius:12,
+            background:"#eef2ff", border:"1px solid #c7d2fe",
+            display:"flex", alignItems:"center", gap:12,
+          }}>
+            <div style={{
+              width:44, height:44, borderRadius:"50%",
+              background:"#6366f1", color:"#fff",
+              display:"flex", alignItems:"center", justifyContent:"center",
+              fontSize:"1rem", fontWeight:800, flexShrink:0,
+            }}>
+              {nomComplet.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase()}
+            </div>
+            <div>
+              <div style={{ fontSize:"0.9rem", fontWeight:700, color:"#1e293b" }}>{nomComplet}</div>
+              <div style={{ fontSize:"0.72rem", color:"#6366f1", fontWeight:600, marginTop:2 }}>
+                🎓 Permis obtenu — Catégorie {candidat.categoriePermis || "B"}
+              </div>
+            </div>
+          </div>
+          <div style={{
+            padding:"12px 14px", borderRadius:10,
+            background:"#f8fafc", border:"1px solid #e2e8f0",
+            fontSize:"0.8rem", color:"#475569", lineHeight:1.6,
+          }}>
+            <strong style={{ color:"#1e293b" }}>📋 Séance hors forfait</strong><br />
+            Ce candidat a déjà complété sa formation initiale. Vous pouvez lui planifier
+            des séances supplémentaires (perfectionnement, accompagnement post-permis, etc.).<br />
+            <span style={{ color:"#6366f1", fontWeight:600 }}>
+              Le paiement de ces séances se gère depuis le module Paiements.
+            </span>
+          </div>
+          <div style={{ display:"flex", gap:8 }}>
+            {["Code","Créneau","Circulation"].map(t => (
+              <div key={t} style={{
+                flex:1, padding:"8px 0", borderRadius:8, textAlign:"center",
+                background:"#f0fdf4", border:"1px solid #86efac",
+                fontSize:"0.72rem", color:"#166534", fontWeight:600,
+              }}>✅ {t}</div>
+            ))}
+          </div>
+        </div>
+        <div style={{ padding:"0 24px 20px", display:"flex", gap:10, justifyContent:"space-between" }}>
+          <button onClick={onClose} style={{
+            padding:"10px 20px", borderRadius:10,
+            background:"#f1f5f9", border:"none", color:"#64748b",
+            fontFamily:"'Poppins',sans-serif", fontSize:"0.84rem",
+            fontWeight:600, cursor:"pointer",
+          }}>Annuler</button>
+          <button onClick={onConfirm} style={{
+            padding:"10px 26px", borderRadius:10,
+            background:"linear-gradient(135deg,#6366f1,#4f46e5)",
+            border:"none", color:"#fff",
+            fontFamily:"'Poppins',sans-serif", fontSize:"0.84rem",
+            fontWeight:700, cursor:"pointer",
+            boxShadow:"0 4px 14px rgba(99,102,241,0.35)",
+          }}>📅 Planifier la séance</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── ALERTE MODALE ─────────────────────────────────────────────────────────────
+function AlertModal({ icon, title, message, color = "#ef4444", onClose }) {
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:700, background:"rgba(15,23,42,0.55)", backdropFilter:"blur(4px)", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Poppins',sans-serif" }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background:"#fff", borderRadius:18, width:340, maxWidth:"88vw", boxShadow:"0 30px 70px rgba(0,0,0,0.22)", overflow:"hidden", animation:"alertPop .22s cubic-bezier(.34,1.56,.64,1)" }}>
+        <style>{`@keyframes alertPop{from{transform:translateY(18px) scale(.96);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}`}</style>
+        <div style={{ padding:"24px 22px 18px", textAlign:"center" }}>
+          <div style={{ width:52, height:52, borderRadius:"50%", margin:"0 auto 14px", background:`${color}1A`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>{icon}</div>
+          <div style={{ fontSize:"0.95rem", fontWeight:700, color:"#1e293b", marginBottom:7 }}>{title}</div>
+          <div style={{ fontSize:"0.8rem", color:"#64748b", lineHeight:1.55 }}>{message}</div>
+        </div>
+        <div style={{ padding:"0 22px 22px" }}>
+          <button onClick={onClose} style={{ width:"100%", padding:"10px 0", borderRadius:10, border:"none", background:color, color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.86rem", fontWeight:700, cursor:"pointer" }}>Compris</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -261,27 +429,9 @@ function SessionPopup({ session, anchor, onClose, isOwn, canEdit, onEdit, onDele
     </div>
   );
 }
-// ── ALERTE MODALE ─────────────────────────────────────────────────────────────
-function AlertModal({ icon, title, message, color = "#ef4444", onClose }) {
-  return (
-    <div style={{ position:"fixed", inset:0, zIndex:700, background:"rgba(15,23,42,0.55)", backdropFilter:"blur(4px)", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Poppins',sans-serif" }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background:"#fff", borderRadius:18, width:340, maxWidth:"88vw", boxShadow:"0 30px 70px rgba(0,0,0,0.22)", overflow:"hidden", animation:"alertPop .22s cubic-bezier(.34,1.56,.64,1)" }}>
-        <style>{`@keyframes alertPop{from{transform:translateY(18px) scale(.96);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}`}</style>
-        <div style={{ padding:"24px 22px 18px", textAlign:"center" }}>
-          <div style={{ width:52, height:52, borderRadius:"50%", margin:"0 auto 14px", background:`${color}1A`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>{icon}</div>
-          <div style={{ fontSize:"0.95rem", fontWeight:700, color:"#1e293b", marginBottom:7 }}>{title}</div>
-          <div style={{ fontSize:"0.8rem", color:"#64748b", lineHeight:1.55 }}>{message}</div>
-        </div>
-        <div style={{ padding:"0 22px 22px" }}>
-          <button onClick={onClose} style={{ width:"100%", padding:"10px 0", borderRadius:10, border:"none", background:color, color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.86rem", fontWeight:700, cursor:"pointer" }}>Compris</button>
-        </div>
-      </div>
-    </div>
-  );
-}
+
 // ── CREATE / EDIT MODAL ───────────────────────────────────────────────────────
-function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUserId }) {
+function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUserId, prefillCandidatId }) {
   const [candidats, setCandidats] = useState([]);
   const [alertInfo, setAlertInfo] = useState(null);
   const { examensList } = useExamenCtx();
@@ -307,31 +457,40 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
     statut:      editing._raw?.statut || "planifiée",
     dur:         String(editing.dur || 1),
   } : {
-    candidatId:"", candidat:"",
+    candidatId: prefillCandidatId ? String(prefillCandidatId) : "",
+    candidat:"",
     type:"code", date:toLocalISO(new Date()),
     heure:"08:00", statut:"planifiée", dur:"1",
   });
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
-    // Historique d'examens du candidat sélectionné
 
+  const seanceDateObj  = form.date ? new Date(form.date + "T12:00:00") : null;
+  const todayMidnight  = new Date(); todayMidnight.setHours(0,0,0,0);
+  const dateEstPassee  = !!(seanceDateObj && seanceDateObj < todayMidnight);
 
-   const seanceDateObj = form.date ? new Date(form.date + "T12:00:00") : null;
-const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
-const dateEstPassee = !!(seanceDateObj && seanceDateObj < todayMidnight);
-
-
-  const examsCandidat = (examensList || []).filter(
-    e => String(e.candidatId) === String(form.candidatId)
-  );
+  // ── Examens du candidat ────────────────────────────────────────────────────
+  const examsCandidat  = (examensList || []).filter(e => String(e.candidatId) === String(form.candidatId));
   const aReussiCode    = examsCandidat.some(e => e.type === "Code"    && e.status === "Passed");
   const aReussiCreneau = examsCandidat.some(e => e.type === "Créneau" && e.status === "Passed");
-  const currentStage = !aReussiCode ? "code" : !aReussiCreneau ? "creneau" : "circulation";
+  const aReussiCirc    = examsCandidat.some(e => e.type === "Circulation" && e.status === "Passed");
+
+  // Permis complètement obtenu → types libres
+  const permisObtenu   = aReussiCode && aReussiCreneau && aReussiCirc;
+  const currentStage   = !aReussiCode ? "code" : !aReussiCreneau ? "creneau" : "circulation";
 
   useEffect(() => {
     if (!form.candidatId) return;
+    if (permisObtenu) return;
     if (form.type !== currentStage) set("type", currentStage);
-  }, [form.candidatId, currentStage]);
+  }, [form.candidatId, currentStage, permisObtenu]);
+
+  // Pré-remplir le nom candidat si prefill
+  useEffect(() => {
+    if (!prefillCandidatId || candidats.length === 0) return;
+    const c = candidats.find(c => String(c.idCandidat) === String(prefillCandidatId));
+    if (c) set("candidat", `${c.nom} ${c.prenom}`);
+  }, [prefillCandidatId, candidats]);
 
   const inpS = {
     width:"100%", boxSizing:"border-box", background:"#fff",
@@ -375,19 +534,21 @@ const dateEstPassee = !!(seanceDateObj && seanceDateObj < todayMidnight);
     });
   };
 
- const handleSubmit = () => {
+  const handleSubmit = () => {
     if (!form.date || !form.heure || !form.type) return;
+
+    if (dateEstPassee) {
+      setAlertInfo({ icon:"📅", title:"Date dans le passé", message:"Vous ne pouvez pas planifier une séance à une date déjà passée. Veuillez choisir une date à partir d'aujourd'hui.", color:"#ef4444" });
+      return;
+    }
     if (!form.candidatId) {
       setAlertInfo({ icon:"🧑", title:"Candidat manquant", message:"Veuillez sélectionner un candidat avant d'enregistrer la séance.", color:"#ef4444" });
       return;
     }
-
-   if (form.type !== currentStage) {
+    if (!permisObtenu && form.type !== currentStage) {
       setAlertInfo({
-        icon: "🚫",
-        title: "Type de séance non autorisé",
-        color: "#ef4444",
-        message: `${form.candidat || "Ce candidat"} est actuellement au stade "${currentStage}". Seules les séances de ce type peuvent être créées pour lui.`,
+        icon:"🚫", title:"Type de séance non autorisé", color:"#ef4444",
+        message:`${form.candidat || "Ce candidat"} est actuellement au stade "${currentStage}". Seules les séances de ce type peuvent être créées pour lui.`,
       });
       return;
     }
@@ -422,56 +583,108 @@ const dateEstPassee = !!(seanceDateObj && seanceDateObj < todayMidnight);
         display:"flex", flexDirection:"column", boxShadow:"0 25px 60px rgba(0,0,0,0.2)",
         overflow:"hidden", fontFamily:"'Poppins',sans-serif", position:"relative" }}>
         {saving && <LoadingOverlay />}
+
+        {/* Header */}
         <div style={{ padding:"20px 24px 16px", borderBottom:"1px solid #e2e8f0",
           display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
           <div>
             <div style={{ fontSize:"1.05rem", fontWeight:700, color:"#1e293b" }}>
-              {editing ? "Modifier ma séance" : "Créer ma séance"}
+              {editing ? "Modifier ma séance" : permisObtenu ? "🚗➕ Séance supplémentaire" : "Créer ma séance"}
             </div>
             <div style={{ fontSize:"0.72rem", color:"#94a3b8", marginTop:3 }}>
-              La séance sera assignée à votre compte
+              {permisObtenu
+                ? "Séance hors forfait — candidat ayant obtenu son permis"
+                : "La séance sera assignée à votre compte"}
             </div>
           </div>
           <button onClick={onClose} style={{ background:"#f1f5f9", border:"none", color:"#64748b",
             width:30, height:30, borderRadius:8, cursor:"pointer", fontSize:14,
             display:"grid", placeItems:"center" }}>✕</button>
         </div>
+
         <div style={{ padding:"18px 24px", overflowY:"auto", display:"flex", flexDirection:"column", gap:14 }}>
+
+          {/* Bannière permis obtenu */}
+          {permisObtenu && (
+            <div style={{ padding:"10px 14px", borderRadius:10, background:"#eef2ff", border:"1.5px solid #c7d2fe", fontSize:"0.78rem", color:"#4338ca", fontWeight:600, display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:18 }}>🎓</span>
+              <div>
+                <div>Permis obtenu — séance hors forfait</div>
+                <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>
+                  Tous les types de séance sont disponibles. Le paiement se gère dans le module Paiements.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Avertissement date passée */}
+          {dateEstPassee && (
+            <div style={{ padding:"10px 14px", borderRadius:10, background:"#fef2f2", border:"1.5px solid #fca5a5", fontSize:"0.78rem", color:"#dc2626", fontWeight:700, display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:18 }}>📅</span>
+              <div>
+                <div>Date dans le passé</div>
+                <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>Vous ne pouvez pas créer une séance à une date déjà passée.</div>
+              </div>
+            </div>
+          )}
+
+          {/* Candidat */}
           <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
             <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>
               Candidat <span style={{ color:"#ef4444" }}>*</span>
             </label>
             <select style={inpS} value={form.candidatId}
-              onChange={e => { const c = candidats.find(x => x.idCandidat==e.target.value); set("candidatId", e.target.value); set("candidat", c ? `${c.nom} ${c.prenom}` : ""); }}>
+              onChange={e => {
+                const c = candidats.find(x => String(x.idCandidat) === String(e.target.value));
+                set("candidatId", e.target.value);
+                set("candidat", c ? `${c.nom} ${c.prenom}` : "");
+              }}>
               <option value="">Sélectionner candidat...</option>
               {candidats.map(c => <option key={c.idCandidat} value={c.idCandidat}>{c.nom} {c.prenom}</option>)}
             </select>
           </div>
+
+          {/* Type / Date */}
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Type <span style={{ color:"#ef4444" }}>*</span></label>
-           <select style={inpS} value={form.type} disabled={!form.candidatId} onChange={e => set("type", e.target.value)}>
-              <option value="code" disabled={currentStage !== "code"}>
-                Code {currentStage !== "code" ? "(non disponible)" : ""}
-              </option>
-              <option value="creneau" disabled={currentStage !== "creneau"}>
-                Créneau {currentStage !== "creneau" ? (!aReussiCode ? "(Code requis)" : "(non disponible)") : ""}
-              </option>
-              <option value="circulation" disabled={currentStage !== "circulation"}>
-                Circulation {currentStage !== "circulation" ? "(Créneau requis)" : ""}
-              </option>
-            </select>
+              <select style={inpS} value={form.type} disabled={!form.candidatId} onChange={e => set("type", e.target.value)}>
+                {permisObtenu ? (
+                  <>
+                    <option value="code">Code</option>
+                    <option value="creneau">Créneau</option>
+                    <option value="circulation">Circulation</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="code" disabled={currentStage !== "code"}>
+                      Code {currentStage !== "code" ? "(non disponible)" : ""}
+                    </option>
+                    <option value="creneau" disabled={currentStage !== "creneau"}>
+                      Créneau {currentStage !== "creneau" ? (!aReussiCode ? "(Code requis)" : "(non disponible)") : ""}
+                    </option>
+                    <option value="circulation" disabled={currentStage !== "circulation"}>
+                      Circulation {currentStage !== "circulation" ? "(Créneau requis)" : ""}
+                    </option>
+                  </>
+                )}
+              </select>
             </div>
-           <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
-  <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Date <span style={{ color:"#ef4444" }}>*</span></label>
-  <input style={{ ...inpS, borderColor: dateEstPassee ? "#fca5a5" : "#cbd5e1", background: dateEstPassee ? "#fef2f2" : "#fff" }} type="date" value={form.date} onChange={e => set("date", e.target.value)} />
-  {dateEstPassee && (
-    <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:"0.72rem", color:"#dc2626", fontWeight:600 }}>
-      <span>📅</span> Date dans le passé
-    </div>
-  )}
-</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+              <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Date <span style={{ color:"#ef4444" }}>*</span></label>
+              <input
+                style={{ ...inpS, borderColor: dateEstPassee ? "#fca5a5" : "#cbd5e1", background: dateEstPassee ? "#fef2f2" : "#fff" }}
+                type="date" value={form.date} onChange={e => set("date", e.target.value)}
+              />
+              {dateEstPassee && (
+                <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:"0.72rem", color:"#dc2626", fontWeight:600 }}>
+                  <span>📅</span> Date dans le passé
+                </div>
+              )}
+            </div>
           </div>
+
+          {/* Durée / Heure */}
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Durée <span style={{ color:"#ef4444" }}>*</span></label>
@@ -492,6 +705,8 @@ const dateEstPassee = !!(seanceDateObj && seanceDateObj < todayMidnight);
               </select>
             </div>
           </div>
+
+          {/* Statut */}
           <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
             <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Statut</label>
             <select style={inpS} value={form.statut} onChange={e => set("statut", e.target.value)}>
@@ -501,34 +716,39 @@ const dateEstPassee = !!(seanceDateObj && seanceDateObj < todayMidnight);
             </select>
           </div>
         </div>
+
+        {/* Footer */}
         <div style={{ padding:"14px 24px", borderTop:"1px solid #e2e8f0", display:"flex", justifyContent:"flex-end", gap:10 }}>
           <button onClick={onClose} disabled={saving}
             style={{ padding:"9px 20px", borderRadius:8, background:"#f1f5f9", border:"1px solid #e2e8f0",
               color:"#64748b", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", cursor:"pointer", fontWeight:500 }}>
             Annuler
           </button>
-      <button onClick={handleSubmit} disabled={saving || dateEstPassee}
-  style={{ padding:"9px 22px", borderRadius:8, background: dateEstPassee ? "#94a3b8" : saving ? "#93c5fd" : "#2563eb",
-    border:"none", color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem",
-    fontWeight:600, cursor: saving || dateEstPassee ? "not-allowed" : "pointer",
-    boxShadow: dateEstPassee ? "none" : "0 4px 14px rgba(37,99,235,0.35)", display:"flex", alignItems:"center", gap:8 }}>
-  {saving && <div style={{ width:14, height:14, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.4)", borderTop:"2px solid #fff", animation:"spin 0.7s linear infinite" }} />}
-  {dateEstPassee ? "📅 Date passée" : editing ? "Enregistrer" : "Créer la séance"}
-</button>
+          <button onClick={handleSubmit} disabled={saving || dateEstPassee}
+            style={{
+              padding:"9px 22px", borderRadius:8,
+              background: dateEstPassee ? "#94a3b8" : saving ? "#93c5fd" : permisObtenu ? "linear-gradient(135deg,#6366f1,#4f46e5)" : "#2563eb",
+              border:"none", color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem",
+              fontWeight:600, cursor: saving || dateEstPassee ? "not-allowed" : "pointer",
+              boxShadow: dateEstPassee ? "none" : permisObtenu ? "0 4px 14px rgba(99,102,241,0.35)" : "0 4px 14px rgba(37,99,235,0.35)",
+              display:"flex", alignItems:"center", gap:8,
+            }}>
+            {saving && <div style={{ width:14, height:14, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.4)", borderTop:"2px solid #fff", animation:"spin 0.7s linear infinite" }} />}
+            {dateEstPassee ? "📅 Date passée" : editing ? "Enregistrer" : permisObtenu ? "📅 Planifier la séance" : "Créer la séance"}
+          </button>
         </div>
       </div>
+      {alertInfo && <AlertModal icon={alertInfo.icon} title={alertInfo.title} message={alertInfo.message} color={alertInfo.color} onClose={() => setAlertInfo(null)} />}
     </div>
-  );}
+  );
+}
 
 // ── CALENDAR GRID ─────────────────────────────────────────────────────────────
-function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupClick, currentUserId }) {
+function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupClick, currentUserId, onCandidatPermisClick, aObtenuPermis }) {
 
-  // ── Calcule les colonnes ET le nb de cols local à chaque séance ──
   function assignColumns(daySessions) {
     const sorted = [...daySessions].sort((a, b) => a.startH - b.startH);
     const columns = [];
-
-    // 1. Assigne un index de colonne à chaque séance
     const withCol = sorted.map(s => {
       const endH = s.startH + s.dur;
       let colIdx = columns.findIndex(colEnd => colEnd <= s.startH);
@@ -536,9 +756,6 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
       else { columns[colIdx] = endH; }
       return { session: s, colIdx };
     });
-
-    // 2. Pour chaque séance, compte combien de séances se chevauchent avec elle
-    //    → totalCols LOCAL = nb de séances en collision + 1
     const items = withCol.map(({ session: s, colIdx }) => {
       const overlappingCount = withCol.filter(({ session: other }) =>
         other.id !== s.id &&
@@ -547,7 +764,6 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
       ).length;
       return { session: s, colIdx, localCols: overlappingCount + 1 };
     });
-
     return { items };
   }
 
@@ -561,7 +777,7 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
 
   return (
     <div style={{ border:"1px solid #e2e8f0", borderRadius:12, overflow:"hidden", background:"#fff", boxShadow:"0 2px 12px rgba(0,0,0,0.06)" }}>
-      {/* Header */}
+      {/* Header jours */}
       <div style={{ display:"grid", gridTemplateColumns:"52px repeat(7,1fr)", background:"#f8fafc", borderBottom:"2px solid #e2e8f0", position:"sticky", top:0, zIndex:10 }}>
         <div style={{ borderRight:"1px solid #e2e8f0", fontSize:"0.65rem", color:"#94a3b8", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:600 }}>Heure</div>
         {weekDates.map((date,i) => {
@@ -602,8 +818,11 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
                 const topPx = (s.startH - firstHour) * CELL_H;
                 if (s.startH < firstHour || s.startH >= firstHour + HOURS.length) return null;
 
-                const isOwn = String(s.moniteur_id) === String(currentUserId);
-                const col   = COLORS[s.type] || COLORS.code;
+                const isOwn    = String(s.moniteur_id) === String(currentUserId);
+                const col      = COLORS[s.type] || COLORS.code;
+                // Vérifie si le candidat a obtenu son permis
+                const candidatId = s._raw?.candidatsIds ? String(s._raw.candidatsIds.split(",")[0].trim()) : null;
+                const hasPermis  = candidatId && aObtenuPermis ? aObtenuPermis(candidatId) : false;
 
                 const overlapping   = findOverlapping(daySessions, s);
                 const hasOverlap    = overlapping.length > 0;
@@ -611,7 +830,6 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
                   ? [s,...overlapping].filter((v,i,arr)=>arr.findIndex(x=>x.id===v.id)===i)
                   : [s];
 
-                // ── Largeur basée sur localCols (collisions locales uniquement) ──
                 const widthPct = 100 / localCols;
                 const leftPct  = colIdx * widthPct;
 
@@ -641,8 +859,20 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
                     onMouseEnter={e => { e.currentTarget.style.transform="translateY(-1px)"; e.currentTarget.style.zIndex=5; }}
                     onMouseLeave={e => { e.currentTarget.style.transform="scale(1)"; e.currentTarget.style.zIndex=2; }}
                   >
-                    <div style={{ fontSize:"0.72rem", fontWeight:700, color: isOwn?col.text:"#94a3b8", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-                      {cap(s.name)}
+                    {/* Nom candidat — cliquable si permis obtenu */}
+                    <div
+                      style={{ fontSize:"0.72rem", fontWeight:700, color: isOwn?col.text:"#94a3b8", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
+                        cursor: hasPermis && onCandidatPermisClick ? "pointer" : "inherit",
+                        textDecoration: hasPermis ? "underline dotted" : "none",
+                      }}
+                      onClick={e => {
+                        if (hasPermis && onCandidatPermisClick) {
+                          e.stopPropagation();
+                          onCandidatPermisClick(s._raw);
+                        }
+                      }}
+                    >
+                      {hasPermis ? "🎓 " : ""}{cap(s.name)}
                     </div>
                     <div style={{ fontSize:"0.6rem", color: isOwn?"#64748b":"#b0bec5", marginTop:2, display:"flex", alignItems:"center", gap:3 }}>
                       {isOwn
@@ -671,22 +901,28 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
 export default function AgendaMoniteur() {
   const { currentUser } = useAuth();
   const { CAN_ADD_SESSION } = useMyPermissions();
+  const { examensList } = useExamenCtx();
 
   const currentUserId   = currentUser?.id;
   const CURRENT_MONITOR = currentUser ? `${currentUser.prenom} ${currentUser.nom}` : "";
 
-  const [sessions,    setSessions]  = useState([]);
-  const [loading,     setLoading]   = useState(true);
-  const [saving,      setSaving]    = useState(false);
-  const [toast,       setToast]     = useState(null);
-  const [weekBase,    setWeekBase]  = useState(() => getMondayOfWeek(new Date()));
-  const [popup,       setPopup]     = useState({ session:null, anchor:null });
-  const [groupModal,  setGroupModal]= useState(null);
-  const [showModal,   setShowModal] = useState(false);
-  const [editing,     setEditing]   = useState(null);
-  const [search,      setSearch]    = useState("");
-  const [filterType,  setFilterType]= useState("");
-  const [showLocked,  setShowLocked]= useState(false);
+  const [sessions,      setSessions]     = useState([]);
+  const [loading,       setLoading]      = useState(true);
+  const [saving,        setSaving]       = useState(false);
+  const [toast,         setToast]        = useState(null);
+  const [weekBase,      setWeekBase]     = useState(() => getMondayOfWeek(new Date()));
+  const [popup,         setPopup]        = useState({ session:null, anchor:null });
+  const [groupModal,    setGroupModal]   = useState(null);
+  const [showModal,     setShowModal]    = useState(false);
+  const [editing,       setEditing]      = useState(null);
+  const [search,        setSearch]       = useState("");
+  const [filterType,    setFilterType]   = useState("");
+  const [showLocked,    setShowLocked]   = useState(false);
+
+  // ── Modals séance supplémentaire & milestone ───────────────────────────────
+  const [seanceSupModal,  setSeanceSupModal]  = useState(null); // { candidat raw row }
+  const [milestoneModal,  setMilestoneModal]  = useState(null); // candidat name
+  const [prefillCandidatId, setPrefillCandidatId] = useState(null);
 
   const weekDates = getWeekDates(weekBase);
   const weekLabel = formatWeekLabel(weekDates);
@@ -708,6 +944,29 @@ export default function AgendaMoniteur() {
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
   }
+
+  // ── Helper : un candidat a-t-il obtenu son permis ? ───────────────────────
+  const aObtenuPermis = useCallback((candidatId) => {
+    if (!candidatId || !examensList) return false;
+    const exams = examensList.filter(e => String(e.candidatId) === String(candidatId));
+    return (
+      exams.some(e => e.type === "Code"        && e.status === "Passed") &&
+      exams.some(e => e.type === "Créneau"     && e.status === "Passed") &&
+      exams.some(e => e.type === "Circulation" && e.status === "Passed")
+    );
+  }, [examensList]);
+
+  // ── Clic sur le nom d'un candidat ayant son permis ────────────────────────
+  const handleCandidatPermisClick = (rawRow) => {
+    const candidatId = rawRow?.candidatsIds ? String(rawRow.candidatsIds.split(",")[0].trim()) : null;
+    const nom    = rawRow?.candidatsNoms ? rawRow.candidatsNoms.split(", ")[0].trim() : "—";
+    setSeanceSupModal({
+      idCandidat:     candidatId,
+      nom:            nom.split(" ").slice(0,1).join(" "),
+      prenom:         nom.split(" ").slice(1).join(" "),
+      categoriePermis: normCat(rawRow?.categoriePermis || "B"),
+    });
+  };
 
   const prevWeek = () => setWeekBase(d => { const n=new Date(d); n.setDate(n.getDate()-7); return n; });
   const nextWeek = () => setWeekBase(d => { const n=new Date(d); n.setDate(n.getDate()+7); return n; });
@@ -769,11 +1028,31 @@ export default function AgendaMoniteur() {
         await loadSeances(); showToast("Séance modifiée.");
       } else if (api?.addSeance && !editing) {
         const result = await api.addSeance(_formData);
-        if (result?.success) { await loadSeances(); showToast("Séance créée."); }
-        else throw new Error(result?.message || "Erreur.");
+        if (result?.success) {
+          await loadSeances();
+          showToast("Séance créée.");
+
+          // ── Vérifier si le candidat a atteint 20 séances ──────────────────
+          const candidatId = _formData.candidatIds?.[0];
+          if (candidatId) {
+            const seancesCandidat = sessions.filter(s => {
+              const ids = s._raw?.candidatsIds ? s._raw.candidatsIds.split(",").map(x => parseInt(x.trim())) : [];
+              return ids.includes(candidatId);
+            });
+            if (seancesCandidat.length + 1 >= 20) {
+              const nom = sessionObj.name || "";
+              setMilestoneModal(nom);
+            }
+          }
+        } else throw new Error(result?.message || "Erreur.");
       }
     } catch(e) { showToast(e.message || "Erreur.", "error"); }
-    finally { setSaving(false); setShowModal(false); setEditing(null); }
+    finally {
+      setSaving(false);
+      setShowModal(false);
+      setEditing(null);
+      setPrefillCandidatId(null);
+    }
   };
 
   return (
@@ -904,6 +1183,8 @@ export default function AgendaMoniteur() {
             weekDates={weekDates}
             todayIdx={todayIdx}
             currentUserId={currentUserId}
+            aObtenuPermis={aObtenuPermis}
+            onCandidatPermisClick={handleCandidatPermisClick}
             onSessionClick={(s, rect) => setPopup({ session:s, anchor:rect })}
             onGroupClick={(group) => setGroupModal(group)}
           />
@@ -916,10 +1197,13 @@ export default function AgendaMoniteur() {
               <div style={{ width:12, height:12, borderRadius:3, background:col.bg }} />{cap(type)}
             </div>
           ))}
+          <div style={{ marginLeft:"auto", fontSize:"0.7rem", color:"#94a3b8", fontStyle:"italic" }}>
+            🎓 = Candidat permis obtenu (clic pour séance supplémentaire)
+          </div>
         </div>
       </div>
 
-      {/* Popup simple (1 séance) */}
+      {/* Popup simple */}
       {popup.session && (
         <SessionPopup
           session={popup.session}
@@ -936,14 +1220,37 @@ export default function AgendaMoniteur() {
         <GroupModal sessions={groupModal} onClose={() => setGroupModal(null)} />
       )}
 
+      {/* Modal création/édition */}
       {showModal && (
         <CreateModal
-          onClose={() => { setShowModal(false); setEditing(null); }}
+          onClose={() => { setShowModal(false); setEditing(null); setPrefillCandidatId(null); }}
           onCreate={handleSave}
           editing={editing}
           saving={saving}
           sessions={sessions}
           currentUserId={currentUserId}
+          prefillCandidatId={prefillCandidatId}
+        />
+      )}
+
+      {/* Modal séance supplémentaire */}
+      {seanceSupModal && (
+        <SeanceSupplementaireModal
+          candidat={seanceSupModal}
+          onClose={() => setSeanceSupModal(null)}
+          onConfirm={() => {
+            setPrefillCandidatId(seanceSupModal.idCandidat);
+            setSeanceSupModal(null);
+            setShowModal(true);
+          }}
+        />
+      )}
+
+      {/* Modal milestone 20 séances */}
+      {milestoneModal && (
+        <MilestoneModal
+          candidatName={milestoneModal}
+          onClose={() => setMilestoneModal(null)}
         />
       )}
 
