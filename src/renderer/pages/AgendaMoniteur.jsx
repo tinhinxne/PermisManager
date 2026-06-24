@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useMyPermissions } from "../context/PermissionsContext";
 import { useExamenCtx } from "../context/ExamenContext";
+import { useCongeCtx } from "../context/CongeContext";
 
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
 const HOURS      = [7,8,9,10,11,12,13,14,15,16,17,18];
@@ -29,7 +30,6 @@ function toLocalISO(dateVal) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
-// ── dbRowToSession amélioré (identique à Agenda admin) ───────────────────────
 function dbRowToSession(row) {
   const rawDate   = toLocalISO(row.date);
   const dateObj   = new Date(rawDate + "T12:00:00");
@@ -124,7 +124,7 @@ function LockedTooltip({ children }) {
   );
 }
 
-// ── MILESTONE MODAL (20 séances atteintes) ────────────────────────────────────
+// ── MILESTONE MODAL ───────────────────────────────────────────────────────────
 function MilestoneModal({ candidatName, onClose }) {
   return (
     <div style={{
@@ -174,7 +174,7 @@ function MilestoneModal({ candidatName, onClose }) {
   );
 }
 
-// ── SÉANCE SUPPLÉMENTAIRE MODAL (candidat permis obtenu) ──────────────────────
+// ── SÉANCE SUPPLÉMENTAIRE MODAL ───────────────────────────────────────────────
 function SeanceSupplementaireModal({ candidat, onClose, onConfirm }) {
   if (!candidat) return null;
   const nomComplet = `${candidat.prenom || ""} ${candidat.nom || ""}`.trim();
@@ -431,7 +431,7 @@ function SessionPopup({ session, anchor, onClose, isOwn, canEdit, onEdit, onDele
 }
 
 // ── CREATE / EDIT MODAL ───────────────────────────────────────────────────────
-function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUserId, prefillCandidatId }) {
+function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUserId, prefillCandidatId, isDateBloquee }) {
   const [candidats, setCandidats] = useState([]);
   const [alertInfo, setAlertInfo] = useState(null);
   const { examensList } = useExamenCtx();
@@ -469,13 +469,15 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
   const todayMidnight  = new Date(); todayMidnight.setHours(0,0,0,0);
   const dateEstPassee  = !!(seanceDateObj && seanceDateObj < todayMidnight);
 
+  // ── Vérification congé sur la date choisie ─────────────────────────────────
+  const congeBloquant = isDateBloquee ? isDateBloquee(form.date) : null;
+
   // ── Examens du candidat ────────────────────────────────────────────────────
   const examsCandidat  = (examensList || []).filter(e => String(e.candidatId) === String(form.candidatId));
-  const aReussiCode    = examsCandidat.some(e => e.type === "Code"    && e.status === "Passed");
-  const aReussiCreneau = examsCandidat.some(e => e.type === "Créneau" && e.status === "Passed");
+  const aReussiCode    = examsCandidat.some(e => e.type === "Code"        && e.status === "Passed");
+  const aReussiCreneau = examsCandidat.some(e => e.type === "Créneau"     && e.status === "Passed");
   const aReussiCirc    = examsCandidat.some(e => e.type === "Circulation" && e.status === "Passed");
 
-  // Permis complètement obtenu → types libres
   const permisObtenu   = aReussiCode && aReussiCreneau && aReussiCirc;
   const currentStage   = !aReussiCode ? "code" : !aReussiCreneau ? "creneau" : "circulation";
 
@@ -485,7 +487,6 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
     if (form.type !== currentStage) set("type", currentStage);
   }, [form.candidatId, currentStage, permisObtenu]);
 
-  // Pré-remplir le nom candidat si prefill
   useEffect(() => {
     if (!prefillCandidatId || candidats.length === 0) return;
     const c = candidats.find(c => String(c.idCandidat) === String(prefillCandidatId));
@@ -534,11 +535,20 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
     });
   };
 
+  const isBlocked = dateEstPassee || !!congeBloquant;
+
   const handleSubmit = () => {
     if (!form.date || !form.heure || !form.type) return;
 
     if (dateEstPassee) {
       setAlertInfo({ icon:"📅", title:"Date dans le passé", message:"Vous ne pouvez pas planifier une séance à une date déjà passée. Veuillez choisir une date à partir d'aujourd'hui.", color:"#ef4444" });
+      return;
+    }
+    if (congeBloquant) {
+      setAlertInfo({
+        icon:"🌴", title:"Congé actif sur cette période", color:"#f97316",
+        message:`Vous êtes en congé du ${new Date(congeBloquant.dateDebut + "T12:00:00").toLocaleDateString("fr-FR")} au ${new Date(congeBloquant.dateFin + "T12:00:00").toLocaleDateString("fr-FR")}. Impossible de planifier une séance durant cette période.`,
+      });
       return;
     }
     if (!form.candidatId) {
@@ -628,6 +638,20 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
             </div>
           )}
 
+          {/* ── Avertissement congé actif ────────────────────────────────────── */}
+          {congeBloquant && !dateEstPassee && (
+            <div style={{ padding:"10px 14px", borderRadius:10, background:"#fff7ed", border:"1.5px solid #fed7aa", fontSize:"0.78rem", color:"#c2410c", fontWeight:700, display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:18 }}>🌴</span>
+              <div>
+                <div>Congé actif sur cette période</div>
+                <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>
+                  Du {new Date(congeBloquant.dateDebut + "T12:00:00").toLocaleDateString("fr-FR")} au{" "}
+                  {new Date(congeBloquant.dateFin + "T12:00:00").toLocaleDateString("fr-FR")} — séance impossible.
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Candidat */}
           <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
             <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>
@@ -673,12 +697,21 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Date <span style={{ color:"#ef4444" }}>*</span></label>
               <input
-                style={{ ...inpS, borderColor: dateEstPassee ? "#fca5a5" : "#cbd5e1", background: dateEstPassee ? "#fef2f2" : "#fff" }}
+                style={{
+                  ...inpS,
+                  borderColor: dateEstPassee ? "#fca5a5" : congeBloquant ? "#fed7aa" : "#cbd5e1",
+                  background:  dateEstPassee ? "#fef2f2" : congeBloquant ? "#fff7ed" : "#fff",
+                }}
                 type="date" value={form.date} onChange={e => set("date", e.target.value)}
               />
               {dateEstPassee && (
                 <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:"0.72rem", color:"#dc2626", fontWeight:600 }}>
                   <span>📅</span> Date dans le passé
+                </div>
+              )}
+              {congeBloquant && !dateEstPassee && (
+                <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:"0.72rem", color:"#c2410c", fontWeight:600 }}>
+                  <span>🌴</span> Congé actif
                 </div>
               )}
             </div>
@@ -724,17 +757,28 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
               color:"#64748b", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", cursor:"pointer", fontWeight:500 }}>
             Annuler
           </button>
-          <button onClick={handleSubmit} disabled={saving || dateEstPassee}
+          <button
+            onClick={handleSubmit}
+            disabled={saving || isBlocked}
             style={{
               padding:"9px 22px", borderRadius:8,
-              background: dateEstPassee ? "#94a3b8" : saving ? "#93c5fd" : permisObtenu ? "linear-gradient(135deg,#6366f1,#4f46e5)" : "#2563eb",
+              background: isBlocked
+                ? "#94a3b8"
+                : saving ? "#93c5fd"
+                : permisObtenu ? "linear-gradient(135deg,#6366f1,#4f46e5)"
+                : "#2563eb",
               border:"none", color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem",
-              fontWeight:600, cursor: saving || dateEstPassee ? "not-allowed" : "pointer",
-              boxShadow: dateEstPassee ? "none" : permisObtenu ? "0 4px 14px rgba(99,102,241,0.35)" : "0 4px 14px rgba(37,99,235,0.35)",
+              fontWeight:600, cursor: saving || isBlocked ? "not-allowed" : "pointer",
+              boxShadow: isBlocked ? "none" : permisObtenu ? "0 4px 14px rgba(99,102,241,0.35)" : "0 4px 14px rgba(37,99,235,0.35)",
               display:"flex", alignItems:"center", gap:8,
-            }}>
+            }}
+          >
             {saving && <div style={{ width:14, height:14, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.4)", borderTop:"2px solid #fff", animation:"spin 0.7s linear infinite" }} />}
-            {dateEstPassee ? "📅 Date passée" : editing ? "Enregistrer" : permisObtenu ? "📅 Planifier la séance" : "Créer la séance"}
+            {dateEstPassee ? "📅 Date passée"
+              : congeBloquant ? "🌴 Congé actif"
+              : editing ? "Enregistrer"
+              : permisObtenu ? "📅 Planifier la séance"
+              : "Créer la séance"}
           </button>
         </div>
       </div>
@@ -820,7 +864,6 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
 
                 const isOwn    = String(s.moniteur_id) === String(currentUserId);
                 const col      = COLORS[s.type] || COLORS.code;
-                // Vérifie si le candidat a obtenu son permis
                 const candidatId = s._raw?.candidatsIds ? String(s._raw.candidatsIds.split(",")[0].trim()) : null;
                 const hasPermis  = candidatId && aObtenuPermis ? aObtenuPermis(candidatId) : false;
 
@@ -859,7 +902,6 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
                     onMouseEnter={e => { e.currentTarget.style.transform="translateY(-1px)"; e.currentTarget.style.zIndex=5; }}
                     onMouseLeave={e => { e.currentTarget.style.transform="scale(1)"; e.currentTarget.style.zIndex=2; }}
                   >
-                    {/* Nom candidat — cliquable si permis obtenu */}
                     <div
                       style={{ fontSize:"0.72rem", fontWeight:700, color: isOwn?col.text:"#94a3b8", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
                         cursor: hasPermis && onCandidatPermisClick ? "pointer" : "inherit",
@@ -899,9 +941,10 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
 
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────────
 export default function AgendaMoniteur() {
-  const { currentUser } = useAuth();
+  const { currentUser }  = useAuth();
   const { CAN_ADD_SESSION } = useMyPermissions();
-  const { examensList } = useExamenCtx();
+  const { examensList }  = useExamenCtx();
+  const { isMoniteurEnConge, getCongeActifMoniteur, refreshMoniteur } = useCongeCtx();
 
   const currentUserId   = currentUser?.id;
   const CURRENT_MONITOR = currentUser ? `${currentUser.prenom} ${currentUser.nom}` : "";
@@ -919,9 +962,8 @@ export default function AgendaMoniteur() {
   const [filterType,    setFilterType]   = useState("");
   const [showLocked,    setShowLocked]   = useState(false);
 
-  // ── Modals séance supplémentaire & milestone ───────────────────────────────
-  const [seanceSupModal,  setSeanceSupModal]  = useState(null); // { candidat raw row }
-  const [milestoneModal,  setMilestoneModal]  = useState(null); // candidat name
+  const [seanceSupModal,    setSeanceSupModal]    = useState(null);
+  const [milestoneModal,    setMilestoneModal]    = useState(null);
   const [prefillCandidatId, setPrefillCandidatId] = useState(null);
 
   const weekDates = getWeekDates(weekBase);
@@ -932,7 +974,13 @@ export default function AgendaMoniteur() {
   const api = window.electron || null;
   const showToast = (msg, type="success") => setToast({ message:msg, type });
 
-  useEffect(() => { loadSeances(); }, []);
+  // ── Congé actif du moniteur connecté AUJOURD'HUI ──────────────────────────
+  const congeAujourdhui = currentUserId ? getCongeActifMoniteur(currentUserId) : null;
+
+  useEffect(() => {
+    loadSeances();
+    if (currentUserId) refreshMoniteur(currentUserId);
+  }, [currentUserId]);
 
   async function loadSeances() {
     setLoading(true);
@@ -956,7 +1004,13 @@ export default function AgendaMoniteur() {
     );
   }, [examensList]);
 
-  // ── Clic sur le nom d'un candidat ayant son permis ────────────────────────
+  // ── isDateBloquee : retourne le congé si la date est bloquée ─────────────
+  const isDateBloquee = useCallback((date) => {
+    if (!date || !currentUserId) return null;
+    const d = new Date(date + "T12:00:00");
+    return getCongeActifMoniteur(currentUserId, d) || null;
+  }, [currentUserId, getCongeActifMoniteur]);
+
   const handleCandidatPermisClick = (rawRow) => {
     const candidatId = rawRow?.candidatsIds ? String(rawRow.candidatsIds.split(",")[0].trim()) : null;
     const nom    = rawRow?.candidatsNoms ? rawRow.candidatsNoms.split(", ")[0].trim() : "—";
@@ -1005,6 +1059,17 @@ export default function AgendaMoniteur() {
     const { _formData } = sessionObj;
     _formData.moniteur_id = currentUserId;
 
+    // ── Blocage congé (double vérification côté parent) ──────────────────────
+    const seanceDate   = new Date(_formData.date + "T12:00:00");
+    const congeActif   = getCongeActifMoniteur(currentUserId, seanceDate);
+    if (congeActif) {
+      showToast(
+        `🌴 Congé du ${new Date(congeActif.dateDebut + "T12:00:00").toLocaleDateString("fr-FR")} au ${new Date(congeActif.dateFin + "T12:00:00").toLocaleDateString("fr-FR")} — séance impossible.`,
+        "error"
+      );
+      return;
+    }
+
     const [startHH, startMM] = _formData.heure.split(":").map(Number);
     const newStart = startHH + startMM/60;
     const newEnd   = newStart + parseFloat(_formData.duree);
@@ -1032,7 +1097,6 @@ export default function AgendaMoniteur() {
           await loadSeances();
           showToast("Séance créée.");
 
-          // ── Vérifier si le candidat a atteint 20 séances ──────────────────
           const candidatId = _formData.candidatIds?.[0];
           if (candidatId) {
             const seancesCandidat = sessions.filter(s => {
@@ -1059,6 +1123,26 @@ export default function AgendaMoniteur() {
     <>
       <style>{FONT_LINK}</style>
       <div style={{ display:"flex", flexDirection:"column", height:"100%", overflow:"hidden", background:"#f1f5f9", fontFamily:"'Poppins',sans-serif", color:"#1e293b" }}>
+
+        {/* ── BANDEAU CONGÉ ACTIF AUJOURD'HUI ────────────────────────────────── */}
+        {congeAujourdhui && (
+          <div style={{
+            display:"flex", alignItems:"center", justifyContent:"space-between",
+            padding:"10px 28px",
+            background:"linear-gradient(90deg,#fff7ed,#ffedd5)",
+            borderBottom:"1px solid #fed7aa",
+            flexShrink:0,
+          }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10, fontSize:"0.82rem", color:"#c2410c", fontWeight:600 }}>
+              <span style={{ fontSize:20 }}>🌴</span>
+              <div>
+                <strong>Vous êtes en congé</strong> du{" "}
+                {new Date(congeAujourdhui.dateDebut + "T12:00:00").toLocaleDateString("fr-FR")} au{" "}
+                {new Date(congeAujourdhui.dateFin + "T12:00:00").toLocaleDateString("fr-FR")} — la création de séances est bloquée durant cette période.
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* HERO */}
         <div style={{ position:"relative", background:"linear-gradient(135deg,#dbeafe 0%,#bfdbfe 50%,#e0f2fe 100%)", borderBottom:"1px solid #bfdbfe", padding:"0 28px", flexShrink:0, overflow:"hidden", minHeight:110 }}>
@@ -1230,6 +1314,7 @@ export default function AgendaMoniteur() {
           sessions={sessions}
           currentUserId={currentUserId}
           prefillCandidatId={prefillCandidatId}
+          isDateBloquee={isDateBloquee}
         />
       )}
 

@@ -142,15 +142,15 @@ const ModalMoniteurs = ({ onClose }) => {
   const [loading,    setLoading]    = useState(true);
   const [saved,      setSaved]      = useState(false);
 
-  const PERMS_LABELS = [
-    { key: "CAN_ADD_SESSION",         icon: "📅", label: "Peut ajouter / modifier des séances" },
-    { key: "CAN_ADD_PAYMENT",         icon: "💰", label: "Peut ajouter des paiements" },
-    { key: "CAN_TOGGLE_STATUS",       icon: "✅", label: "Peut modifier le résultat d'examen" },
-    { key: "CAN_REMOVE_CANDIDAT",     icon: "🗑️", label: "Peut supprimer un candidat" },
-    { key: "CAN_VIEW_ALL_CANDIDATES", icon: "👥", label: "Peut voir tous les candidats" },
-    { key: "CAN_REQUEST_CONGE",       icon: "📋", label: "Peut demander un congé" },
-  ];
-
+ const PERMS_LABELS = [
+  { key: "CAN_ADD_SESSION",          icon: "📅", label: "Peut ajouter / modifier des séances" },
+  { key: "CAN_ADD_PAYMENT",          icon: "💰", label: "Peut ajouter des paiements" },
+  { key: "CAN_TOGGLE_STATUS",        icon: "✅", label: "Peut modifier le résultat d'examen" },
+  { key: "CAN_VIEW_ALL_CANDIDATES",  icon: "👁️", label: "Peut voir tous les candidats" },
+  { key: "CAN_ADD_CANDIDAT",         icon: "➕", label: "Peut ajouter un candidat" },
+  { key: "CAN_REMOVE_CANDIDAT",      icon: "🗑️", label: "Peut supprimer un candidat" },
+  { key: "CAN_REQUEST_CONGE",        icon: "📋", label: "Peut demander un congé" },
+];
   useEffect(() => {
     window.electron.getMoniteurs().then(list => {
       setMoniteurs(list);
