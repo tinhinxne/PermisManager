@@ -71,4 +71,12 @@ sendMessageAdmin: (data) => ipcRenderer.invoke("send-message-admin", data),
 
   generateListeEnvoiPDF: (data) =>
     ipcRenderer.invoke("generate-liste-envoi-pdf", data),
+
+ouvrirFenetrePaiement: (url) => ipcRenderer.invoke("ouvrir-fenetre-paiement", url),
+fermerFenetrePaiement: ()    => ipcRenderer.invoke("fermer-fenetre-paiement"),
+payerChargily:   (data)       => ipcRenderer.invoke("payer-chargily", data),
+statutChargily:  (checkoutId) => ipcRenderer.invoke("statut-chargily", checkoutId),
+getChargilyConfig:  ()     => ipcRenderer.invoke("get-chargily-config"),
+setChargilyConfig:  (data) => ipcRenderer.invoke("set-chargily-config", data),
+testChargilyConfig: (data) => ipcRenderer.invoke("test-chargily-config", data),
 });

@@ -1616,3 +1616,115 @@ ipcMain.handle("get-seances-mois", async () => {
 //   const savedPath = await generatePDFFromHTML(html, fileName);
 //   return savedPath;
 // });
+
+// ── CHARGILY PAY ─────────────────────────────────────────────────────────────
+const SERVEUR_URL_CHARGILY = "http://localhost:5000";
+
+// Fonction pour lire la config Chargily depuis la base
+function getChargilyKeyFromDB() {
+  return new Promise((resolve) => {
+    db.query(
+      "SELECT cleParametre, valeurParametre FROM ConfigurationSysteme WHERE cleParametre IN ('CHARGILY_KEY', 'CHARGILY_MODE')",
+      (err, res) => {
+        if (err || !res.length) return resolve({ key: null, mode: "test" });
+        const config = {};
+        res.forEach(r => { config[r.cleParametre] = r.valeurParametre; });
+        resolve({ key: config.CHARGILY_KEY || null, mode: config.CHARGILY_MODE || "test" });
+      }
+    );
+  });
+}
+
+ipcMain.handle("payer-chargily", async (event, data) => {
+  const { key, mode } = await getChargilyKeyFromDB();
+  const res = await fetch(`${SERVEUR_URL_CHARGILY}/chargily/payer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...data, chargilyKey: key, chargilyMode: mode }),
+  });
+  return await res.json();
+});
+
+ipcMain.handle("statut-chargily", async (event, checkoutId) => {
+  const { key, mode } = await getChargilyKeyFromDB();
+  const res = await fetch(`${SERVEUR_URL_CHARGILY}/chargily/statut/${checkoutId}`, {
+    headers: { "x-chargily-key": key, "x-chargily-mode": mode },
+  });
+  return await res.json();
+});
+let paymentWindow = null;
+
+// Ouvrir la fenêtre de paiement SATIM
+ipcMain.handle("ouvrir-fenetre-paiement", (event, url) => {
+  if (paymentWindow && !paymentWindow.isDestroyed()) {
+    paymentWindow.focus();
+    return;
+  }
+  paymentWindow = new BrowserWindow({
+    width:  850,
+    height: 700,
+    title:  "Paiement sécurisé SATIM",
+    modal:  false,
+    webPreferences: { nodeIntegration: false },
+  });
+  paymentWindow.loadURL(url);
+  paymentWindow.on("closed", () => { paymentWindow = null; });
+});
+
+// Fermer la fenêtre de paiement SATIM
+ipcMain.handle("fermer-fenetre-paiement", () => {
+  if (paymentWindow && !paymentWindow.isDestroyed()) {
+    paymentWindow.close();
+    paymentWindow = null;
+  }
+});
+
+// ── CONFIG CHARGILY ──────────────────────────────────────────────────────────
+ipcMain.handle("get-chargily-config", async () => {
+  return new Promise((resolve) => {
+    db.query(
+      "SELECT cleParametre, valeurParametre FROM ConfigurationSysteme WHERE cleParametre IN ('CHARGILY_KEY', 'CHARGILY_MODE')",
+      (err, res) => {
+        if (err || !res.length) return resolve({ key: "", mode: "test" });
+        const config = {};
+        res.forEach(r => { config[r.cleParametre] = r.valeurParametre; });
+        resolve({
+          key:  config.CHARGILY_KEY  || "",
+          mode: config.CHARGILY_MODE || "test",
+        });
+      }
+    );
+  });
+});
+
+ipcMain.handle("set-chargily-config", async (event, { key, mode }) => {
+  return new Promise((resolve) => {
+    const upsert = (cle, val) => new Promise((res) => {
+      db.query(
+        `INSERT INTO ConfigurationSysteme (cleParametre, valeurParametre)
+         VALUES (?, ?) ON DUPLICATE KEY UPDATE valeurParametre = ?`,
+        [cle, val, val],
+        (err) => res(!err)
+      );
+    });
+    Promise.all([upsert("CHARGILY_KEY", key), upsert("CHARGILY_MODE", mode)])
+      .then(() => resolve({ success: true }))
+      .catch(() => resolve({ success: false }));
+  });
+});
+
+ipcMain.handle("test-chargily-config", async (event, { key, mode }) => {
+  const baseUrl = mode === "live"
+    ? "https://pay.chargily.net/api/v2"
+    : "https://pay.chargily.net/test/api/v2";
+  try {
+    const res = await fetch(`${baseUrl}/balance`, {
+      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+    });
+    const data = await res.json();
+    if (data.currency) return { success: true };
+    return { success: false, message: data.message || "Clé invalide" };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+});
