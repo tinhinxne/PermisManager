@@ -619,6 +619,28 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
       });
       return;
     }
+    // après la vérification "moniteur en congé"
+const candidatConflict = (sessions || []).find(s => {
+  if (editing && String(s.id) === String(editing.id)) return false;
+  if (toLocalISO(s._raw?.date) !== form.date) return false;
+
+  const sCandidatIds = s._raw?.candidatsIds
+    ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
+    : [];
+  if (!sCandidatIds.includes(String(form.candidatId))) return false;
+
+  const startH = parseInt(form.heure.split(":")[0]) + parseInt(form.heure.split(":")[1] || 0) / 60;
+  const dur    = parseFloat(form.dur) || 1;
+  return startH < s.startH + s.dur && (startH + dur) > s.startH;
+});
+
+if (candidatConflict) {
+  setAlertInfo({
+    icon: "🚫", title: "Candidat déjà occupé", color: "#ef4444",
+    message: `${form.candidat || "Ce candidat"} a déjà une séance prévue de ${floatToHHMM(candidatConflict.startH)} à ${floatToHHMM(candidatConflict.startH + candidatConflict.dur)} ce jour-là. Choisissez un autre créneau.`,
+  });
+  return;
+}
 
     if (!form.candidatId) { setAlertInfo({ icon:"🧑", title:"Candidat manquant", message:"Veuillez sélectionner un candidat avant d'enregistrer la séance.", color:"#ef4444" }); return; }
     if (!form.moniteur_id) { setAlertInfo({ icon:"🧑‍🏫", title:"Moniteur manquant", message:"Veuillez sélectionner un moniteur avant d'enregistrer la séance.", color:"#ef4444" }); return; }
@@ -671,34 +693,43 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
       allSlots.push(h); allSlots.push(h+0.25); allSlots.push(h+0.5); allSlots.push(h+0.75);
     }
     const occupiedIntervals = (sessions || [])
-      .filter(s => {
-        if (!form.date || !form.moniteur_id) return false;
-        const sDate = toLocalISO(s._raw?.date);
-        const isOther = editing ? String(s.id) !== String(editing.id) : true;
-        const sameMoniteur = String(s._raw?.moniteur_id) === String(form.moniteur_id);
-        return sDate === form.date && isOther && sameMoniteur;
-      })
-      .map(s => ({ start: s.startH, end: s.startH + s.dur }));
+  .filter(s => {
+    if (!form.date) return false;
+    const sDate = toLocalISO(s._raw?.date);
+    if (sDate !== form.date) return false;
+    const isOther = editing ? String(s.id) !== String(editing.id) : true;
+    if (!isOther) return false;
+
+    const sameMoniteur = !!form.moniteur_id && String(s._raw?.moniteur_id) === String(form.moniteur_id);
+
+    const sCandidatIds = s._raw?.candidatsIds
+      ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
+      : [];
+    const sameCandidat = !!form.candidatId && sCandidatIds.includes(String(form.candidatId));
+
+    return sameMoniteur || sameCandidat;
+  })
+  .map(s => ({ start: s.startH, end: s.startH + s.dur }));
 
     const formatSlot = slot => {
       const h = Math.floor(slot); const m = Math.round((slot % 1) * 60);
       return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
     };
 
-    return allSlots.map(slot => {
-      const slotEnd = slot + duree;
-      if (slotEnd > 19) return null;
-      const minutes = Math.round((slot % 1) * 60);
-      const isValid = duree === 0.75 ? [0,15,30,45].includes(minutes) : [0,30].includes(minutes);
-      if (!isValid) return null;
-      const conflict = occupiedIntervals.find(i => slot < i.end && slotEnd > i.start);
-      const startStr = formatSlot(slot); const endStr = formatSlot(slotEnd);
-      return (
-        <option key={slot} value={startStr} disabled={!!conflict} style={{ color: conflict ? "#cbd5e1" : "#1e293b" }}>
-          {conflict ? `${startStr} – ${endStr}  ✗` : `${startStr} – ${endStr}  ✓`}
-        </option>
-      );
-    });
+   return allSlots.map(slot => {
+  const slotEnd = slot + duree;
+  if (slotEnd > 19) return null;
+  const minutes = Math.round((slot % 1) * 60);
+  const isValid = duree === 0.75 ? [0,15,30,45].includes(minutes) : [0,30].includes(minutes);
+  if (!isValid) return null;
+  const conflict = occupiedIntervals.find(i => slot < i.end && slotEnd > i.start);
+  const startStr = formatSlot(slot); const endStr = formatSlot(slotEnd);
+  return (
+    <option key={slot} value={startStr} disabled={!!conflict} style={{ color: conflict ? "#cbd5e1" : "#1e293b" }}>
+      {conflict ? `${startStr} – ${endStr}  ✗` : `${startStr} – ${endStr}  ✓`}
+    </option>
+  );
+});
   };
 
   return (
@@ -1213,18 +1244,36 @@ export default function AgendaPage() {
       return;
     }
 
-    const conflict = sessions.find(s => {
-      if (editing && String(s.id) === String(editing.id)) return false;
-      if (toLocalISO(s._raw?.date) !== _formData.date) return false;
-      if (!_formData.moniteur_id || !s._raw?.moniteur_id) return false;
-      if (String(s._raw?.moniteur_id) !== String(_formData.moniteur_id)) return false;
-      return newStart < s.startH + s.dur && newEnd > s.startH;
-    });
+ const conflict = sessions.find(s => {
+  if (editing && String(s.id) === String(editing.id)) return false;
+  if (toLocalISO(s._raw?.date) !== _formData.date) return false;
 
-    if (conflict) {
-      showToast(`⚠️ Ce moniteur est déjà occupé de ${floatToHHMM(conflict.startH)} à ${floatToHHMM(conflict.startH + conflict.dur)} ce jour-là.`, "error");
-      return;
-    }
+  const sameMoniteur = !!_formData.moniteur_id && !!s._raw?.moniteur_id
+    && String(s._raw?.moniteur_id) === String(_formData.moniteur_id);
+
+  const sCandidatIds = s._raw?.candidatsIds
+    ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
+    : [];
+  const sameCandidat = !!_formData.candidatIds?.[0]
+    && sCandidatIds.includes(String(_formData.candidatIds[0]));
+
+  if (!sameMoniteur && !sameCandidat) return false;
+  return newStart < s.startH + s.dur && newEnd > s.startH;
+});
+
+if (conflict) {
+  const conflictCandidatIds = conflict._raw?.candidatsIds
+    ? String(conflict._raw.candidatsIds).split(",").map(x => x.trim())
+    : [];
+  const estCandidat = conflictCandidatIds.includes(String(_formData.candidatIds?.[0]));
+  showToast(
+    estCandidat
+      ? `⚠️ Ce candidat a déjà une séance de ${floatToHHMM(conflict.startH)} à ${floatToHHMM(conflict.startH + conflict.dur)} ce jour-là.`
+      : `⚠️ Ce moniteur est déjà occupé de ${floatToHHMM(conflict.startH)} à ${floatToHHMM(conflict.startH + conflict.dur)} ce jour-là.`,
+    "error"
+  );
+  return;
+}
 
     setSaving(true);
     try {

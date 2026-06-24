@@ -305,22 +305,34 @@ export function ExamenProvider({ children }) {
     }
   };
 
-  const toggleExamenStatus = (id) => {
-    setExamensList(prev => prev.map(e => {
-      if (e.id !== id) return e;
-      const cycle = ["Scheduled", "Passed", "Failed"];
-      const next  = cycle[(cycle.indexOf(e.status) + 1) % cycle.length];
-      if (next === "Failed") {
-        const today    = new Date().toISOString().split("T")[0];
-        const nextDate = getNextExamDate(today, examRules.joursAutorises, examRules.delaiApresEchec);
-        setCandidatsReportes(prev2 => ({
-          ...prev2,
-          [e.candidatId]: { type: e.type, nextSuggestedDate: nextDate, reason: "echec" },
-        }));
-      }
-      return { ...e, status: next };
-    }));
-  };
+ // Remplace toggleExamenStatus par ceci
+const setExamenResult = (id, newStatus) => {
+  setExamensList(prev => prev.map(e => {
+    if (e.id !== id) return e;
+
+    if (newStatus === "Failed") {
+      const today    = new Date().toISOString().split("T")[0];
+      const nextDate = getNextExamDate(today, examRules.joursAutorises, examRules.delaiApresEchec);
+      setCandidatsReportes(prev2 => ({
+        ...prev2,
+        [e.candidatId]: { type: e.type, nextSuggestedDate: nextDate, reason: "echec" },
+      }));
+    } else if (newStatus === "Passed") {
+      // Si on corrige un échec → réussite, on retire le report en attente
+      // pour ce candidat/type, sinon il reste listé comme "reporté" à tort
+      setCandidatsReportes(prev2 => {
+        const entry = prev2[e.candidatId];
+        if (entry && entry.type === e.type && entry.reason === "echec") {
+          const { [e.candidatId]: _omit, ...rest } = prev2;
+          return rest;
+        }
+        return prev2;
+      });
+    }
+
+    return { ...e, status: newStatus };
+  }));
+};
 
   const retirerCandidat = (id) => {
     const examen = examensListRef.current.find(e => e.id === id);
@@ -339,14 +351,14 @@ export function ExamenProvider({ children }) {
 
   const getCandidatsReportes = () => candidatsReportesRef.current;
 
-  return (
-    <ExamenContext.Provider value={{
-      examensList, setExamensList,
-      generateExamens, toggleExamenStatus,
-      retirerCandidat, updateExamen,
-      getCandidatsReportes, candidatsReportes,
-      EXAM_THRESHOLDS,
-    }}>
+ return (
+  <ExamenContext.Provider value={{
+    examensList, setExamensList,
+    generateExamens, setExamenResult,
+    retirerCandidat, updateExamen,
+    getCandidatsReportes, candidatsReportes,
+    EXAM_THRESHOLDS,
+  }}>
       {children}
     </ExamenContext.Provider>
   );
