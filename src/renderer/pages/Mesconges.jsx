@@ -239,6 +239,12 @@ const peutDemanderConge = !!permissions.CAN_REQUEST_CONGE;
     if (!form.dateDebut || !form.dateFin) { setError("Renseignez les deux dates."); return; }
     if (new Date(form.dateFin) < new Date(form.dateDebut)) { setError("La date de fin doit être après le début."); return; }
     if (new Date(form.dateDebut) < new Date(new Date().toDateString())) { setError("La date de début ne peut pas être dans le passé."); return; }
+    if (new Date(form.dateFin) < new Date(new Date().toDateString())) {
+  setError("La date de fin ne peut pas être dans le passé.");
+  return;
+}
+
+
     if (form.raison === "autre" && !form.precision.trim()) { setError("Précisez la raison de votre congé."); return; }
 
     setError("");
