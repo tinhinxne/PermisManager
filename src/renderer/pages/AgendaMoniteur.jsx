@@ -435,6 +435,7 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
   const [candidats, setCandidats] = useState([]);
   const [alertInfo, setAlertInfo] = useState(null);
   const { examensList } = useExamenCtx();
+  const { isCongeAnnuel, congeAnnuel } = useCongeCtx();
 
   useEffect(() => {
     async function load() {
@@ -545,9 +546,14 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
       return;
     }
     if (congeBloquant) {
+      const isAnnuel = congeBloquant.type === "annuel";
       setAlertInfo({
-        icon:"🌴", title:"Congé actif sur cette période", color:"#f97316",
-        message:`Vous êtes en congé du ${new Date(congeBloquant.dateDebut + "T12:00:00").toLocaleDateString("fr-FR")} au ${new Date(congeBloquant.dateFin + "T12:00:00").toLocaleDateString("fr-FR")}. Impossible de planifier une séance durant cette période.`,
+        icon:"🌴",
+        title: isAnnuel ? "Congé annuel de l'auto-école" : "Congé actif sur cette période",
+        color:"#f97316",
+        message: isAnnuel
+          ? `L'auto-école est fermée du ${new Date(congeBloquant.dateDebut + "T12:00:00").toLocaleDateString("fr-FR")} au ${new Date(congeBloquant.dateFin + "T12:00:00").toLocaleDateString("fr-FR")}. Aucune séance ne peut être programmée.`
+          : `Vous êtes en congé du ${new Date(congeBloquant.dateDebut + "T12:00:00").toLocaleDateString("fr-FR")} au ${new Date(congeBloquant.dateFin + "T12:00:00").toLocaleDateString("fr-FR")}. Impossible de planifier une séance.`,
       });
       return;
     }
@@ -643,10 +649,11 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
             <div style={{ padding:"10px 14px", borderRadius:10, background:"#fff7ed", border:"1.5px solid #fed7aa", fontSize:"0.78rem", color:"#c2410c", fontWeight:700, display:"flex", alignItems:"center", gap:8 }}>
               <span style={{ fontSize:18 }}>🌴</span>
               <div>
-                <div>Congé actif sur cette période</div>
+                <div>{congeBloquant.type === "annuel" ? "Congé annuel de l'auto-école" : "Congé actif sur cette période"}</div>
                 <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>
-                  Du {new Date(congeBloquant.dateDebut + "T12:00:00").toLocaleDateString("fr-FR")} au{" "}
-                  {new Date(congeBloquant.dateFin + "T12:00:00").toLocaleDateString("fr-FR")} — séance impossible.
+                  {congeBloquant.type === "annuel"
+                    ? `L'auto-école est fermée du ${new Date(congeBloquant.dateDebut + "T12:00:00").toLocaleDateString("fr-FR")} au ${new Date(congeBloquant.dateFin + "T12:00:00").toLocaleDateString("fr-FR")}.`
+                    : `Du ${new Date(congeBloquant.dateDebut + "T12:00:00").toLocaleDateString("fr-FR")} au ${new Date(congeBloquant.dateFin + "T12:00:00").toLocaleDateString("fr-FR")} — séance impossible.`}
                 </div>
               </div>
             </div>
@@ -711,7 +718,7 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
               )}
               {congeBloquant && !dateEstPassee && (
                 <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:"0.72rem", color:"#c2410c", fontWeight:600 }}>
-                  <span>🌴</span> Congé actif
+                  <span>🌴</span> {congeBloquant.type === "annuel" ? "Congé annuel" : "Congé actif"}
                 </div>
               )}
             </div>
@@ -944,7 +951,15 @@ export default function AgendaMoniteur() {
   const { currentUser }  = useAuth();
   const { CAN_ADD_SESSION } = useMyPermissions();
   const { examensList }  = useExamenCtx();
-  const { isMoniteurEnConge, getCongeActifMoniteur, refreshMoniteur } = useCongeCtx();
+
+  const {
+    isMoniteurEnConge,
+    getCongeActifMoniteur,
+    isCongeAnnuel,
+    congeAnnuel,
+    refreshMoniteur,
+    refreshCongeAnnuel,     // Nouveau
+  } = useCongeCtx();
 
   const currentUserId   = currentUser?.id;
   const CURRENT_MONITOR = currentUser ? `${currentUser.prenom} ${currentUser.nom}` : "";
@@ -966,6 +981,9 @@ export default function AgendaMoniteur() {
   const [milestoneModal,    setMilestoneModal]    = useState(null);
   const [prefillCandidatId, setPrefillCandidatId] = useState(null);
 
+  // État pour s'assurer que les congés sont chargés
+  const [congesReady, setCongesReady] = useState(false);
+
   const weekDates = getWeekDates(weekBase);
   const weekLabel = formatWeekLabel(weekDates);
   const today = new Date(); today.setHours(0,0,0,0);
@@ -979,8 +997,13 @@ export default function AgendaMoniteur() {
 
   useEffect(() => {
     loadSeances();
-    if (currentUserId) refreshMoniteur(currentUserId);
-  }, [currentUserId]);
+    if (currentUserId) {
+      // Charger les congés du moniteur avant d'évaluer le blocage
+      refreshMoniteur(currentUserId)
+        .then(() => setCongesReady(true));
+      refreshCongeAnnuel();        // Recharger le congé annuel
+    }
+  }, [currentUserId, refreshMoniteur, refreshCongeAnnuel]);
 
   async function loadSeances() {
     setLoading(true);
@@ -1004,12 +1027,22 @@ export default function AgendaMoniteur() {
     );
   }, [examensList]);
 
-  // ── isDateBloquee : retourne le congé si la date est bloquée ─────────────
-  const isDateBloquee = useCallback((date) => {
-    if (!date || !currentUserId) return null;
-    const d = new Date(date + "T12:00:00");
-    return getCongeActifMoniteur(currentUserId, d) || null;
-  }, [currentUserId, getCongeActifMoniteur]);
+  // ── isDateBloquee : retourne le congé si la date est bloquée (personnel + annuel) ─────────────
+  const isDateBloquee = useCallback((dateStr) => {
+    if (!dateStr || !currentUserId) return null;
+    const d = new Date(dateStr + "T12:00:00");
+
+    // 1. Congé personnel du moniteur (la fonction est maintenant corrigée dans le contexte)
+    const congePerso = getCongeActifMoniteur(currentUserId, d);
+    if (congePerso) return congePerso;
+
+    // 2. Congé annuel de l'auto-école
+    if (isCongeAnnuel && isCongeAnnuel(d) && congeAnnuel) {
+      return { ...congeAnnuel, type: "annuel" };
+    }
+
+    return null;
+  }, [currentUserId, getCongeActifMoniteur, isCongeAnnuel, congeAnnuel]);
 
   const handleCandidatPermisClick = (rawRow) => {
     const candidatId = rawRow?.candidatsIds ? String(rawRow.candidatsIds.split(",")[0].trim()) : null;
@@ -1059,12 +1092,14 @@ export default function AgendaMoniteur() {
     const { _formData } = sessionObj;
     _formData.moniteur_id = currentUserId;
 
-    // ── Blocage congé (double vérification côté parent) ──────────────────────
-    const seanceDate   = new Date(_formData.date + "T12:00:00");
-    const congeActif   = getCongeActifMoniteur(currentUserId, seanceDate);
+    // Double vérification du blocage congé
+    const congeActif   = isDateBloquee(_formData.date);
     if (congeActif) {
+      const isAnnuel = congeActif.type === "annuel";
       showToast(
-        `🌴 Congé du ${new Date(congeActif.dateDebut + "T12:00:00").toLocaleDateString("fr-FR")} au ${new Date(congeActif.dateFin + "T12:00:00").toLocaleDateString("fr-FR")} — séance impossible.`,
+        isAnnuel
+          ? `🌴 Congé annuel de l'auto-école — séance impossible.`
+          : `🌴 Congé du ${new Date(congeActif.dateDebut + "T12:00:00").toLocaleDateString("fr-FR")} au ${new Date(congeActif.dateFin + "T12:00:00").toLocaleDateString("fr-FR")} — séance impossible.`,
         "error"
       );
       return;
@@ -1125,7 +1160,7 @@ export default function AgendaMoniteur() {
       <div style={{ display:"flex", flexDirection:"column", height:"100%", overflow:"hidden", background:"#f1f5f9", fontFamily:"'Poppins',sans-serif", color:"#1e293b" }}>
 
         {/* ── BANDEAU CONGÉ ACTIF AUJOURD'HUI ────────────────────────────────── */}
-        {congeAujourdhui && (
+        {congesReady && congeAujourdhui && (
           <div style={{
             display:"flex", alignItems:"center", justifyContent:"space-between",
             padding:"10px 28px",

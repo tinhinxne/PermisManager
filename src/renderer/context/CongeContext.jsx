@@ -9,13 +9,12 @@ export const useCongeCtx = () => {
 };
 
 export const CongeProvider = ({ children }) => {
-  // congesMoniteurs = { [moniteurId]: [conge, ...] }
   const [congesMoniteurs, setCongesMoniteurs] = useState({});
-  const [congesEnAttente, setCongesEnAttente] = useState([]); // toutes demandes en_attente, tous moniteurs
+  const [congesEnAttente, setCongesEnAttente] = useState([]);
   const [congeAnnuel, setCongeAnnuel] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ── Chargement initial : congé annuel + toutes les demandes en attente ──
+  // ── Chargement initial ───────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -27,7 +26,20 @@ export const CongeProvider = ({ children }) => {
     })();
   }, []);
 
-  // ── Charge (ou recharge) les congés d'UN moniteur précis ────────────────
+  // ── Écoute IPC pour mise à jour temps réel du congé annuel (optionnel) ──
+  useEffect(() => {
+    if (!window.electron?.on) return;
+    const handler = (updatedConge) => {
+      console.log("📡 Congé annuel mis à jour depuis l'admin :", updatedConge);
+      setCongeAnnuel(updatedConge || null);
+    };
+    window.electron.on("conge-annuel-updated", handler);
+    return () => {
+      try { window.electron.removeListener?.("conge-annuel-updated", handler); } catch {}
+    };
+  }, []);
+
+  // ── Refresh moniteur ────────────────────────────────────────────────────
   const refreshMoniteur = useCallback(async (moniteurId) => {
     try {
       const list = await window.electron.getCongesMoniteur(moniteurId);
@@ -39,7 +51,7 @@ export const CongeProvider = ({ children }) => {
     }
   }, []);
 
-  // ── Recharge la liste globale des demandes en attente (vue admin) ───────
+  // ── Refresh demandes en attente ─────────────────────────────────────────
   const refreshCongesEnAttente = useCallback(async () => {
     try {
       const list = await window.electron.getCongesEnAttente?.();
@@ -51,29 +63,42 @@ export const CongeProvider = ({ children }) => {
     }
   }, []);
 
-  // ── Lecture synchrone depuis le cache local (comme avant) ───────────────
+  // ── Refresh congé annuel (à jour depuis la BDD) ─────────────────────────
+  const refreshCongeAnnuel = useCallback(async () => {
+    try {
+      const annuel = await window.electron.getCongeAnnuel?.();
+      setCongeAnnuel(annuel || null);
+    } catch (e) {
+      console.error("refreshCongeAnnuel:", e);
+    }
+  }, []);
+
+  // ── Lecture cache local ─────────────────────────────────────────────────
   const getCongesMoniteur = (moniteurId) => congesMoniteurs[String(moniteurId)] || [];
 
-  // ── Un moniteur est "en congé" seulement si son congé est VALIDÉ ────────
-  const isMoniteurEnConge = (moniteurId, date = new Date()) => {
-    const list = getCongesMoniteur(moniteurId);
-    return list.some(c =>
-      c.statut === "validee" &&
-      new Date(c.dateDebut) <= date &&
-      date <= new Date(c.dateFin + "T23:59:59")
-    );
-  };
+  // ── Vérification congé validé pour un moniteur ──────────────────────────
+ const isMoniteurEnConge = (moniteurId, date = new Date()) => {
+  const list = getCongesMoniteur(moniteurId);
+  const test = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0);
+  return list.some(c =>
+    c.statut === "validee" &&
+    new Date(c.dateDebut + "T12:00:00") <= test &&
+    test <= new Date(c.dateFin + "T23:59:59")
+  );
+};
+ const getCongeActifMoniteur = (moniteurId, date = new Date()) => {
+  const list = getCongesMoniteur(moniteurId);
+  // Date de test normalisée à midi du jour local
+  const test = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0);
 
-  const getCongeActifMoniteur = (moniteurId, date = new Date()) => {
-    const list = getCongesMoniteur(moniteurId);
-    return list.find(c =>
-      c.statut === "validee" &&
-      new Date(c.dateDebut) <= date &&
-      date <= new Date(c.dateFin + "T23:59:59")
-    ) || null;
-  };
-
-  // ── Vérifie si une date tombe dans le congé annuel de l'auto-école ──────
+  return list.find(c => {
+    if (c.statut !== "validee") return false;
+    const debut = new Date(c.dateDebut + "T12:00:00");
+    const fin   = new Date(c.dateFin + "T23:59:59");
+    return debut <= test && test <= fin;
+  }) || null;
+};
+  // ── Congé annuel ────────────────────────────────────────────────────────
   const isCongeAnnuel = (date = new Date()) => {
     if (!congeAnnuel?.actif || !congeAnnuel?.dateDebut || !congeAnnuel?.dateFin) return false;
     const d = date instanceof Date ? date : new Date(date);
@@ -83,7 +108,7 @@ export const CongeProvider = ({ children }) => {
     );
   };
 
-  // ── ADMIN : crée un congé directement validé pour un moniteur ───────────
+  // ── Actions admin/moniteurs (inchangé) ──────────────────────────────────
   const addCongeMoniteur = async (moniteurId, payload) => {
     const result = await window.electron.addCongeMoniteur({ moniteurId, ...payload });
     if (result?.success) {
@@ -93,7 +118,6 @@ export const CongeProvider = ({ children }) => {
     return result;
   };
 
-  // ── MONITEUR : crée une DEMANDE (en_attente) ─────────────────────────────
   const requestCongeMoniteur = async (moniteurId, payload) => {
     const result = await window.electron.requestCongeMoniteur({ moniteurId, ...payload });
     if (result?.success) {
@@ -103,7 +127,6 @@ export const CongeProvider = ({ children }) => {
     return result;
   };
 
-  // ── ADMIN : valide une demande ───────────────────────────────────────────
   const validerCongeMoniteur = async (congeId, moniteurId) => {
     const result = await window.electron.validerCongeMoniteur(congeId);
     if (result?.success) {
@@ -113,7 +136,6 @@ export const CongeProvider = ({ children }) => {
     return result;
   };
 
-  // ── ADMIN : refuse une demande (motif optionnel) ─────────────────────────
   const refuserCongeMoniteur = async (congeId, moniteurId, motif = "") => {
     const result = await window.electron.refuserCongeMoniteur(congeId, motif);
     if (result?.success) {
@@ -123,7 +145,6 @@ export const CongeProvider = ({ children }) => {
     return result;
   };
 
-  // ── ADMIN : suppression libre d'un congé (peu importe le statut) ────────
   const removeCongeMoniteur = async (moniteurId, congeId) => {
     const result = await window.electron.removeCongeMoniteur(congeId);
     if (result?.success) {
@@ -133,7 +154,6 @@ export const CongeProvider = ({ children }) => {
     return result;
   };
 
-  // ── MONITEUR : annule SA PROPRE demande, seulement si encore en_attente ─
   const annulerMaDemandeConge = async (congeId, moniteurId) => {
     const result = await window.electron.annulerMaDemandeConge(congeId, moniteurId);
     if (result?.success) {
@@ -143,7 +163,6 @@ export const CongeProvider = ({ children }) => {
     return result;
   };
 
-  // ── Congé annuel auto-école (inchangé) ───────────────────────────────────
   const saveCongeAnnuel = async (payload) => {
     const result = await window.electron.setCongeAnnuel(payload);
     if (result?.success) setCongeAnnuel(payload);
@@ -151,30 +170,22 @@ export const CongeProvider = ({ children }) => {
   };
 
   const value = {
-    // état
     congesMoniteurs,
     congesEnAttente,
     congeAnnuel,
     loading,
-
-    // lecture
     getCongesMoniteur,
     isMoniteurEnConge,
     getCongeActifMoniteur,
-    isCongeAnnuel,          // ← ajout du fix
-
-    // rafraîchissement
+    isCongeAnnuel,
     refreshMoniteur,
     refreshCongesEnAttente,
-
-    // écriture — admin
+    refreshCongeAnnuel,          // ← ajouté ici
     addCongeMoniteur,
     validerCongeMoniteur,
     refuserCongeMoniteur,
     removeCongeMoniteur,
     saveCongeAnnuel,
-
-    // écriture — moniteur
     requestCongeMoniteur,
     annulerMaDemandeConge,
   };
