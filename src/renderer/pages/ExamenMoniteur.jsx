@@ -3,8 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   FaCalendarDay, FaCheckCircle, FaTimesCircle,
   FaClock, FaTrashAlt, FaExchangeAlt, FaUser,
-  FaSync, FaInfoCircle, FaCalendarPlus, FaFilePdf, FaTimes,
-  FaLock,
+  FaInfoCircle, FaCalendarPlus, FaFilePdf, FaTimes,
+  FaLock, FaUserSlash,
 } from "react-icons/fa";
 
 import SelectFilter from "../components/SelectFilter";
@@ -22,17 +22,21 @@ import { useAuth } from "../context/AuthContext";
 // Helpers
 // ─────────────────────────────────────────────
 const STATUS_LABELS = {
-  Tous: "Tous",
+  Tous:      "Tous",
   Scheduled: "Programmé",
-  Passed: "Réussi",
-  Failed: "Échoué",
+  Passed:    "Réussi",
+  Failed:    "Échoué",
+  Absent:    "Absent",
 };
 
 const STATUS_CONFIG = {
   Scheduled: { bg: "#e3f2fd", color: "#1565c0", label: "Programmé" },
   Passed:    { bg: "#e8f5e9", color: "#2e7d32", label: "Réussi"    },
   Failed:    { bg: "#ffebee", color: "#c62828", label: "Échoué"    },
+  Absent:    { bg: "#fff7ed", color: "#c2410c", label: "Absent"    },
 };
+
+const ABSENCE_CUTOFF_DAYS = 1;
 
 function formatDateAr(isoDate) {
   if (!isoDate) return "";
@@ -45,8 +49,165 @@ function formatDateAr(isoDate) {
   return `${y}/${m}/${j}`;
 }
 
+function getDiffDays(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const normalized = String(dateStr).replace(/\//g, "-").slice(0, 10);
+  const examDate = new Date(normalized + "T00:00:00");
+  if (isNaN(examDate)) return null;
+  return Math.ceil((examDate - today) / (1000 * 60 * 60 * 24));
+}
+
 // ─────────────────────────────────────────────
-// Alerte modale (remplace les alert() natifs)
+// Badge J-X
+// ─────────────────────────────────────────────
+function CountdownBadge({ dateStr }) {
+  const diff = getDiffDays(dateStr);
+  if (diff === null || diff < 0) return null;
+
+  let bg, color, label, icon;
+  if (diff === 0) {
+    bg = "#f1f5f9"; color = "#64748b"; label = "Aujourd'hui"; icon = null;
+  } else if (diff === 1) {
+    bg = "#fee2e2"; color = "#b91c1c"; label = "Demain"; icon = <FaLock style={{ fontSize: 9 }} />;
+  } else if (diff <= 3) {
+    bg = "#fff7ed"; color = "#c2410c"; label = `J-${diff}`; icon = <FaUserSlash style={{ fontSize: 9 }} />;
+  } else if (diff <= 7) {
+    bg = "#fef9c3"; color = "#854d0e"; label = `J-${diff}`; icon = <FaUserSlash style={{ fontSize: 9 }} />;
+  } else {
+    bg = "#f0fdf4"; color = "#166534"; label = `J-${diff}`; icon = <FaUserSlash style={{ fontSize: 9 }} />;
+  }
+
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      background: bg, color, padding: "2px 7px", borderRadius: 20,
+      fontSize: 11, fontWeight: 700, marginLeft: 6, verticalAlign: "middle",
+      border: `1px solid ${color}30`,
+    }}>
+      {icon}{label}
+    </span>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Modal absence anticipée
+// ─────────────────────────────────────────────
+function AbsenceModal({ examen, onClose, onConfirm }) {
+  if (!examen) return null;
+  const diff = getDiffDays(examen.date);
+  const canDeclare = diff !== null && diff > ABSENCE_CUTOFF_DAYS;
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 2000,
+        background: "rgba(15,23,42,0.55)", backdropFilter: "blur(3px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{
+        background: "#fff", borderRadius: 18, width: 420, maxWidth: "90vw",
+        padding: 26, boxShadow: "0 30px 70px rgba(0,0,0,0.22)",
+        animation: "absencePop .22s cubic-bezier(.34,1.56,.64,1)",
+      }}>
+        <style>{`@keyframes absencePop{from{transform:translateY(18px) scale(.96);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}`}</style>
+
+        <div style={{ textAlign: "center", marginBottom: 18 }}>
+          <div style={{
+            width: 58, height: 58, borderRadius: "50%",
+            background: "#fff7ed", margin: "0 auto 12px",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 26, border: "2px solid #fed7aa",
+          }}>
+            <FaUserSlash style={{ color: "#ea580c" }} />
+          </div>
+          <h3 style={{ margin: 0, fontSize: 16, color: "#1e293b" }}>Absence anticipée</h3>
+          <p style={{ margin: "5px 0 0", fontSize: 12.5, color: "#64748b" }}>
+            {examen.candidat} · {examen.type} · {examen.date}
+          </p>
+        </div>
+
+        {diff !== null && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10,
+            background: diff > ABSENCE_CUTOFF_DAYS ? "#f0fdf4" : "#fef2f2",
+            border: `1px solid ${diff > ABSENCE_CUTOFF_DAYS ? "#bbf7d0" : "#fecaca"}`,
+            borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 13,
+          }}>
+            <span style={{ fontSize: 18 }}>{diff > ABSENCE_CUTOFF_DAYS ? "✅" : "🔒"}</span>
+            <div>
+              {diff > ABSENCE_CUTOFF_DAYS ? (
+                <>
+                  <strong style={{ color: "#166534" }}>Déclaration possible</strong>
+                  <div style={{ color: "#15803d", fontSize: 12 }}>
+                    Il reste <strong>{diff} jour(s)</strong> avant l'examen — délai suffisant.
+                  </div>
+                </>
+              ) : diff === 1 ? (
+                <>
+                  <strong style={{ color: "#b91c1c" }}>Délai dépassé — veille de l'examen</strong>
+                  <div style={{ color: "#dc2626", fontSize: 12 }}>
+                    Il n'est plus possible de déclarer une absence anticipée la veille.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <strong style={{ color: "#b91c1c" }}>Délai dépassé</strong>
+                  <div style={{ color: "#dc2626", fontSize: 12 }}>
+                    L'examen est aujourd'hui ou déjà passé.
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {canDeclare && (
+          <div style={{
+            background: "#fff7ed", border: "1px solid #fed7aa",
+            borderRadius: 10, padding: "11px 14px", marginBottom: 18,
+            fontSize: 13, color: "#92400e", lineHeight: 1.55,
+          }}>
+            ⚠️ Ce candidat sera <strong>retiré de cette session</strong> et automatiquement
+            re-planifié pour la <strong>prochaine date d'examen disponible</strong> selon les règles configurées.
+            La raison sera enregistrée comme <em>absence déclarée</em>.
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={onClose}
+            style={{
+              flex: 1, padding: "10px 0", borderRadius: 8,
+              border: "1px solid #e2e8f0", background: "#fff",
+              color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5,
+            }}
+          >
+            Annuler
+          </button>
+          {canDeclare && (
+            <button
+              onClick={() => onConfirm(examen.id)}
+              style={{
+                flex: 1, padding: "10px 0", borderRadius: 8, border: "none",
+                background: "#ea580c", color: "#fff", cursor: "pointer",
+                fontWeight: 700, fontSize: 13.5,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              }}
+            >
+              <FaUserSlash /> Confirmer l'absence
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// AlertModal
 // ─────────────────────────────────────────────
 function AlertModal({ icon, title, message, color = "#ef4444", onClose }) {
   return (
@@ -59,10 +220,8 @@ function AlertModal({ icon, title, message, color = "#ef4444", onClose }) {
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div style={{
-        background: "#fff", borderRadius: 18,
-        width: 360, maxWidth: "90vw",
-        boxShadow: "0 30px 70px rgba(0,0,0,0.22)",
-        overflow: "hidden",
+        background: "#fff", borderRadius: 18, width: 360, maxWidth: "90vw",
+        boxShadow: "0 30px 70px rgba(0,0,0,0.22)", overflow: "hidden",
         animation: "alertPop .22s cubic-bezier(.34,1.56,.64,1)",
       }}>
         <style>{`@keyframes alertPop{from{transform:translateY(18px) scale(.96);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}`}</style>
@@ -74,20 +233,15 @@ function AlertModal({ icon, title, message, color = "#ef4444", onClose }) {
           }}>
             {icon}
           </div>
-          <div style={{ fontSize: "1rem", fontWeight: 700, color: "#1e293b", marginBottom: 8 }}>
-            {title}
-          </div>
-          <div style={{ fontSize: "0.85rem", color: "#64748b", lineHeight: 1.55 }}>
-            {message}
-          </div>
+          <div style={{ fontSize: "1rem", fontWeight: 700, color: "#1e293b", marginBottom: 8 }}>{title}</div>
+          <div style={{ fontSize: "0.85rem", color: "#64748b", lineHeight: 1.55 }}>{message}</div>
         </div>
         <div style={{ padding: "0 24px 24px" }}>
           <button
             onClick={onClose}
             style={{
               width: "100%", padding: "11px 0", borderRadius: 10, border: "none",
-              background: color, color: "#fff", fontSize: "0.88rem", fontWeight: 700,
-              cursor: "pointer",
+              background: color, color: "#fff", fontSize: "0.88rem", fontWeight: 700, cursor: "pointer",
             }}
           >
             Compris
@@ -103,46 +257,39 @@ function AlertModal({ icon, title, message, color = "#ef4444", onClose }) {
 // ─────────────────────────────────────────────
 const ExamensMoniteur = () => {
   const {
-    examensList, generateExamens, toggleExamenStatus,
+    examensList, generateExamens, toggleExamenStatus, setExamenResult,
     retirerCandidat, candidatsReportes, EXAM_THRESHOLDS,
   } = useExamenCtx();
-  const { examRules } = useExamenRulesCtx();
-  const { currentUser } = useAuth();
-
-  // Permissions dynamiques du moniteur connecté (lit son id automatiquement)
+  const { examRules }    = useExamenRulesCtx();
+  const { currentUser }  = useAuth();
   const { CAN_VIEW_ALL_CANDIDATES, CAN_REMOVE_CANDIDAT, CAN_TOGGLE_STATUS, CAN_EXPORT_LISTE_CANDIDATS } = useMyPermissions();
 
   // ── state ──
-  const [selectedExamen, setSelectedExamen] = useState(null);
-  const [statusFilter, setStatusFilter] = useState("Tous");
-  const [typeFilter, setTypeFilter] = useState("Tous");
-  const [loading, setLoading] = useState(false);
-  const [lastGenerated, setLastGenerated] = useState(null);
-  const [showReportes, setShowReportes] = useState(false);
-  const [candidatsMap, setCandidatsMap] = useState({});
-  const [mesCandidatIds, setMesCandidatIds] = useState([]);
-  const [alertInfo, setAlertInfo] = useState(null);
+  const [selectedExamen,      setSelectedExamen]      = useState(null);
+  const [statusFilter,        setStatusFilter]        = useState("Tous");
+  const [typeFilter,          setTypeFilter]          = useState("Tous");
+  const [loading,             setLoading]             = useState(false);
+  const [lastGenerated,       setLastGenerated]       = useState(null);
+  const [showReportes,        setShowReportes]        = useState(false);
+  const [candidatsMap,        setCandidatsMap]        = useState({});
+  const [mesCandidatIds,      setMesCandidatIds]      = useState([]);
+  const [alertInfo,           setAlertInfo]           = useState(null);
+  const [absenceModalExamen,  setAbsenceModalExamen]  = useState(null);
 
   const [showExportModal, setShowExportModal] = useState(false);
-  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfLoading,      setPdfLoading]      = useState(false);
   const [exportForm, setExportForm] = useState({
-    nomEcole: "",
-    wilaya: "",
-    centreExamen: "",
-    morkaba: "",
-    dateDepot: "",
-    dateExamen: "",
+    nomEcole: "", wilaya: "", centreExamen: "", morkaba: "", dateDepot: "", dateExamen: "",
   });
 
-  // Charge les valeurs mémorisées pour le PDF
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("export_pdf_defaults") || "{}");
       setExportForm(f => ({ ...f, ...saved }));
-    } catch { /* pas de valeurs sauvegardées */ }
+    } catch { /* rien */ }
   }, []);
 
-  // Chargement initial des séances et filtrage par moniteur connecté
+  // ── chargement ──
   const handleGenerate = async () => {
     setLoading(true);
     try {
@@ -151,43 +298,32 @@ const ExamensMoniteur = () => {
         window.electron.getCandidats(),
       ]);
 
-      // Filtrer les candidats affectés à ce moniteur spécifique
-      // (toujours calculé, même si CAN_VIEW_ALL_CANDIDATES est actif —
-      // utile si la permission est retirée plus tard sans recharger la page)
       if (currentUser?.id) {
         const mesSeances = seances.filter(
           s => String(s.moniteur_id ?? s.moniteurId) === String(currentUser.id)
         );
-
         const ids = new Set();
         mesSeances.forEach(s => {
           const rawIds = s.candidatsIds ?? s.candidats_ids ?? s.candidatId ?? s.candidat_id ?? null;
           if (rawIds == null) return;
-
           const str = String(rawIds).trim();
           let parsed = [];
           if (str.startsWith("[")) {
-            try {
-              parsed = JSON.parse(str).map(x => String(x).trim()).filter(Boolean);
-            } catch {
-              parsed = str.replace(/[\[\]]/g, "").split(",").map(x => x.trim()).filter(Boolean);
-            }
+            try { parsed = JSON.parse(str).map(x => String(x).trim()).filter(Boolean); }
+            catch { parsed = str.replace(/[\[\]]/g, "").split(",").map(x => x.trim()).filter(Boolean); }
           } else {
             parsed = str.split(",").map(x => x.trim()).filter(Boolean);
           }
           parsed.forEach(id => ids.add(id));
         });
-
         setMesCandidatIds([...ids]);
       }
 
       const map = {};
       candidats.forEach(c => {
         map[String(c.idCandidat)] = {
-          nom: c.nom ?? "",
-          prenom: c.prenom ?? "",
-          nom_ar: c.nom_ar ?? "",
-          prenom_ar: c.prenom_ar ?? "",
+          nom: c.nom ?? "", prenom: c.prenom ?? "",
+          nom_ar: c.nom_ar ?? "", prenom_ar: c.prenom_ar ?? "",
           dateNaissance: c.date_naissance ?? "",
           categoriePermis: c.categoriePermis ?? "",
         };
@@ -203,7 +339,7 @@ const ExamensMoniteur = () => {
 
   useEffect(() => { handleGenerate(); }, [currentUser?.id, CAN_VIEW_ALL_CANDIDATES]);
 
-  // ── actions sécurisées par permissions ──
+  // ── actions ──
   const handleRemove = (id, e) => {
     e.stopPropagation();
     if (!CAN_REMOVE_CANDIDAT) return;
@@ -215,27 +351,36 @@ const ExamensMoniteur = () => {
   const handleToggle = (id, e) => {
     e.stopPropagation();
     if (!CAN_TOGGLE_STATUS) return;
-
     const examen = examensList.find((x) => x.id === id);
     if (!examen) return;
-
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const examDate = new Date((examen.date || "") + "T00:00:00");
-
     if (!isNaN(examDate) && examDate > today) {
       setAlertInfo({
-        icon: "📅",
-        title: "Examen pas encore passé",
-        color: "#f97316",
+        icon: "📅", title: "Examen pas encore passé", color: "#f97316",
         message: `Cet examen est programmé pour le ${examen.date}. Vous ne pouvez modifier le résultat qu'à partir de cette date.`,
       });
       return;
     }
-
     toggleExamenStatus(id);
   };
 
-  // ── filtrage : Par Moniteur (sauf si permission "voir tout") + Filtres de l'UI ──
+  // ── absence anticipée ──
+  const handleOpenAbsenceModal = (id, e) => {
+    e.stopPropagation();
+    if (!CAN_TOGGLE_STATUS) return;
+    const examen = examensList.find((x) => x.id === id);
+    if (!examen || examen.status !== "Scheduled") return;
+    setAbsenceModalExamen(examen);
+  };
+
+  const handleConfirmAbsence = (id) => {
+    setExamenResult(id, "Absent");
+    retirerCandidat(id, "absence");
+    setAbsenceModalExamen(null);
+  };
+
+  // ── filtrage ──
   const filtered = examensList.filter(e => {
     const appartientAuMoniteur = CAN_VIEW_ALL_CANDIDATES
       ? true
@@ -245,7 +390,6 @@ const ExamensMoniteur = () => {
     return appartientAuMoniteur && matchStatus && matchType;
   });
 
-  // Filtrer également la liste des candidats reportés (tous si permission, sinon les siens)
   const reportesEntries = Object.entries(candidatsReportes).filter(([cid]) =>
     CAN_VIEW_ALL_CANDIDATES ? true : mesCandidatIds.includes(String(cid))
   );
@@ -257,154 +401,111 @@ const ExamensMoniteur = () => {
     return full || `Candidat #${id}`;
   };
 
-  // ── stats calculées dynamiquement sur le périmètre du moniteur ──
+  // ── stats ──
   const statsData = [
-    { label: CAN_VIEW_ALL_CANDIDATES ? "Total candidats" : "Mes candidats", val: filtered.length,                                             color: "blue",   icon: <FaUser />,        trend: "Session"        },
-    { label: "Réussites",     val: filtered.filter(e => e.status === "Passed").length,    color: "green",  icon: <FaCheckCircle />, trend: "Validés"        },
-    { label: "Échecs",        val: filtered.filter(e => e.status === "Failed").length,    color: "red",    icon: <FaTimesCircle />, trend: "À reprogrammer" },
-    { label: "En attente",    val: filtered.filter(e => e.status === "Scheduled").length, color: "orange", icon: <FaClock />,       trend: "À évaluer"      },
+    { label: CAN_VIEW_ALL_CANDIDATES ? "Total candidats" : "Mes candidats", val: filtered.length,                                              color: "blue",   icon: <FaUser />,        trend: "Session"        },
+    { label: "Réussites",  val: filtered.filter(e => e.status === "Passed").length,    color: "green",  icon: <FaCheckCircle />, trend: "Validés"        },
+    { label: "Échecs",     val: filtered.filter(e => e.status === "Failed").length,    color: "red",    icon: <FaTimesCircle />, trend: "À reprogrammer" },
+    { label: "En attente", val: filtered.filter(e => e.status === "Scheduled").length, color: "orange", icon: <FaClock />,       trend: "À évaluer"      },
+    { label: "Absents",    val: filtered.filter(e => e.status === "Absent").length,    color: "orange", icon: <FaUserSlash />,   trend: "Re-planifiés"   },
   ];
 
   const th = { padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "13px" };
   const td = { padding: "12px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "13px", color: "#1F2937" };
 
-  // ── export PDF (protégé par permission) ──
+  // ── export PDF ──
   const openExportModal = () => {
     if (!CAN_EXPORT_LISTE_CANDIDATS) return;
-    if (filtered.length === 0) {
-      alert("Aucun candidat dans votre liste actuelle à exporter. Ajustez vos filtres.");
-      return;
-    }
-    setExportForm(f => ({
-      ...f,
-      centreExamen: f.centreExamen || "",
-      dateExamen:   formatDateAr(filtered[0]?.date) || f.dateExamen || "",
-    }));
+    if (filtered.length === 0) { alert("Aucun candidat dans votre liste actuelle."); return; }
+    setExportForm(f => ({ ...f, dateExamen: formatDateAr(filtered[0]?.date) || f.dateExamen || "" }));
     setShowExportModal(true);
   };
 
-  const handleExportFormChange = (field, value) =>
-    setExportForm(f => ({ ...f, [field]: value }));
+  const handleExportFormChange = (field, value) => setExportForm(f => ({ ...f, [field]: value }));
 
   const handleConfirmExport = async () => {
     if (!exportForm.wilaya.trim() || !exportForm.centreExamen.trim()) {
       alert("Merci de renseigner au moins la wilaya et le centre d'examen.");
       return;
     }
-
     setPdfLoading(true);
     try {
       const candidatsPourPDF = filtered.map((examen, i) => {
         const info = candidatsMap[String(examen.candidatId)] || {};
-        const nomAr    = info.nom_ar    || "";
-        const prenomAr = info.prenom_ar || "";
-        const nomPrenomAr = (nomAr || prenomAr) ? `${nomAr} ${prenomAr}`.trim() : "";
-
         return {
-          rang:              i + 1,
-          numDossier:        examen.candidatId,
-          nomPrenom:         examen.candidat,
-          nomPrenomAr,
-          dateNaissance:     formatDateAr(examen.dateNaissance),
-          categorie:         examen.categoriePermis || "",
-          typeExamen:        examen.type || "",
-          dateDepot:         formatDateAr(exportForm.dateDepot),
-          dateExamenRapport: formatDateAr(examen.date),
-          observations:      "",
+          rang: i + 1, numDossier: examen.candidatId, nomPrenom: examen.candidat,
+          nomPrenomAr: [info.nom_ar, info.prenom_ar].filter(Boolean).join(" "),
+          dateNaissance: formatDateAr(examen.dateNaissance),
+          categorie: examen.categoriePermis || "", typeExamen: examen.type || "",
+          dateDepot: formatDateAr(exportForm.dateDepot),
+          dateExamenRapport: formatDateAr(examen.date), observations: "",
         };
       });
-
       const savedPath = await window.electron.generateListeCandidatsPDF({
-        nomEcole:     exportForm.nomEcole,
-        wilaya:       exportForm.wilaya,
-        centreExamen: exportForm.centreExamen,
-        morkaba:      exportForm.morkaba,
-        dateDepot:    formatDateAr(exportForm.dateDepot),
-        dateExamen:   exportForm.dateExamen,
-        candidats:    candidatsPourPDF,
+        nomEcole: exportForm.nomEcole, wilaya: exportForm.wilaya,
+        centreExamen: exportForm.centreExamen, morkaba: exportForm.morkaba,
+        dateDepot: formatDateAr(exportForm.dateDepot), dateExamen: exportForm.dateExamen,
+        candidats: candidatsPourPDF,
       });
-
       localStorage.setItem("export_pdf_defaults", JSON.stringify({
-        nomEcole: exportForm.nomEcole,
-        wilaya:   exportForm.wilaya,
-        morkaba:  exportForm.morkaba,
+        nomEcole: exportForm.nomEcole, wilaya: exportForm.wilaya, morkaba: exportForm.morkaba,
       }));
-
-      if (savedPath) {
-        alert(`Document enregistré :\n${savedPath}`);
-        setShowExportModal(false);
-      }
-    } catch (e) {
-      console.error("Erreur génération PDF liste candidats:", e);
-      alert("Erreur lors de la génération du document.");
-    }
+      if (savedPath) { alert(`Document enregistré :\n${savedPath}`); setShowExportModal(false); }
+    } catch (e) { console.error("Erreur PDF:", e); alert("Erreur lors de la génération."); }
     setPdfLoading(false);
   };
 
+  // ─────────────────────────────────────────────
+  // Rendu
+  // ─────────────────────────────────────────────
   return (
     <div className="main">
       <div className="header">
         <img src={ConnexionImg} alt="illustration" className="header-img" />
         <h1><img src={SmallCar} alt="" width={40} /> Espace Moniteur</h1>
-        <p>
-          {CAN_VIEW_ALL_CANDIDATES
-            ? "Suivi et gestion de tous les candidats aux examens"
-            : "Suivi et gestion de mes candidats aux examens"}
-        </p>
+        <p>{CAN_VIEW_ALL_CANDIDATES ? "Suivi et gestion de tous les candidats aux examens" : "Suivi et gestion de mes candidats aux examens"}</p>
       </div>
 
       <div className="examens-content">
 
-        {/* ── Badge mode d'accès ── */}
+        {/* Badge mode accès */}
         <div style={{
           display: "inline-flex", alignItems: "center", gap: 8,
           background: CAN_VIEW_ALL_CANDIDATES ? "rgba(22,101,52,0.08)" : "rgba(148,163,184,0.12)",
           border: `1px solid ${CAN_VIEW_ALL_CANDIDATES ? "rgba(22,101,52,0.25)" : "#e2e8f0"}`,
-          borderRadius: 10, padding: "6px 14px",
-          fontSize: "0.75rem",
+          borderRadius: 10, padding: "6px 14px", fontSize: "0.75rem",
           color: CAN_VIEW_ALL_CANDIDATES ? "#166534" : "#64748b",
           fontWeight: 600, marginBottom: 14,
         }}>
-          {CAN_VIEW_ALL_CANDIDATES
-            ? "👥 Accès complet — vous voyez tous les candidats aux examens"
-            : "🔒 Vue restreinte — vos candidats uniquement"}
+          {CAN_VIEW_ALL_CANDIDATES ? "👥 Accès complet — vous voyez tous les candidats aux examens" : "🔒 Vue restreinte — vos candidats uniquement"}
         </div>
 
-        {/* ── Header + Bouton Export ── */}
+        {/* Header + bouton export */}
         <div className="examens-page-header">
           <div>
-            <h2 className="examens-page-title">
-              {CAN_VIEW_ALL_CANDIDATES ? "Sessions d'examens" : "Mes Sessions d'examens"}
-            </h2>
+            <h2 className="examens-page-title">{CAN_VIEW_ALL_CANDIDATES ? "Sessions d'examens" : "Mes Sessions d'examens"}</h2>
             <p className="examens-page-sub">
               Seuils : Code ≥{EXAM_THRESHOLDS.Code} · Créneau ≥{EXAM_THRESHOLDS.Créneau} · Circulation ≥{EXAM_THRESHOLDS.Circulation}
-              {lastGenerated && (
-                <span style={{ color: "#94a3b8", marginLeft: 12, fontSize: 12 }}>
-                  Actualisé le : {lastGenerated}
-                </span>
-              )}
+              {lastGenerated && <span style={{ color: "#94a3b8", marginLeft: 12, fontSize: 12 }}>Actualisé le : {lastGenerated}</span>}
             </p>
           </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button
-              onClick={openExportModal}
-              disabled={!CAN_EXPORT_LISTE_CANDIDATS}
-              title={CAN_EXPORT_LISTE_CANDIDATS ? "" : "Permission requise — contactez l'admin"}
-              style={{
-                display: "flex", alignItems: "center", gap: 8,
-                background: CAN_EXPORT_LISTE_CANDIDATS ? "#2b537e" : "#cbd5e1",
-                color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10,
-                cursor: CAN_EXPORT_LISTE_CANDIDATS ? "pointer" : "not-allowed",
-                fontSize: 14, fontWeight: 600,
-                opacity: CAN_EXPORT_LISTE_CANDIDATS ? 1 : 0.7,
-              }}
-            >
-              {CAN_EXPORT_LISTE_CANDIDATS ? <FaFilePdf /> : <FaLock size={12} />} قائمة المترشحين
-            </button>
-          </div>
+          <button
+            onClick={openExportModal}
+            disabled={!CAN_EXPORT_LISTE_CANDIDATS}
+            title={CAN_EXPORT_LISTE_CANDIDATS ? "" : "Permission requise — contactez l'admin"}
+            style={{
+              display: "flex", alignItems: "center", gap: 8,
+              background: CAN_EXPORT_LISTE_CANDIDATS ? "#2b537e" : "#cbd5e1",
+              color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10,
+              cursor: CAN_EXPORT_LISTE_CANDIDATS ? "pointer" : "not-allowed",
+              fontSize: 14, fontWeight: 600, opacity: CAN_EXPORT_LISTE_CANDIDATS ? 1 : 0.7,
+            }}
+          >
+            {CAN_EXPORT_LISTE_CANDIDATS ? <FaFilePdf /> : <FaLock size={12} />} قائمة المترشحين
+          </button>
         </div>
 
-        {/* ── Règles actives ── */}
+        {/* Règles actives */}
         <div style={{ background: "#f0f4ff", border: "1px solid #c7d7f5", borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: "#3b5bdb", display: "flex", alignItems: "center", gap: 10 }}>
           <FaInfoCircle />
           <span>
@@ -414,7 +515,22 @@ const ExamensMoniteur = () => {
           </span>
         </div>
 
-        {/* ── Stats ── */}
+        {/* Légende badge J-X */}
+        <div style={{
+          background: "#fafafa", border: "1px solid #e2e8f0", borderRadius: 10,
+          padding: "9px 16px", marginBottom: 16, fontSize: 12, color: "#64748b",
+          display: "flex", alignItems: "center", flexWrap: "wrap", gap: 14,
+        }}>
+          <span style={{ fontWeight: 600, color: "#374151" }}>
+            <FaUserSlash style={{ marginRight: 5, verticalAlign: "middle", color: "#ea580c" }} />
+            Absence anticipée :
+          </span>
+          <span>Badge <strong style={{ color: "#166534" }}>J-X vert</strong> = déclaration possible</span>
+          <span>Badge <strong style={{ color: "#c2410c" }}>J-X orange</strong> = urgent (≤ 3 jours)</span>
+          <span>Badge <strong style={{ color: "#b91c1c" }}>Demain 🔒</strong> = délai dépassé, veille de l'examen</span>
+        </div>
+
+        {/* Stats */}
         <div className="stats-grid">
           {statsData.map((item, i) => (
             <motion.div key={i} className="stat-card-modern" whileHover={{ y: -5 }}>
@@ -428,11 +544,11 @@ const ExamensMoniteur = () => {
           ))}
         </div>
 
-        {/* ── Filtres ── */}
+        {/* Filtres */}
         <div className="examens-filters">
           <SelectFilter
             value={statusFilter} onChange={setStatusFilter}
-            options={["Tous", "Scheduled", "Passed", "Failed"].map(v => ({ value: v, label: STATUS_LABELS[v] }))}
+            options={["Tous", "Scheduled", "Passed", "Failed", "Absent"].map(v => ({ value: v, label: STATUS_LABELS[v] }))}
             label="Filtrer par Statut"
           />
           <SelectFilter
@@ -442,7 +558,7 @@ const ExamensMoniteur = () => {
           />
         </div>
 
-        {/* ── Tableau des Examens ── */}
+        {/* Tableau */}
         <div style={{ background: "#fff", borderRadius: 15, overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)" }}>
           <div style={{ maxHeight: 500, overflowY: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -454,13 +570,19 @@ const ExamensMoniteur = () => {
                   <th style={th}>Lieu</th>
                   <th style={th}>Séances</th>
                   <th style={th}>Résultat</th>
-                  {CAN_REMOVE_CANDIDAT && <th style={th}>Actions</th>}
+                  {(CAN_REMOVE_CANDIDAT || CAN_TOGGLE_STATUS) && <th style={th}>Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 <AnimatePresence>
                   {filtered.length > 0 ? filtered.map((examen, i) => {
-                    const st = STATUS_CONFIG[examen.status];
+                    const st = STATUS_CONFIG[examen.status] || STATUS_CONFIG.Scheduled;
+                    const diff = getDiffDays(examen.date);
+                    const canDeclareAbsence =
+                      examen.status === "Scheduled" && diff !== null && diff > ABSENCE_CUTOFF_DAYS;
+                    const absenceTooLate =
+                      examen.status === "Scheduled" && diff !== null && diff <= ABSENCE_CUTOFF_DAYS && diff >= 0;
+
                     return (
                       <motion.tr
                         layout key={examen.id}
@@ -472,29 +594,30 @@ const ExamensMoniteur = () => {
                           {examen.candidat}
                           {CAN_VIEW_ALL_CANDIDATES && (
                             mesCandidatIds.includes(String(examen.candidatId)) ? (
-                              <span style={{ marginLeft: 8, fontSize: 10, background: "#dcfce7", color: "#166534", padding: "2px 6px", borderRadius: 10, fontWeight: 600 }}>
-                                Mon candidat
-                              </span>
+                              <span style={{ marginLeft: 8, fontSize: 10, background: "#dcfce7", color: "#166534", padding: "2px 6px", borderRadius: 10, fontWeight: 600 }}>Mon candidat</span>
                             ) : (
-                              <span style={{ marginLeft: 8, fontSize: 10, background: "#f1f5f9", color: "#64748b", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>
-                                Autre moniteur
-                              </span>
+                              <span style={{ marginLeft: 8, fontSize: 10, background: "#f1f5f9", color: "#64748b", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>Autre moniteur</span>
                             )
                           )}
-                          {examen.autoGenerated && (
-                            <span style={{ marginLeft: 4, fontSize: 10, background: "#e0f2fe", color: "#0369a1", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>auto</span>
-                          )}
-                          {examen.suggested && (
-                            <span style={{ marginLeft: 4, fontSize: 10, background: "#fef3c7", color: "#92400e", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>re-suggéré</span>
-                          )}
+                          {examen.autoGenerated && <span style={{ marginLeft: 4, fontSize: 10, background: "#e0f2fe", color: "#0369a1", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>auto</span>}
+                          {examen.suggested    && <span style={{ marginLeft: 4, fontSize: 10, background: "#fef3c7", color: "#92400e", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>re-suggéré</span>}
                         </td>
                         <td style={td}>{examen.type}</td>
+
+                        {/* Date + badge J-X */}
                         <td style={td}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             <FaCalendarDay style={{ color: "#4E96E1", fontSize: 12 }} />
-                            <div>{examen.date} <span style={{ color: "#64748b", fontSize: 12 }}>{examen.heure}</span></div>
+                            <div>
+                              {examen.date}
+                              <span style={{ color: "#64748b", fontSize: 12, marginLeft: 4 }}>{examen.heure}</span>
+                              {examen.status === "Scheduled" && diff !== null && diff >= 0 && (
+                                <CountdownBadge dateStr={examen.date} />
+                              )}
+                            </div>
                           </div>
                         </td>
+
                         <td style={td}>{examen.lieu}</td>
                         <td style={td}>
                           <span style={{ background: "#f1f5f9", color: "#475569", padding: "2px 8px", borderRadius: 10, fontSize: 12, fontWeight: 600 }}>
@@ -506,26 +629,69 @@ const ExamensMoniteur = () => {
                             style={{ background: st.bg, color: st.color, display: "inline-flex", alignItems: "center", padding: "4px 10px", borderRadius: 20, fontWeight: 600, fontSize: 13, cursor: CAN_TOGGLE_STATUS ? "pointer" : "default" }}
                             onClick={e => handleToggle(examen.id, e)}
                           >
-                            {CAN_TOGGLE_STATUS && <FaExchangeAlt style={{ marginRight: 8, fontSize: 10 }} />}
+                            {CAN_TOGGLE_STATUS && examen.status !== "Absent" && <FaExchangeAlt style={{ marginRight: 8, fontSize: 10 }} />}
+                            {examen.status === "Absent" && <FaUserSlash style={{ marginRight: 8, fontSize: 10 }} />}
                             {st.label}
                           </div>
                         </td>
-                        {CAN_REMOVE_CANDIDAT && (
+
+                        {(CAN_REMOVE_CANDIDAT || CAN_TOGGLE_STATUS) && (
                           <td style={td}>
-                            <button
-                              onClick={e => handleRemove(examen.id, e)}
-                              title="Retirer"
-                              style={{ background: "#FEF2F2", color: "#b91c1c", border: "1px solid #fca5a5", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12 }}
-                            >
-                              <FaTrashAlt />
-                            </button>
+                            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+
+                              {/* Bouton absence anticipée */}
+                              {CAN_TOGGLE_STATUS && canDeclareAbsence && (
+                                <button
+                                  onClick={e => handleOpenAbsenceModal(examen.id, e)}
+                                  title={`Déclarer une absence anticipée — J-${diff} jours`}
+                                  style={{
+                                    background: "#fff7ed", color: "#ea580c",
+                                    border: "1px solid #fed7aa",
+                                    padding: "6px 11px", borderRadius: 7,
+                                    cursor: "pointer", fontSize: 12, fontWeight: 600,
+                                    display: "inline-flex", alignItems: "center", gap: 6,
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  <FaUserSlash style={{ fontSize: 11 }} /> Absent
+                                </button>
+                              )}
+
+                              {/* Verrouillé si veille ou jour-J */}
+                              {CAN_TOGGLE_STATUS && absenceTooLate && (
+                                <span
+                                  title={diff === 1 ? "Trop tard — veille de l'examen" : "Trop tard — examen aujourd'hui"}
+                                  style={{
+                                    background: "#f8fafc", color: "#94a3b8",
+                                    border: "1px solid #e2e8f0",
+                                    padding: "6px 11px", borderRadius: 7,
+                                    fontSize: 12, cursor: "not-allowed",
+                                    display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 600,
+                                  }}
+                                >
+                                  <FaLock style={{ fontSize: 10 }} />
+                                  {diff === 1 ? "Veille 🔒" : "Aujourd'hui 🔒"}
+                                </span>
+                              )}
+
+                              {/* Supprimer */}
+                              {CAN_REMOVE_CANDIDAT && (
+                                <button
+                                  onClick={e => handleRemove(examen.id, e)}
+                                  title="Retirer (sera re-suggéré à la prochaine date)"
+                                  style={{ background: "#FEF2F2", color: "#b91c1c", border: "1px solid #fca5a5", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12 }}
+                                >
+                                  <FaTrashAlt />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         )}
                       </motion.tr>
                     );
                   }) : (
                     <tr>
-                      <td colSpan={CAN_REMOVE_CANDIDAT ? 7 : 6} style={{ textAlign: "center", padding: 40, color: "#A0AEC0" }}>
+                      <td colSpan={(CAN_REMOVE_CANDIDAT || CAN_TOGGLE_STATUS) ? 7 : 6} style={{ textAlign: "center", padding: 40, color: "#A0AEC0" }}>
                         Aucun examen trouvé pour vos candidats.
                       </td>
                     </tr>
@@ -536,7 +702,7 @@ const ExamensMoniteur = () => {
           </div>
         </div>
 
-        {/* ── Candidats reportés du moniteur ── */}
+        {/* Candidats reportés */}
         {reportesEntries.length > 0 && (
           <div style={{ marginTop: 20 }}>
             <button
@@ -581,8 +747,19 @@ const ExamensMoniteur = () => {
                             </div>
                           </td>
                           <td style={td}>
-                            <span style={{ background: info.reason === "echec" ? "#fee2e2" : "#f1f5f9", color: info.reason === "echec" ? "#991b1b" : "#475569", padding: "2px 8px", borderRadius: 10, fontSize: 12 }}>
-                              {info.reason === "echec" ? "Échec" : "Retiré"}
+                            <span style={{
+                              background:
+                                info.reason === "echec"   ? "#fee2e2" :
+                                info.reason === "absence" ? "#fff7ed" : "#f1f5f9",
+                              color:
+                                info.reason === "echec"   ? "#991b1b" :
+                                info.reason === "absence" ? "#c2410c" : "#475569",
+                              padding: "2px 8px", borderRadius: 10, fontSize: 12,
+                              display: "inline-flex", alignItems: "center", gap: 5,
+                            }}>
+                              {info.reason === "absence" && <FaUserSlash style={{ fontSize: 10 }} />}
+                              {info.reason === "echec"   ? "Échec" :
+                               info.reason === "absence" ? "Absence déclarée" : "Retiré"}
                             </span>
                           </td>
                         </tr>
@@ -596,20 +773,24 @@ const ExamensMoniteur = () => {
         )}
       </div>
 
-      {/* Modales Annexes */}
+      {/* Modales */}
       <ExamenModal examen={selectedExamen} onClose={() => setSelectedExamen(null)} />
 
       {alertInfo && (
         <AlertModal
-          icon={alertInfo.icon}
-          title={alertInfo.title}
-          message={alertInfo.message}
-          color={alertInfo.color}
+          icon={alertInfo.icon} title={alertInfo.title}
+          message={alertInfo.message} color={alertInfo.color}
           onClose={() => setAlertInfo(null)}
         />
       )}
 
-      {/* Modale d'exportation PDF */}
+      <AbsenceModal
+        examen={absenceModalExamen}
+        onClose={() => setAbsenceModalExamen(null)}
+        onConfirm={handleConfirmAbsence}
+      />
+
+      {/* Modal export PDF */}
       {showExportModal && CAN_EXPORT_LISTE_CANDIDATS && (
         <div
           style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
@@ -625,24 +806,20 @@ const ExamensMoniteur = () => {
                 <FaTimes />
               </button>
             </div>
-            <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>
-              Renseignez les détails de la session pour l'impression de la liste.
-            </p>
+            <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>Renseignez les détails de la session pour l'impression de la liste.</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-              <FormField label="Nom de l'auto-école"       value={exportForm.nomEcole}     onChange={v => handleExportFormChange("nomEcole", v)}     placeholder="Ex : Auto-École Essalem" />
-              <FormField label="Wilaya"                    value={exportForm.wilaya}        onChange={v => handleExportFormChange("wilaya", v)}        placeholder="Ex : Béjaïa..." required />
-              <FormField label="Centre d'examen"           value={exportForm.centreExamen}  onChange={v => handleExportFormChange("centreExamen", v)}  placeholder="Ex : El Kseur..." required />
-              <FormField label="المركبة الأولى"            value={exportForm.morkaba}       onChange={v => handleExportFormChange("morkaba", v)}       placeholder="Ex : رونو كليو 03" />
-              <FormField label="Date de dépôt des dossiers" value={exportForm.dateDepot}    onChange={v => handleExportFormChange("dateDepot", v)}    type="date" />
-              <FormField label="Date de l'examen"          value={exportForm.dateExamen}    onChange={v => handleExportFormChange("dateExamen", v)}    placeholder="YYYY/MM/DD" />
+              <FormField label="Nom de l'auto-école"        value={exportForm.nomEcole}     onChange={v => handleExportFormChange("nomEcole", v)}     placeholder="Ex : Auto-École Essalem" />
+              <FormField label="Wilaya"                     value={exportForm.wilaya}        onChange={v => handleExportFormChange("wilaya", v)}        placeholder="Ex : Béjaïa..." required />
+              <FormField label="Centre d'examen"            value={exportForm.centreExamen}  onChange={v => handleExportFormChange("centreExamen", v)}  placeholder="Ex : El Kseur..." required />
+              <FormField label="المركبة الأولى"             value={exportForm.morkaba}       onChange={v => handleExportFormChange("morkaba", v)}       placeholder="Ex : رونو كليو 03" />
+              <FormField label="Date de dépôt des dossiers" value={exportForm.dateDepot}     onChange={v => handleExportFormChange("dateDepot", v)}     type="date" />
+              <FormField label="Date de l'examen"           value={exportForm.dateExamen}    onChange={v => handleExportFormChange("dateExamen", v)}    placeholder="YYYY/MM/DD" />
             </div>
             <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#475569" }}>
               <strong style={{ color: "#1f2937" }}>Aperçu :</strong> {filtered.length} candidat(s) exporté(s)
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-              <button onClick={() => setShowExportModal(false)} disabled={pdfLoading} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>
-                Annuler
-              </button>
+              <button onClick={() => setShowExportModal(false)} disabled={pdfLoading} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>Annuler</button>
               <button onClick={handleConfirmExport} disabled={pdfLoading} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#2b537e", color: "#fff", cursor: "pointer", fontWeight: 600, fontSize: 13.5, opacity: pdfLoading ? 0.7 : 1 }}>
                 {pdfLoading ? "Génération..." : "Générer le PDF"}
               </button>
@@ -654,17 +831,13 @@ const ExamensMoniteur = () => {
   );
 };
 
-// Champ formulaire réutilisable
 const FormField = ({ label, value, onChange, placeholder, type = "text", required = false }) => (
   <div>
     <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
       {label}{required && <span style={{ color: "#dc2626" }}> *</span>}
     </label>
     <input
-      type={type}
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      placeholder={placeholder}
+      type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
       style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13.5, color: "#1F2937", outline: "none", boxSizing: "border-box" }}
     />
   </div>

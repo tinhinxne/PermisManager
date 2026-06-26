@@ -286,9 +286,7 @@ const MesCandidats = () => {
 
       const moniteurId = currentUser?.id;
 
-      // ── IMPORTANT : on calcule TOUJOURS les séances/candidats du moniteur,
-      // même si CAN_VIEW_ALL_CANDIDATES est actif, pour pouvoir distinguer
-      // "mes candidats" des "candidats des autres moniteurs" dans l'affichage.
+      // Candidats liés à une séance de CE moniteur
       const mesSeances = moniteurId
         ? rawSeances.filter((s) => s.moniteur_id === moniteurId)
         : [];
@@ -300,15 +298,26 @@ const MesCandidats = () => {
           .forEach((id) => mesCandidatIdSet.add(parseInt(id.trim())));
       });
 
-      // Séances utilisées pour le calcul des sessions/prochaine séance :
-      // toutes si vue complète, sinon seulement les miennes.
+      // ── NOUVEAU : Candidats créés directement par ce moniteur (sans séance encore) ──
+      const mesCreationSet = new Set(
+        rawCandidats
+          .filter((c) => c.created_by_moniteur_id != null && c.created_by_moniteur_id === moniteurId)
+          .map((c) => c.idCandidat)
+      );
+
+      // Séances pour le calcul des sessions/prochaine séance
       const seancesPourCalcul = CAN_VIEW_ALL_CANDIDATES ? rawSeances : mesSeances;
 
       const todayMidnight = new Date();
       todayMidnight.setHours(0, 0, 0, 0);
 
       const formatted = rawCandidats
-        .filter((c) => CAN_VIEW_ALL_CANDIDATES || mesCandidatIdSet.has(c.idCandidat))
+        // ── FILTRE MODIFIÉ : séance OU créateur ──
+        .filter((c) =>
+          CAN_VIEW_ALL_CANDIDATES ||
+          mesCandidatIdSet.has(c.idCandidat) ||
+          mesCreationSet.has(c.idCandidat)
+        )
         .map((c, index) => {
           const seancesDuCandidat = seancesPourCalcul.filter((s) => {
             if (!s.candidatsIds) return false;
@@ -345,6 +354,11 @@ const MesCandidats = () => {
             c.categoriePermis || c.categorie || c.categorie_permis || "B"
           ).toString().trim().toUpperCase();
 
+          // ── NOUVEAU : isMien = séance OU créateur ──
+          const isMien = mesCandidatIdSet.has(c.idCandidat) || mesCreationSet.has(c.idCandidat);
+          // ── NOUVEAU : pas encore de séance mais créé par moi ──
+          const isNouveauInscrit = mesCreationSet.has(c.idCandidat) && !mesCandidatIdSet.has(c.idCandidat);
+
           return {
             id:              c.idCandidat,
             nom:             `${c.prenom} ${c.nom}`,
@@ -355,7 +369,8 @@ const MesCandidats = () => {
             total:           20,
             nextSession,
             status:          c.statut,
-            isMien:          mesCandidatIdSet.has(c.idCandidat),
+            isMien,
+            isNouveauInscrit,
             _raw:            c,
             ...AVATAR_COLORS[index % AVATAR_COLORS.length],
           };
@@ -384,7 +399,11 @@ const MesCandidats = () => {
     if (data.idCandidat) {
       await window.electron.updateCandidat(data);
     } else {
-      await window.electron.addCandidat(data);
+      // ── NOUVEAU : on passe l'id du moniteur connecté comme créateur ──
+      await window.electron.addCandidat({
+        ...data,
+        created_by_moniteur_id: currentUser?.id ?? null,
+      });
     }
     await loadData();
     setShowModal(false);
@@ -478,7 +497,7 @@ const MesCandidats = () => {
             </div>
           </div>
 
-          {/* ── Stat bonus : nombre de "mes candidats" — visible seulement en mode vue complète ── */}
+          {/* Stat bonus : nombre de "mes candidats" — visible seulement en vue complète */}
           {CAN_VIEW_ALL_CANDIDATES && (
             <div className="interactive-stat-card-small large-stat">
               <div className="stat-data">
@@ -517,7 +536,6 @@ const MesCandidats = () => {
                 <FileText size={16} /> لائحة الإرسال (نوعي)
               </button>
 
-              {/* ← CAN_ADD_CANDIDAT ici, indépendant de CAN_VIEW_ALL_CANDIDATES */}
               {CAN_ADD_CANDIDAT && (
                 <button
                   onClick={handleAdd}
@@ -573,6 +591,8 @@ const MesCandidats = () => {
                     style={{
                       ...candidateCard,
                       ...(CAN_VIEW_ALL_CANDIDATES && c.isMien ? candidateCardMien : {}),
+                      // ── Bordure dorée pour les nouveaux inscrits sans séance ──
+                      ...(c.isNouveauInscrit ? candidateCardNouveau : {}),
                     }}
                   >
 
@@ -592,7 +612,7 @@ const MesCandidats = () => {
                       </div>
                     </div>
 
-                    {/* Badge catégorie + badge "mien / autre moniteur" (uniquement en vue complète) */}
+                    {/* Badges */}
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
                       <span style={{
                         fontSize: "11px", background: "#e0f2fe", color: "#0369a1",
@@ -602,6 +622,7 @@ const MesCandidats = () => {
                         Catégorie {c.categoriePermis}
                       </span>
 
+                      {/* ── Badge "Mon candidat" / "Autre moniteur" en vue complète ── */}
                       {CAN_VIEW_ALL_CANDIDATES && (
                         c.isMien ? (
                           <span style={{
@@ -620,6 +641,18 @@ const MesCandidats = () => {
                             Autre moniteur
                           </span>
                         )
+                      )}
+
+                      {/* ── NOUVEAU : badge "Nouvel inscrit" si pas encore de séance ── */}
+                      {c.isNouveauInscrit && (
+                        <span style={{
+                          fontSize: 10, background: "#fef9c3", color: "#854d0e",
+                          padding: "2px 8px", borderRadius: 10, fontWeight: 700,
+                          display: "inline-flex", alignItems: "center", gap: 3,
+                          border: "1px solid #fde68a",
+                        }}>
+                          🆕 Nouvel inscrit
+                        </span>
                       )}
                     </div>
 
@@ -640,7 +673,9 @@ const MesCandidats = () => {
                     {/* Prochaine session */}
                     <div style={{ fontSize: 12, color: "#64748B", marginTop: 8 }}>
                       Prochaine session :{" "}
-                      <span style={{ color: "#1e293b", fontWeight: 600 }}>{c.nextSession}</span>
+                      <span style={{ color: "#1e293b", fontWeight: 600 }}>
+                        {c.isNouveauInscrit ? "Aucune séance planifiée" : c.nextSession}
+                      </span>
                     </div>
 
                     {/* Bouton Supprimer */}
@@ -671,7 +706,7 @@ const MesCandidats = () => {
         </div>
       </div>
 
-      {/* MODALE AJOUT ← CAN_ADD_CANDIDAT ici */}
+      {/* MODALE AJOUT */}
       {CAN_ADD_CANDIDAT && (
         <AddCandidatModal
           showModal={showModal}
@@ -702,6 +737,13 @@ const candidateCard = {
 const candidateCardMien = {
   border: "1px solid #86efac",
   boxShadow: "0 0 0 1px rgba(22,163,74,0.12)",
+};
+
+// ── NOUVEAU : style carte pour candidat inscrit sans séance encore ──
+const candidateCardNouveau = {
+  border: "1px solid #fde68a",
+  boxShadow: "0 0 0 1px rgba(234,179,8,0.15)",
+  background: "#fffef0",
 };
 
 export default MesCandidats;

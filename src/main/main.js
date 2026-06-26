@@ -17,7 +17,15 @@ colonnesVerrouillage.forEach(({ nom, sql }) => {
     }
   });
 });
-
+db.query(`
+  ALTER TABLE Candidat ADD COLUMN created_by_moniteur_id INT NULL DEFAULT NULL
+`, (err) => {
+  if (err) {
+    console.log("ℹ️ Colonne 'created_by_moniteur_id' déjà présente sur Candidat :", err.code || err.message);
+  } else {
+    console.log("✅ Colonne 'created_by_moniteur_id' ajoutée à la table Candidat !");
+  }
+});
 // ── SÉCURISATION FORCE DE LA BASE DE DONNÉES ───────────────────────────────
 db.query(`
   ALTER TABLE Candidat 
@@ -500,7 +508,7 @@ ipcMain.handle("get-candidats", async () => {
 });
 
 ipcMain.handle("add-candidat", async (event, data) => {
-  const { nom, prenom, nom_ar, prenom_ar, telephone, date_naissance, sexe, photo, statut, email } = data;
+  const { nom, prenom, nom_ar, prenom_ar, telephone, date_naissance, sexe, photo, statut, email, created_by_moniteur_id } = data;
 
   let categoriePermis = 'B';
   if (data.categoriePermis && data.categoriePermis.trim() !== "") {
@@ -512,16 +520,16 @@ ipcMain.handle("add-candidat", async (event, data) => {
     photoBuffer = Buffer.from(photo.split(",")[1], "base64");
   }
 
-  const sql = `
-    INSERT INTO Candidat (nom, prenom, nom_ar, prenom_ar, telephone, date_naissance, date_inscription, sexe, photo, statut, email, categoriePermis)
-    VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?)
+    const sql = `
+    INSERT INTO Candidat (nom, prenom, nom_ar, prenom_ar, telephone, date_naissance, date_inscription, sexe, photo, statut, email, categoriePermis, created_by_moniteur_id)
+    VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?, ?)
   `;
   return new Promise((resolve) => {
     db.query(sql, [
       nom, prenom,
       nom_ar || null, prenom_ar || null,
-      telephone, date_naissance || null, sexe, photoBuffer, statut, email || null, categoriePermis
-    ], (err) => {
+      telephone, date_naissance || null, sexe, photoBuffer, statut, email || null, categoriePermis, created_by_moniteur_id 
+   ||null], (err) => {
       if (err) { console.error('add-candidat error:', err); resolve(false); }
       else resolve(true);
     });
