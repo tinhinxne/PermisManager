@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { FaCalendarDay, FaClock, FaMapMarkerAlt, FaSave, FaTimes, FaLock } from "react-icons/fa";
 import { useExamenCtx }      from "../context/ExamenContext";
 import { useMyPermissions }  from "../context/PermissionsContext";
-
+import { useAuth }           from "../context/AuthContext";
 const typeColor = {
   Code:        { bg: "#e8f5e9", color: "#2e7d32" },
   Créneau:     { bg: "#fff3e0", color: "#e65100" },
@@ -17,7 +17,10 @@ const statusConfig = {
 
 const ExamenModal = ({ examen, onClose }) => {
   const { updateExamen }      = useExamenCtx();
-  const { CAN_TOGGLE_STATUS } = useMyPermissions();    // ✅ bonne clé
+const { currentUser }    = useAuth();
+const isAdmin            = currentUser?.type_utilisateur === "administrateur";
+const myPerms            = useMyPermissions();
+const CAN_TOGGLE_STATUS  = isAdmin || myPerms.CAN_TOGGLE_STATUS;
 
   const [heure, setHeure] = useState("");
   const [lieu,  setLieu]  = useState("");

@@ -28,12 +28,27 @@ const calculateAge = (dob) => {
 };
 
 // ── Règles d'âge ────────────────────────────────────────────────────────────
-const evaluateRules = (rules, dob) => {
+// Accepte maintenant la catégorie en 3ème paramètre
+const evaluateRules = (rules, dob, categorie = "") => {
   const age = calculateAge(dob);
   if (age === null || !rules) return { blocked: false, needsParent: false, age: null };
+
+  // Règles spécifiques catégorie A / A1 : accessible dès 16 ans
+  const catUp = (categorie || "").toUpperCase().trim();
+  const rulesEffectives = (() => {
+    if (catUp === "A" || catUp === "A1") {
+      return [
+        { min: 0,   max: 15,  action: "block",          enabled: true },
+        { min: 16,  max: 18,  action: "require_parent", enabled: true },
+        { min: 19,  max: 150, action: "allow",          enabled: true },
+      ];
+    }
+    return rules;
+  })();
+
   let blocked = false;
   let needsParent = false;
-  rules.forEach((rule) => {
+  rulesEffectives.forEach((rule) => {
     if (!rule.enabled) return;
     if (age >= rule.min && age <= rule.max) {
       if (rule.action === "block")          blocked = true;
@@ -283,8 +298,7 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
   const [parentAuthFile, setParentAuthFile] = useState(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef(null);
-
-  const { blocked, needsParent, age } = evaluateRules(inscriptionRules, form.dob);
+const { blocked, needsParent, age } = evaluateRules(inscriptionRules, form.dob, form.categoriePermis);
   
   const hasValidationErrors = Object.keys(errors).length > 0;
   const canSave = !blocked && (!needsParent || parentAuthFile !== null) && !hasValidationErrors;
@@ -336,8 +350,7 @@ export default function AddCandidatModal({ showModal, setShowModal, candidat = n
     if (!phoneCheck.valid) errs.tel = phoneCheck.msg;
 
     if (!f.sexe) errs.sexe = "Le sexe est requis.";
-
-    const { needsParent: np } = evaluateRules(inscriptionRules, f.dob);
+    const { needsParent: np } = evaluateRules(inscriptionRules, f.dob, f.categoriePermis);
     if (np && !file) {
       errs.parentFile = "L'autorisation parentale est requise.";
     }

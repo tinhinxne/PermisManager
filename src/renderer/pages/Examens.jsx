@@ -191,10 +191,19 @@ const btnRed       = { ...btnBase, background: "#fee2e2", color: "#991b1b" };
     const { currentUser }  = useAuth();
     const { getPermissions } = usePermissionsCtx();
 
-    const isAdmin = currentUser?.type_utilisateur === "administrateur";
-    const perms   = isAdmin
-      ? { CAN_REMOVE_CANDIDAT: true, CAN_TOGGLE_STATUS: true }
-      : getPermissions(currentUser?.id);
+   // APRÈS
+const isAdmin = currentUser?.type_utilisateur === "administrateur";
+const perms   = isAdmin
+  ? {
+      CAN_ADD_SESSION:            true,
+      CAN_ADD_PAYMENT:            true,
+      CAN_TOGGLE_STATUS:          true,
+      CAN_REMOVE_CANDIDAT:        true,
+      CAN_VIEW_ALL_CANDIDATES:    true,
+      CAN_ADD_CANDIDAT:           true,
+      CAN_EXPORT_LISTE_CANDIDATS: true,
+    }
+  : getPermissions(currentUser?.id);
 
     // ── state ──
     const [selectedExamen, setSelectedExamen] = useState(null);
