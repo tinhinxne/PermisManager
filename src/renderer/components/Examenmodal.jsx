@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { FaCalendarDay, FaClock, FaMapMarkerAlt, FaSave, FaTimes } from "react-icons/fa";
-import { useExamenCtx } from "../context/ExamenContext";
+import { FaCalendarDay, FaClock, FaMapMarkerAlt, FaSave, FaTimes, FaLock } from "react-icons/fa";
+import { useExamenCtx }      from "../context/ExamenContext";
+import { useMyPermissions }  from "../context/PermissionsContext";
 
 const typeColor = {
   Code:        { bg: "#e8f5e9", color: "#2e7d32" },
@@ -9,13 +10,14 @@ const typeColor = {
 };
 
 const statusConfig = {
-  Scheduled: { bg: "#e3f2fd", color: "#1565c0", label: "Programmé"  },
-  Passed:    { bg: "#e8f5e9", color: "#2e7d32", label: "Réussi"     },
-  Failed:    { bg: "#ffebee", color: "#c62828", label: "Échoué"     },
+  Scheduled: { bg: "#e3f2fd", color: "#1565c0", label: "Programmé" },
+  Passed:    { bg: "#e8f5e9", color: "#2e7d32", label: "Réussi"    },
+  Failed:    { bg: "#ffebee", color: "#c62828", label: "Échoué"    },
 };
 
 const ExamenModal = ({ examen, onClose }) => {
-  const { updateExamen } = useExamenCtx();
+  const { updateExamen }      = useExamenCtx();
+  const { CAN_TOGGLE_STATUS } = useMyPermissions();    // ✅ bonne clé
 
   const [heure, setHeure] = useState("");
   const [lieu,  setLieu]  = useState("");
@@ -24,15 +26,23 @@ const ExamenModal = ({ examen, onClose }) => {
   useEffect(() => {
     if (!examen) return;
     setHeure(examen.heure || "");
-    setLieu(examen.lieu  || "");
+    setLieu(examen.lieu   || "");
     setSaved(false);
   }, [examen?.id]);
 
   if (!examen) return null;
 
-  const tp       = typeColor[examen.type]      || { bg: "#eee", color: "#333" };
-  const st       = statusConfig[examen.status] || { bg: "#eee", color: "#333", label: examen.status };
-  const canEdit  = examen.status === "Scheduled";
+  const tp = typeColor[examen.type]      || { bg: "#eee", color: "#333" };
+  const st = statusConfig[examen.status] || { bg: "#eee", color: "#333", label: examen.status };
+
+  // ✅ une seule déclaration, bonne clé
+  const canEdit = examen.status === "Scheduled" && CAN_TOGGLE_STATUS;
+
+  const subTitle = (() => {
+    if (examen.status !== "Scheduled") return "Résultat enregistré — lecture seule";
+    if (!CAN_TOGGLE_STATUS)            return "Modification non autorisée par l'administrateur";
+    return "Vous pouvez modifier l'heure et le lieu";
+  })();
 
   const badge = (bg, color, text) => (
     <span style={{ padding: "4px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700, background: bg, color }}>
@@ -92,7 +102,7 @@ const ExamenModal = ({ examen, onClose }) => {
               Détails de l'examen
             </h3>
             <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
-              {canEdit ? "Vous pouvez modifier l'heure et le lieu" : "Résultat enregistré — lecture seule"}
+              {subTitle}
             </div>
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 16, cursor: "pointer", color: "#6B7280" }}>
@@ -112,10 +122,7 @@ const ExamenModal = ({ examen, onClose }) => {
             </div>
           </div>
 
-          {/* Date — toujours en lecture seule */}
-          {rowView("Date", <FaCalendarDay color="#4E96E1" size={12} />, examen.date)}
-
-          {/* Séances */}
+          {rowView("Date",    <FaCalendarDay color="#4E96E1" size={12} />, examen.date)}
           {rowView("Séances", null, examen.nbSeances ? `${examen.nbSeances} séances` : "—")}
 
           {/* Heure */}
@@ -129,12 +136,9 @@ const ExamenModal = ({ examen, onClose }) => {
                   type="time"
                   value={heure}
                   onChange={e => setHeure(e.target.value)}
-                  style={{
-                    padding: "5px 10px", border: "1.5px solid #d1d5db", borderRadius: 8,
-                    fontSize: 13, color: "#1F2937", outline: "none", background: "#fafafa",
-                  }}
-                  onFocus={e  => e.target.style.borderColor = "#4E96E1"}
-                  onBlur={e   => e.target.style.borderColor = "#d1d5db"}
+                  style={{ padding: "5px 10px", border: "1.5px solid #d1d5db", borderRadius: 8, fontSize: 13, color: "#1F2937", outline: "none", background: "#fafafa" }}
+                  onFocus={e => e.target.style.borderColor = "#4E96E1"}
+                  onBlur={e  => e.target.style.borderColor = "#d1d5db"}
                 />
               ) : (
                 <span style={{ fontSize: 13, color: "#111827" }}>{examen.heure || "—"}</span>
@@ -154,13 +158,9 @@ const ExamenModal = ({ examen, onClose }) => {
                   value={lieu}
                   onChange={e => setLieu(e.target.value)}
                   placeholder="Ex : Centre d'examen de Béjaïa"
-                  style={{
-                    flex: 1, padding: "5px 10px", border: "1.5px solid #d1d5db", borderRadius: 8,
-                    fontSize: 13, color: "#1F2937", outline: "none", background: "#fafafa",
-                    textAlign: "right",
-                  }}
-                  onFocus={e  => e.target.style.borderColor = "#4E96E1"}
-                  onBlur={e   => e.target.style.borderColor = "#d1d5db"}
+                  style={{ flex: 1, padding: "5px 10px", border: "1.5px solid #d1d5db", borderRadius: 8, fontSize: 13, color: "#1F2937", outline: "none", background: "#fafafa", textAlign: "right" }}
+                  onFocus={e => e.target.style.borderColor = "#4E96E1"}
+                  onBlur={e  => e.target.style.borderColor = "#d1d5db"}
                 />
               ) : (
                 <span style={{ fontSize: 13, color: "#111827" }}>{examen.lieu || "—"}</span>
@@ -168,7 +168,19 @@ const ExamenModal = ({ examen, onClose }) => {
             </div>
           </div>
 
-          {/* Feedback sauvegarde */}
+          {/* ✅ Bannière dans le JSX, bonne clé */}
+          {examen.status === "Scheduled" && !CAN_TOGGLE_STATUS && (
+            <div style={{
+              marginTop: 14, padding: "9px 14px", borderRadius: 10,
+              background: "#fff7ed", border: "1px solid #fed7aa",
+              display: "flex", alignItems: "center", gap: 8,
+              fontSize: 12, color: "#9a3412", fontWeight: 600,
+            }}>
+              <FaLock size={11} />
+              Modification désactivée — contactez l'administrateur pour obtenir l'accès.
+            </div>
+          )}
+
           {saved && (
             <div style={{
               marginTop: 12, padding: "8px 12px", borderRadius: 8,
@@ -182,10 +194,7 @@ const ExamenModal = ({ examen, onClose }) => {
           <div style={{ display: "flex", gap: 8, marginTop: 18, justifyContent: "flex-end" }}>
             <button
               onClick={onClose}
-              style={{
-                padding: "9px 20px", borderRadius: 9, border: "1px solid #E5E7EB",
-                background: "#fff", color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer",
-              }}
+              style={{ padding: "9px 20px", borderRadius: 9, border: "1px solid #E5E7EB", background: "#fff", color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
             >
               Fermer
             </button>

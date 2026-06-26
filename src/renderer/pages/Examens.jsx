@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from "react";
+  import React, { useState, useEffect } from "react";
   import { motion, AnimatePresence } from "framer-motion";
   import {
     FaCalendarDay, FaCheckCircle, FaTimesCircle,
     FaClock, FaTrashAlt, FaExchangeAlt, FaUser,
     FaSync, FaInfoCircle, FaCalendarPlus, FaFilePdf, FaTimes,
-    FaUserSlash, FaLock,
   } from "react-icons/fa";
 
   import SelectFilter from "../components/SelectFilter";
@@ -26,19 +25,13 @@ import React, { useState, useEffect } from "react";
     Scheduled: "Programmé",
     Passed: "Réussi",
     Failed: "Échoué",
-    Absent: "Absent",
   };
 
   const STATUS_CONFIG = {
     Scheduled: { bg: "#e3f2fd", color: "#1565c0", label: "Programmé" },
     Passed:    { bg: "#e8f5e9", color: "#2e7d32", label: "Réussi"    },
     Failed:    { bg: "#ffebee", color: "#c62828", label: "Échoué"    },
-    Absent:    { bg: "#fff7ed", color: "#c2410c", label: "Absent"    },
   };
-
-  // Nombre minimum de jours avant l'examen pour pouvoir déclarer une absence
-  // 1 = on peut déclarer jusqu'à J-2 inclus (la veille est J-1 → trop tard)
-  const ABSENCE_CUTOFF_DAYS = 1;
 
   // Formate une date ISO → YYYY/MM/DD
   function formatDateAr(isoDate) {
@@ -51,176 +44,6 @@ import React, { useState, useEffect } from "react";
     const j = String(d.getDate()).padStart(2, "0");
     return `${y}/${m}/${j}`;
   }
-
-  // ─────────────────────────────────────────────
-  // Calcule le nombre de jours avant l'examen
-  // Supporte YYYY-MM-DD et YYYY/MM/DD
-  // ─────────────────────────────────────────────
-  function getDiffDays(dateStr) {
-    if (!dateStr) return null;
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    // Normalise les / en - pour compatibilité ISO (ex: "2025/06/30" → "2025-06-30")
-    const normalized = String(dateStr).replace(/\//g, "-").slice(0, 10);
-    const examDate = new Date(normalized + "T00:00:00");
-    if (isNaN(examDate)) return null;
-    return Math.ceil((examDate - today) / (1000 * 60 * 60 * 24));
-  }
-
-  // ─────────────────────────────────────────────
-  // Badge J-X dans la colonne date
-  // ─────────────────────────────────────────────
-  function CountdownBadge({ dateStr }) {
-    const diff = getDiffDays(dateStr);
-    if (diff === null || diff < 0) return null;
-
-    let bg, color, label, icon;
-
-    if (diff === 0) {
-      bg = "#f1f5f9"; color = "#64748b"; label = "Aujourd'hui"; icon = null;
-    } else if (diff === 1) {
-      bg = "#fee2e2"; color = "#b91c1c"; label = "Demain"; icon = <FaLock style={{ fontSize: 9 }} />;
-    } else if (diff <= 3) {
-      bg = "#fff7ed"; color = "#c2410c"; label = `J-${diff}`;  icon = <FaUserSlash style={{ fontSize: 9 }} />;
-    } else if (diff <= 7) {
-      bg = "#fef9c3"; color = "#854d0e"; label = `J-${diff}`;  icon = <FaUserSlash style={{ fontSize: 9 }} />;
-    } else {
-      bg = "#f0fdf4"; color = "#166534"; label = `J-${diff}`;  icon = <FaUserSlash style={{ fontSize: 9 }} />;
-    }
-
-    return (
-      <span style={{
-        display: "inline-flex", alignItems: "center", gap: 4,
-        background: bg, color, padding: "2px 7px", borderRadius: 20,
-        fontSize: 11, fontWeight: 700, marginLeft: 6, verticalAlign: "middle",
-        border: `1px solid ${color}30`,
-      }}>
-        {icon}{label}
-      </span>
-    );
-  }
-
-  // ─────────────────────────────────────────────
-  // Modal confirmation absence anticipée
-  // ─────────────────────────────────────────────
-  function AbsenceModal({ examen, onClose, onConfirm }) {
-    if (!examen) return null;
-
-    const diff = getDiffDays(examen.date);
-    const canDeclare = diff !== null && diff > ABSENCE_CUTOFF_DAYS;
-
-    return (
-      <div
-        style={{
-          position: "fixed", inset: 0, zIndex: 2000,
-          background: "rgba(15,23,42,0.55)", backdropFilter: "blur(3px)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}
-        onClick={(e) => e.target === e.currentTarget && onClose()}
-      >
-        <div style={{
-          background: "#fff", borderRadius: 18, width: 420, maxWidth: "90vw",
-          padding: 26, boxShadow: "0 30px 70px rgba(0,0,0,0.22)",
-          animation: "absencePop .22s cubic-bezier(.34,1.56,.64,1)",
-        }}>
-          <style>{`@keyframes absencePop{from{transform:translateY(18px) scale(.96);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}`}</style>
-
-          {/* Icône + titre */}
-          <div style={{ textAlign: "center", marginBottom: 18 }}>
-            <div style={{
-              width: 58, height: 58, borderRadius: "50%",
-              background: "#fff7ed", margin: "0 auto 12px",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 26, border: "2px solid #fed7aa",
-            }}>
-              <FaUserSlash style={{ color: "#ea580c" }} />
-            </div>
-            <h3 style={{ margin: 0, fontSize: 16, color: "#1e293b" }}>Absence anticipée</h3>
-            <p style={{ margin: "5px 0 0", fontSize: 12.5, color: "#64748b" }}>
-              {examen.candidat} · {examen.type} · {examen.date}
-            </p>
-          </div>
-
-          {/* Infos contexte */}
-          {diff !== null && (
-            <div style={{
-              display: "flex", alignItems: "center", gap: 10,
-              background: diff > ABSENCE_CUTOFF_DAYS ? "#f0fdf4" : "#fef2f2",
-              border: `1px solid ${diff > ABSENCE_CUTOFF_DAYS ? "#bbf7d0" : "#fecaca"}`,
-              borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 13,
-            }}>
-              <span style={{ fontSize: 18 }}>
-                {diff > ABSENCE_CUTOFF_DAYS ? "✅" : "🔒"}
-              </span>
-              <div>
-                {diff > ABSENCE_CUTOFF_DAYS ? (
-                  <>
-                    <strong style={{ color: "#166534" }}>Déclaration possible</strong>
-                    <div style={{ color: "#15803d", fontSize: 12 }}>
-                      Il reste <strong>{diff} jour(s)</strong> avant l'examen — délai suffisant.
-                    </div>
-                  </>
-                ) : diff === 1 ? (
-                  <>
-                    <strong style={{ color: "#b91c1c" }}>Délai dépassé — veille de l'examen</strong>
-                    <div style={{ color: "#dc2626", fontSize: 12 }}>
-                      Il n'est plus possible de déclarer une absence anticipée la veille.
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <strong style={{ color: "#b91c1c" }}>Délai dépassé</strong>
-                    <div style={{ color: "#dc2626", fontSize: 12 }}>
-                      L'examen est aujourd'hui ou déjà passé.
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Message d'info */}
-          {canDeclare && (
-            <div style={{
-              background: "#fff7ed", border: "1px solid #fed7aa",
-              borderRadius: 10, padding: "11px 14px", marginBottom: 18, fontSize: 13, color: "#92400e", lineHeight: 1.55,
-            }}>
-              ⚠️ Ce candidat sera <strong>retiré de cette session</strong> et automatiquement
-              re-planifié pour la <strong>prochaine date d'examen disponible</strong> selon les règles configurées.
-              La raison sera enregistrée comme <em>absence déclarée</em>.
-            </div>
-          )}
-
-          {/* Boutons */}
-          <div style={{ display: "flex", gap: 10 }}>
-            <button
-              onClick={onClose}
-              style={{
-                flex: 1, padding: "10px 0", borderRadius: 8,
-                border: "1px solid #e2e8f0", background: "#fff",
-                color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5,
-              }}
-            >
-              Annuler
-            </button>
-            {canDeclare && (
-              <button
-                onClick={() => onConfirm(examen.id)}
-                style={{
-                  flex: 1, padding: "10px 0", borderRadius: 8, border: "none",
-                  background: "#ea580c", color: "#fff", cursor: "pointer",
-                  fontWeight: 700, fontSize: 13.5,
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                }}
-              >
-                <FaUserSlash /> Confirmer l'absence
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   function ResultModal({ examen, onClose, onConfirm }) {
   const [correctMode, setCorrectMode] = useState(false);
   if (!examen) return null;
@@ -266,6 +89,34 @@ import React, { useState, useEffect } from "react";
             <button onClick={onClose} style={{ ...btnSecondary, width: "100%" }}>Annuler</button>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+function PermisObtenuModal({ candidatName, onClose }) {
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 2100, background: "rgba(15,23,42,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{ background: "#fff", borderRadius: 20, width: 420, maxWidth: "92vw", boxShadow: "0 30px 80px rgba(0,0,0,0.22)", overflow: "hidden", animation: "alertPop .22s cubic-bezier(.34,1.56,.64,1)" }}>
+        <div style={{ background: "linear-gradient(135deg,#22c55e,#16a34a)", padding: "26px 24px 20px", textAlign: "center" }}>
+          <div style={{ fontSize: 46, marginBottom: 6 }}>🎓</div>
+          <div style={{ fontSize: "1.15rem", fontWeight: 800, color: "#fff" }}>Permis obtenu !</div>
+        </div>
+        <div style={{ padding: "22px 24px" }}>
+          <p style={{ fontSize: "0.92rem", color: "#1e293b", fontWeight: 600, textAlign: "center", margin: "0 0 8px" }}>
+            🎉 <strong>{candidatName}</strong> a réussi ses 3 examens (Code, Créneau, Circulation).
+          </p>
+          <p style={{ fontSize: "0.8rem", color: "#64748b", textAlign: "center", margin: 0 }}>
+            Son dossier est marqué comme « obtenu ». Il peut désormais bénéficier de séances supplémentaires si besoin.
+          </p>
+        </div>
+        <div style={{ padding: "0 24px 22px", display: "flex", justifyContent: "center" }}>
+          <button onClick={onClose} style={{ padding: "10px 36px", borderRadius: 10, background: "#16a34a", border: "none", color: "#fff", fontSize: "0.88rem", fontWeight: 700, cursor: "pointer" }}>
+            Compris
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -353,9 +204,9 @@ const btnRed       = { ...btnBase, background: "#fee2e2", color: "#991b1b" };
     const [lastGenerated,  setLastGenerated]  = useState(null);
     const [showReportes,   setShowReportes]   = useState(false);
     const [candidatsMap,   setCandidatsMap]   = useState({});
-    const [alertInfo,      setAlertInfo]      = useState(null);
+    const [permisObtenuInfo, setPermisObtenuInfo] = useState(null);
+    const [alertInfo, setAlertInfo] = useState(null);
     const [resultModalExamen, setResultModalExamen] = useState(null);
-    const [absenceModalExamen, setAbsenceModalExamen] = useState(null); // ← NOUVEAU
 
     const [showExportModal, setShowExportModal] = useState(false);
     const [pdfLoading,      setPdfLoading]      = useState(false);
@@ -415,50 +266,28 @@ const btnRed       = { ...btnBase, background: "#fee2e2", color: "#991b1b" };
       }
     };
 
-    // ── Ouvre le modal résultat ──
-    const handleOpenResultModal = (id, e) => {
-      e.stopPropagation();
-      if (!perms.CAN_TOGGLE_STATUS) return;
+ const handleOpenResultModal = (id, e) => {
+  e.stopPropagation();
+  if (!perms.CAN_TOGGLE_STATUS) return;
 
-      const examen = examensList.find((x) => x.id === id);
-      if (!examen) return;
+  const examen = examensList.find((x) => x.id === id);
+  if (!examen) return;
 
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      const examDate = new Date((examen.date || "") + "T00:00:00");
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const examDate = new Date((examen.date || "") + "T00:00:00");
 
-      if (!isNaN(examDate) && examDate > today) {
-        setAlertInfo({
-          icon: "📅",
-          title: "Examen pas encore passé",
-          color: "#f97316",
-          message: `Cet examen est programmé pour le ${examen.date}. Vous ne pouvez modifier le résultat qu'à partir de cette date.`,
-        });
-        return;
-      }
+  if (!isNaN(examDate) && examDate > today) {
+    setAlertInfo({
+      icon: "📅",
+      title: "Examen pas encore passé",
+      color: "#f97316",
+      message: `Cet examen est programmé pour le ${examen.date}. Vous ne pouvez modifier le résultat qu'à partir de cette date.`,
+    });
+    return;
+  }
 
-      setResultModalExamen(examen);
-    };
-
-    // ── NOUVEAU : Ouvre le modal absence anticipée ──
-    const handleOpenAbsenceModal = (id, e) => {
-      e.stopPropagation();
-      if (!perms.CAN_TOGGLE_STATUS) return;
-
-      const examen = examensList.find((x) => x.id === id);
-      if (!examen || examen.status !== "Scheduled") return;
-
-      setAbsenceModalExamen(examen);
-    };
-
-    // ── NOUVEAU : Confirme l'absence anticipée ──
-    const handleConfirmAbsence = (id) => {
-      // Marque comme absent dans la liste
-      setExamenResult(id, "Absent");
-      // Re-planifie automatiquement (même comportement que retirerCandidat avec raison "absence")
-      retirerCandidat(id, "absence");
-      setAbsenceModalExamen(null);
-    };
-
+  setResultModalExamen(examen);
+};
     // ── filtres ──
     const filtered = examensList.filter(e => {
       const matchStatus = statusFilter === "Tous" || e.status === statusFilter;
@@ -481,7 +310,6 @@ const btnRed       = { ...btnBase, background: "#fee2e2", color: "#991b1b" };
       { label: "Réussites",     val: examensList.filter(e => e.status === "Passed").length,    color: "green",  icon: <FaCheckCircle />, trend: "Validés"        },
       { label: "Échecs",        val: examensList.filter(e => e.status === "Failed").length,    color: "red",    icon: <FaTimesCircle />, trend: "À reprogrammer" },
       { label: "En attente",    val: examensList.filter(e => e.status === "Scheduled").length, color: "orange", icon: <FaClock />,       trend: "À évaluer"      },
-      { label: "Absents",       val: examensList.filter(e => e.status === "Absent").length,    color: "orange", icon: <FaUserSlash />,   trend: "Re-planifiés"   },
     ];
 
     // ── styles inline réutilisables ──
@@ -621,21 +449,6 @@ const btnRed       = { ...btnBase, background: "#fee2e2", color: "#991b1b" };
             </span>
           </div>
 
-          {/* ── Légende badge J-X ── */}
-          <div style={{
-            background: "#fafafa", border: "1px solid #e2e8f0", borderRadius: 10,
-            padding: "9px 16px", marginBottom: 16, fontSize: 12, color: "#64748b",
-            display: "flex", alignItems: "center", flexWrap: "wrap", gap: 14,
-          }}>
-            <span style={{ fontWeight: 600, color: "#374151" }}>
-              <FaUserSlash style={{ marginRight: 5, verticalAlign: "middle", color: "#ea580c" }} />
-              Absence anticipée :
-            </span>
-            <span>Badge <strong style={{ color: "#166534" }}>J-X vert</strong> = déclaration possible</span>
-            <span>Badge <strong style={{ color: "#c2410c" }}>J-X orange</strong> = urgent (≤ 3 jours)</span>
-            <span>Badge <strong style={{ color: "#b91c1c" }}>Demain 🔒</strong> = délai dépassé, veille de l'examen</span>
-          </div>
-
           {/* ── Stats ── */}
           <div className="stats-grid">
             {statsData.map((item, i) => (
@@ -654,7 +467,7 @@ const btnRed       = { ...btnBase, background: "#fee2e2", color: "#991b1b" };
           <div className="examens-filters">
             <SelectFilter
               value={statusFilter} onChange={setStatusFilter}
-              options={["Tous", "Scheduled", "Passed", "Failed", "Absent"].map(v => ({ value: v, label: STATUS_LABELS[v] }))}
+              options={["Tous", "Scheduled", "Passed", "Failed"].map(v => ({ value: v, label: STATUS_LABELS[v] }))}
               label="Filtrer par Statut"
             />
             <SelectFilter
@@ -676,24 +489,13 @@ const btnRed       = { ...btnBase, background: "#fee2e2", color: "#991b1b" };
                     <th style={th}>Lieu</th>
                     <th style={th}>Séances</th>
                     <th style={th}>Résultat</th>
-                    {(isAdmin || perms.CAN_REMOVE_CANDIDAT || perms.CAN_TOGGLE_STATUS) && <th style={th}>Actions</th>}
+                    {(isAdmin || perms.CAN_REMOVE_CANDIDAT) && <th style={th}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
                   <AnimatePresence>
                     {filtered.length > 0 ? filtered.map((examen, i) => {
-                      const st = STATUS_CONFIG[examen.status] || STATUS_CONFIG.Scheduled;
-                      const diff = getDiffDays(examen.date);
-                      const canDeclareAbsence =
-                        examen.status === "Scheduled" &&
-                        diff !== null &&
-                        diff > ABSENCE_CUTOFF_DAYS;
-                      const absenceTooLate =
-                        examen.status === "Scheduled" &&
-                        diff !== null &&
-                        diff <= ABSENCE_CUTOFF_DAYS &&
-                        diff >= 0;
-
+                      const st = STATUS_CONFIG[examen.status];
                       return (
                         <motion.tr
                           layout key={examen.id}
@@ -711,22 +513,12 @@ const btnRed       = { ...btnBase, background: "#fee2e2", color: "#991b1b" };
                             )}
                           </td>
                           <td style={td}>{examen.type}</td>
-
-                          {/* ── Colonne date avec badge J-X ── */}
                           <td style={td}>
                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                               <FaCalendarDay style={{ color: "#4E96E1", fontSize: 12 }} />
-                              <div>
-                                {examen.date}
-                                <span style={{ color: "#64748b", fontSize: 12, marginLeft: 4 }}>{examen.heure}</span>
-                                {/* Badge J-X uniquement pour les examens programmés futurs */}
-                                {examen.status === "Scheduled" && diff !== null && diff >= 0 && (
-                                  <CountdownBadge dateStr={examen.date} />
-                                )}
-                              </div>
+                              <div>{examen.date} <span style={{ color: "#64748b", fontSize: 12 }}>{examen.heure}</span></div>
                             </div>
                           </td>
-
                           <td style={td}>{examen.lieu}</td>
                           <td style={td}>
                             <span style={{ background: "#f1f5f9", color: "#475569", padding: "2px 8px", borderRadius: 10, fontSize: 12, fontWeight: 600 }}>
@@ -738,66 +530,19 @@ const btnRed       = { ...btnBase, background: "#fee2e2", color: "#991b1b" };
                               style={{ background: st.bg, color: st.color, display: "inline-flex", alignItems: "center", padding: "4px 10px", borderRadius: 20, fontWeight: 600, fontSize: 13, cursor: (isAdmin || perms.CAN_TOGGLE_STATUS) ? "pointer" : "default" }}
                               onClick={e => handleOpenResultModal(examen.id, e)}
                             >
-                              {(isAdmin || perms.CAN_TOGGLE_STATUS) && examen.status !== "Absent" && (
-                                <FaExchangeAlt style={{ marginRight: 8, fontSize: 10 }} />
-                              )}
-                              {examen.status === "Absent" && <FaUserSlash style={{ marginRight: 8, fontSize: 10 }} />}
+                              {(isAdmin || perms.CAN_TOGGLE_STATUS) && <FaExchangeAlt style={{ marginRight: 8, fontSize: 10 }} />}
                               {st.label}
                             </div>
                           </td>
-
-                          {(isAdmin || perms.CAN_REMOVE_CANDIDAT || perms.CAN_TOGGLE_STATUS) && (
+                          {(isAdmin || perms.CAN_REMOVE_CANDIDAT) && (
                             <td style={td}>
-                              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-
-                                {/* ── Bouton absence anticipée (visible si CAN_TOGGLE_STATUS) ── */}
-                                {(isAdmin || perms.CAN_TOGGLE_STATUS) && canDeclareAbsence && (
-                                  <button
-                                    onClick={e => handleOpenAbsenceModal(examen.id, e)}
-                                    title={`Déclarer une absence anticipée — J-${diff} jours`}
-                                    style={{
-                                      background: "#fff7ed", color: "#ea580c",
-                                      border: "1px solid #fed7aa",
-                                      padding: "6px 11px", borderRadius: 7,
-                                      cursor: "pointer", fontSize: 12, fontWeight: 600,
-                                      display: "inline-flex", alignItems: "center", gap: 6,
-                                      whiteSpace: "nowrap",
-                                    }}
-                                  >
-                                    <FaUserSlash style={{ fontSize: 11 }} />
-                                    Absent
-                                  </button>
-                                )}
-
-                                {/* Verrouillé si veille ou jour-J */}
-                                {(isAdmin || perms.CAN_TOGGLE_STATUS) && absenceTooLate && (
-                                  <span
-                                    title={diff === 1 ? "Trop tard — veille de l'examen" : "Trop tard — examen aujourd'hui"}
-                                    style={{
-                                      background: "#f8fafc", color: "#94a3b8",
-                                      border: "1px solid #e2e8f0",
-                                      padding: "6px 11px", borderRadius: 7,
-                                      fontSize: 12, cursor: "not-allowed",
-                                      display: "inline-flex", alignItems: "center", gap: 6,
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    <FaLock style={{ fontSize: 10 }} />
-                                    {diff === 1 ? "Veille 🔒" : "Aujourd'hui 🔒"}
-                                  </span>
-                                )}
-
-                                {/* Bouton supprimer (visible si CAN_REMOVE_CANDIDAT) */}
-                                {(isAdmin || perms.CAN_REMOVE_CANDIDAT) && (
-                                  <button
-                                    onClick={e => handleRemove(examen.id, e)}
-                                    title="Retirer (sera re-suggéré à la prochaine date)"
-                                    style={{ background: "#FEF2F2", color: "#b91c1c", border: "1px solid #fca5a5", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12 }}
-                                  >
-                                    <FaTrashAlt />
-                                  </button>
-                                )}
-                              </div>
+                              <button
+                                onClick={e => handleRemove(examen.id, e)}
+                                title="Retirer (sera re-suggéré à la prochaine date)"
+                                style={{ background: "#FEF2F2", color: "#b91c1c", border: "1px solid #fca5a5", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12 }}
+                              >
+                                <FaTrashAlt />
+                              </button>
                             </td>
                           )}
                         </motion.tr>
@@ -863,22 +608,8 @@ const btnRed       = { ...btnBase, background: "#fee2e2", color: "#991b1b" };
                               </div>
                             </td>
                             <td style={td}>
-                              <span style={{
-                                background:
-                                  info.reason === "echec" ? "#fee2e2" :
-                                  info.reason === "absence" ? "#fff7ed" :
-                                  "#f1f5f9",
-                                color:
-                                  info.reason === "echec" ? "#991b1b" :
-                                  info.reason === "absence" ? "#c2410c" :
-                                  "#475569",
-                                padding: "2px 8px", borderRadius: 10, fontSize: 12,
-                                display: "inline-flex", alignItems: "center", gap: 5,
-                              }}>
-                                {info.reason === "absence" && <FaUserSlash style={{ fontSize: 10 }} />}
-                                {info.reason === "echec" ? "Échec" :
-                                 info.reason === "absence" ? "Absence déclarée" :
-                                 "Retiré par admin"}
+                              <span style={{ background: info.reason === "echec" ? "#fee2e2" : "#f1f5f9", color: info.reason === "echec" ? "#991b1b" : "#475569", padding: "2px 8px", borderRadius: 10, fontSize: 12 }}>
+                                {info.reason === "echec" ? "Échec" : "Retiré par admin"}
                               </span>
                             </td>
                           </tr>
@@ -894,8 +625,7 @@ const btnRed       = { ...btnBase, background: "#fee2e2", color: "#991b1b" };
 
         {/* ── Modal détail examen ── */}
         <ExamenModal examen={selectedExamen} onClose={() => setSelectedExamen(null)} />
-
-        {alertInfo && (
+          {alertInfo && (
           <AlertModal
             icon={alertInfo.icon}
             title={alertInfo.title}
@@ -905,21 +635,38 @@ const btnRed       = { ...btnBase, background: "#fee2e2", color: "#991b1b" };
           />
         )}
 
-        <ResultModal
-          examen={resultModalExamen}
-          onClose={() => setResultModalExamen(null)}
-          onConfirm={(id, status) => {
-            setExamenResult(id, status);
-            setResultModalExamen(null);
-          }}
-        />
+<ResultModal
+  examen={resultModalExamen}
+  onClose={() => setResultModalExamen(null)}
+  onConfirm={(id, status) => {
+    setExamenResult(id, status);
 
-        {/* ── NOUVEAU : Modal absence anticipée ── */}
-        <AbsenceModal
-          examen={absenceModalExamen}
-          onClose={() => setAbsenceModalExamen(null)}
-          onConfirm={handleConfirmAbsence}
-        />
+    if (status === "Passed") {
+      const examen = examensList.find((e) => e.id === id);
+      if (examen) {
+        const cid = examen.candidatId;
+        // type === examen.type : on traite l'examen qu'on vient de valider
+        // comme déjà "Passed", car examensList n'est pas encore mis à jour ici
+        const passe = (type) =>
+          type === examen.type ||
+          examensList.some((e) => e.candidatId === cid && e.type === type && e.status === "Passed");
+
+        if (passe("Code") && passe("Créneau") && passe("Circulation")) {
+          setPermisObtenuInfo({ candidat: examen.candidat });
+        }
+      }
+    }
+
+    setResultModalExamen(null);
+  }}
+/>
+
+{permisObtenuInfo && (
+  <PermisObtenuModal
+    candidatName={permisObtenuInfo.candidat}
+    onClose={() => setPermisObtenuInfo(null)}
+  />
+)}
 
         {/* ══════════════════════════════════════════════
             Modal export قائمة المترشحين

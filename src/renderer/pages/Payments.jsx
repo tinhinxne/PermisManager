@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import PaymentModal from "../components/PaymentModal";
 import SeanceSupModal from "../components/SeanceSupModal";
 import InvoiceGenerator from "../components/Invoicegenerator";
@@ -369,10 +370,20 @@ function ExportModal({ fiches, onClose }) {
   const [step,          setStep]          = useState("form");
   const [previewDoc,    setPreviewDoc]    = useState(null);
   const [previewUrl,    setPreviewUrl]    = useState(null);
+  const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
   }, [previewUrl]);
+  // Arrivée depuis l'agenda (milestone 20 séances) → ouvre directement le paiement
+  useEffect(() => {
+    if (location.state?.openSeanceSup) {
+      setShowSeanceSup(true);
+      // Nettoie le state pour éviter une réouverture si l'utilisateur revient en arrière
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, location.pathname, navigate]);
 
   const fichesFiltrees = fiches.filter(f => {
     const nom = `${f.prenom || ""} ${f.nom || ""}`.toLowerCase();
@@ -1193,13 +1204,13 @@ const Payments = () => {
           <ExportModal fiches={fichesCandidats} onClose={() => setShowExport(false)} />
         )}
 
-        {showSeanceSup && (
+       {showSeanceSup && (
           <SeanceSupModal
+            prefillCandidat={location.state?.openSeanceSup ? location.state : null}
             onClose={() => setShowSeanceSup(false)}
             onAddPayment={async (paymentData) => {
               const result = await window.electron.addPayment(paymentData);
               if (result?.success) {
-                setShowSeanceSup(false);
                 await fetchData();
                 showToast(`Séance supplémentaire enregistrée — ${Number(paymentData.montant).toLocaleString("fr-DZ")} DA !`);
               } else {
@@ -1208,7 +1219,6 @@ const Payments = () => {
             }}
           />
         )}
-
         {showInvoices && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1500, overflowY: "auto" }}>
             <div style={{ background: "#F0F4FA", minHeight: "100vh", maxWidth: 960, margin: "0 auto", position: "relative" }}>

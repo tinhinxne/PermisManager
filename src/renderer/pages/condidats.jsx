@@ -949,12 +949,20 @@ const Condidats = () => {
                     candidatsFiltres.map((c, index) => (
                       <tr key={c.id} style={{ background: index % 2 === 0 ? "#fff" : "#F8FAFC" }}>
 
-                        <td style={td}>
-                          <div style={{ fontWeight: 600 }}>{c.nom} {c.prenom}</div>
-                          <span style={{ fontSize: "11px", background: "#e0f2fe", color: "#0369a1", padding: "2px 6px", borderRadius: "4px", fontWeight: "bold", marginTop: "4px", display: "inline-block" }}>
-                            Catégorie {c.categoriePermis}
-                          </span>
-                        </td>
+                       
+<td style={td}>
+  <div style={{ fontWeight: 600 }}>{c.nom} {c.prenom}</div>
+  <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+    <span style={{ fontSize: "11px", background: "#e0f2fe", color: "#0369a1", padding: "2px 6px", borderRadius: "4px", fontWeight: "bold", display: "inline-block" }}>
+      Catégorie {c.categoriePermis}
+    </span>
+    {c.status === "obtenu" && (
+      <span style={{ fontSize: "11px", background: "#eef2ff", color: "#4338ca", padding: "2px 6px", borderRadius: "4px", fontWeight: "bold", display: "inline-block" }}>
+        🎓 Permis obtenu
+      </span>
+    )}
+  </div>
+</td>
 
                         <td style={td}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>

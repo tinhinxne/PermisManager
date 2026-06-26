@@ -386,6 +386,22 @@ ipcMain.handle("forgot-password-reset", async (event, { email, newPassword }) =>
     );
   });
 });
+ipcMain.handle('update-statut-candidat', async (event, { candidatId, statut }) => {
+  return new Promise((resolve) => {
+    db.query(
+      'UPDATE Candidat SET statut = ? WHERE idCandidat = ?',
+      [statut, candidatId],
+      (err) => {
+        if (err) {
+          console.error('Erreur update-statut-candidat:', err.message);
+          resolve({ success: false, message: err.message });
+        } else {
+          resolve({ success: true });
+        }
+      }
+    );
+  });
+});
 
 ipcMain.handle("login", async (event, credentials) => {
   const { email, password } = credentials;
@@ -768,7 +784,11 @@ ipcMain.handle('add-payment', async (event, data) => {
   const versement = parseFloat(montant);
 
   // ── Séances supplémentaires : paiement indépendant du forfait ─────────────
+  // Le nombre de séances payées est stocké dans numeroTranche (libre/NULL pour
+  // ce typeVersement) afin de calculer plus tard le crédit de séances sup
+  // restant : credit = somme(numeroTranche) − (nb séances agenda au-delà de 20).
   if (typeVersement === 'seance_supplementaire') {
+    const nbSeancesPayees = parseInt(data._meta?.nbSeances) || 1;
     return new Promise((resolve) => {
       db.query('SELECT * FROM Paiement WHERE idCandidat = ? LIMIT 1', [idCandidat], (err, rows) => {
         if (err) return resolve({ success: false, message: "Erreur DB: " + err.message });
@@ -778,16 +798,49 @@ ipcMain.handle('add-payment', async (event, data) => {
         const idPaiement = rows[0].idPaiement;
         db.query(
           `INSERT INTO Versement (montant, typeVersement, datePaiement, methode, numeroTranche, remarque, dateVersement, idPaiement)
-           VALUES (?, 'seance_supplementaire', NOW(), ?, NULL, ?, ?, ?)`,
-          [versement, methode, remarque || null, dateVersement, idPaiement],
+           VALUES (?, 'seance_supplementaire', NOW(), ?, ?, ?, ?, ?)`,
+          [versement, methode, nbSeancesPayees, remarque || null, dateVersement, idPaiement],
           (err2) => {
             if (err2) return resolve({ success: false, message: "Erreur Versement: " + err2.message });
-            resolve({ success: true, montantRestant: rows[0].montantRestant });
+            resolve({ success: true, montantRestant: rows[0].montantRestant, nbSeancesPayees });
           }
         );
       });
     });
   }
+  // ── Crédit de séances supplémentaires restant pour un candidat ───────────────
+// credit = somme(numeroTranche) des versements 'seance_supplementaire'
+//          − nombre de séances agenda au-delà de la 20ème pour ce candidat
+ipcMain.handle('get-credit-seances-sup', async (event, candidatId) => {
+  return new Promise((resolve) => {
+    db.query(
+      `SELECT COALESCE(SUM(v.numeroTranche), 0) AS totalPaye
+       FROM Versement v
+       JOIN Paiement p ON v.idPaiement = p.idPaiement
+       WHERE p.idCandidat = ? AND v.typeVersement = 'seance_supplementaire'`,
+      [candidatId],
+      (err, rowsPaiement) => {
+        if (err) return resolve({ success: false, message: err.message });
+        const totalPaye = parseInt(rowsPaiement[0]?.totalPaye) || 0;
+
+        db.query(
+          `SELECT COUNT(*) AS nbTotal
+           FROM CandidatSeance cs
+           JOIN Seance s ON cs.idSeance = s.idSeance
+           WHERE cs.idCandidat = ?`,
+          [candidatId],
+          (err2, rowsSeances) => {
+            if (err2) return resolve({ success: false, message: err2.message });
+            const nbTotal = parseInt(rowsSeances[0]?.nbTotal) || 0;
+            const nbDejaSupp = Math.max(0, nbTotal - 20);
+            const creditRestant = Math.max(0, totalPaye - nbDejaSupp);
+            resolve({ success: true, totalPaye, nbDejaSupp, creditRestant, nbTotal });
+          }
+        );
+      }
+    );
+  });
+});
 
   // ── Paiement forfait normal ───────────────────────────────────────────────
   return new Promise((resolve) => {

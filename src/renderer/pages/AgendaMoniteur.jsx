@@ -263,6 +263,58 @@ function SeanceSupplementaireModal({ candidat, onClose, onConfirm }) {
     </div>
   );
 }
+// ── BANNIÈRE CONGÉ ANNUEL ─────────────────────────────────────────────────────
+// Remplace la CongeAnnuelBanner existante par celle-ci :
+function CongeAnnuelBanner({ congeAnnuel, congePersoSemaine }) {
+  const showAnnuel = congeAnnuel?.actif && congeAnnuel?.dateDebut && congeAnnuel?.dateFin && (() => {
+    const now = new Date();
+    return now >= new Date(congeAnnuel.dateDebut + "T00:00:00") &&
+           now <= new Date(congeAnnuel.dateFin   + "T23:59:59");
+  })();
+
+  return (
+    <>
+      {showAnnuel && (
+        <div style={{
+          margin:"0 0 12px 0", padding:"12px 18px", borderRadius:12,
+          background:"linear-gradient(135deg, #fff7ed, #ffedd5)",
+          border:"1.5px solid #fed7aa",
+          display:"flex", alignItems:"center", gap:12,
+          fontFamily:"'Poppins',sans-serif",
+        }}>
+          <div style={{ fontSize:24, flexShrink:0 }}>🏖️</div>
+          <div>
+            <div style={{ fontSize:"0.85rem", fontWeight:700, color:"#c2410c" }}>
+              {congeAnnuel.label || "Congé annuel"} — Auto-école fermée
+            </div>
+            <div style={{ fontSize:"0.75rem", color:"#ea580c", marginTop:2 }}>
+              Du {new Date(congeAnnuel.dateDebut+"T12:00:00").toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"})} au {new Date(congeAnnuel.dateFin+"T12:00:00").toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"})} · Aucune séance ne peut être créée durant cette période.
+            </div>
+          </div>
+        </div>
+      )}
+      {congePersoSemaine && (
+        <div style={{
+          margin:"0 0 12px 0", padding:"12px 18px", borderRadius:12,
+          background:"linear-gradient(135deg, #fff7ed, #ffedd5)",
+          border:"1.5px solid #fed7aa",
+          display:"flex", alignItems:"center", gap:12,
+          fontFamily:"'Poppins',sans-serif",
+        }}>
+          <div style={{ fontSize:24, flexShrink:0 }}>🌴</div>
+          <div>
+            <div style={{ fontSize:"0.85rem", fontWeight:700, color:"#c2410c" }}>
+              Vous êtes en congé cette semaine
+            </div>
+            <div style={{ fontSize:"0.75rem", color:"#ea580c", marginTop:2 }}>
+              Du {new Date(congePersoSemaine.dateDebut+"T12:00:00").toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"})} au {new Date(congePersoSemaine.dateFin+"T12:00:00").toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"})} · Aucune séance ne peut être planifiée durant cette période.
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 // ── ALERTE MODALE ─────────────────────────────────────────────────────────────
 function AlertModal({ icon, title, message, color = "#ef4444", onClose }) {
@@ -795,7 +847,7 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
 }
 
 // ── CALENDAR GRID ─────────────────────────────────────────────────────────────
-function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupClick, currentUserId, onCandidatPermisClick, aObtenuPermis }) {
+function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupClick, currentUserId, onCandidatPermisClick, aObtenuPermis, isCongeAnnuel, isMoniteurEnConge,congesReady }) {
 
   function assignColumns(daySessions) {
     const sorted = [...daySessions].sort((a, b) => a.startH - b.startH);
@@ -831,18 +883,28 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
       {/* Header jours */}
       <div style={{ display:"grid", gridTemplateColumns:"52px repeat(7,1fr)", background:"#f8fafc", borderBottom:"2px solid #e2e8f0", position:"sticky", top:0, zIndex:10 }}>
         <div style={{ borderRight:"1px solid #e2e8f0", fontSize:"0.65rem", color:"#94a3b8", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:600 }}>Heure</div>
-        {weekDates.map((date,i) => {
-          const isToday = i===todayIdx;
-          return (
-            <div key={i} style={{ padding:"10px 6px", textAlign:"center", borderRight:"1px solid #e2e8f0", background: isToday?"rgba(37,99,235,0.06)":"transparent" }}>
-              <div style={{ fontSize:"0.6rem", fontWeight:600, textTransform:"uppercase", letterSpacing:1, color: isToday?"#2563eb":"#94a3b8" }}>{DAYS_SHORT[date.getDay()]}</div>
-              <div style={{ fontSize:"0.92rem", fontWeight:700, color: isToday?"#fff":"#334155", marginTop:3, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                {isToday ? <div style={{ width:26, height:26, borderRadius:"50%", background:"#2563eb", display:"grid", placeItems:"center", fontSize:"0.88rem" }}>{date.getDate()}</div> : date.getDate()}
-              </div>
-              <div style={{ fontSize:"0.6rem", color:"#94a3b8", marginTop:1 }}>{date.toLocaleDateString("fr-FR",{month:"short"})}</div>
-            </div>
-          );
-        })}
+      {weekDates.map((date,i) => {
+  const isToday     = i===todayIdx;
+  const isAnnuel     = isCongeAnnuel ? isCongeAnnuel(date) : false;
+ const isPerso = (congesReady && !isAnnuel && isMoniteurEnConge && currentUserId)
+  ? isMoniteurEnConge(currentUserId, date)
+  : false;
+  const isClosed     = isAnnuel || isPerso;
+  const closedColor  = isAnnuel ? "#f97316" : "#8b5cf6";
+  const closedBg     = isAnnuel ? "rgba(249,115,22,0.06)" : "rgba(139,92,246,0.06)";
+  const closedLabel  = isAnnuel ? "🏖️ Fermé" : "🌴 Congé";
+  return (
+    <div key={i} style={{ padding:"10px 6px", textAlign:"center", borderRight:"1px solid #e2e8f0", background: isClosed ? closedBg : isToday?"rgba(37,99,235,0.06)":"transparent" }}>
+      <div style={{ fontSize:"0.6rem", fontWeight:600, textTransform:"uppercase", letterSpacing:1, color: isClosed ? closedColor : isToday?"#2563eb":"#94a3b8" }}>{DAYS_SHORT[date.getDay()]}</div>
+      <div style={{ fontSize:"0.92rem", fontWeight:700, color: isToday?"#fff":isClosed?closedColor:"#334155", marginTop:3, display:"flex", alignItems:"center", justifyContent:"center" }}>
+        {isToday ? <div style={{ width:26, height:26, borderRadius:"50%", background:"#2563eb", display:"grid", placeItems:"center", fontSize:"0.88rem" }}>{date.getDate()}</div> : date.getDate()}
+      </div>
+      <div style={{ fontSize:"0.6rem", color: isClosed ? closedColor : "#94a3b8", marginTop:1 }}>
+        {isClosed ? closedLabel : date.toLocaleDateString("fr-FR",{month:"short"})}
+      </div>
+    </div>
+  );
+})}
       </div>
 
       {/* Body */}
@@ -853,13 +915,26 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
           ))}
         </div>
 
-        {weekDates.map((_,dayIdx) => {
-          const isToday = dayIdx===todayIdx;
+     {weekDates.map((dateOfDay,dayIdx) => {
+          const isToday   = dayIdx===todayIdx;
+          const isAnnuel  = isCongeAnnuel ? isCongeAnnuel(dateOfDay) : false;
+          const isPerso   = (!isAnnuel && isMoniteurEnConge && currentUserId) ? isMoniteurEnConge(currentUserId, dateOfDay) : false;
+          const isClosed  = isAnnuel || isPerso;
+          const closedRGB   = isAnnuel ? "249,115,22" : "139,92,246";
+          const closedTextC = isAnnuel ? "#ea580c" : "#7c3aed";
+          const closedLabel2 = isAnnuel ? "🏖️ Fermé" : "🌴 En congé";
           const daySessions = sessions.filter(s => s.day===dayIdx);
           const { items: columnedSessions } = assignColumns(daySessions);
 
           return (
-            <div key={dayIdx} style={{ position:"relative", borderRight:"1px solid #e2e8f0", background: isToday?"rgba(37,99,235,0.015)":"transparent" }}>
+            <div key={dayIdx} style={{ position:"relative", borderRight:"1px solid #e2e8f0", background: isClosed ? `repeating-linear-gradient(45deg, rgba(${closedRGB},0.04), rgba(${closedRGB},0.04) 10px, transparent 10px, transparent 20px)` : isToday?"rgba(37,99,235,0.015)":"transparent" }}>
+              {isClosed && (
+                <div style={{ position:"absolute", inset:0, zIndex:3, display:"flex", alignItems:"center", justifyContent:"center", pointerEvents:"none" }}>
+                  <div style={{ background:`rgba(${closedRGB},0.1)`, border:`1px dashed rgba(${closedRGB},0.4)`, borderRadius:10, padding:"6px 12px", fontSize:"0.7rem", fontWeight:700, color:closedTextC, transform:"rotate(-3deg)" }}>
+                    {closedLabel2}
+                  </div>
+                </div>
+              )}
               {HOURS.map((h,hIdx) => (
                 <div key={h} style={{ height:CELL_H, borderBottom: hIdx<HOURS.length-1?"1px solid #f1f5f9":"none" }} />
               ))}
@@ -994,16 +1069,29 @@ export default function AgendaMoniteur() {
 
   // ── Congé actif du moniteur connecté AUJOURD'HUI ──────────────────────────
   const congeAujourdhui = currentUserId ? getCongeActifMoniteur(currentUserId) : null;
+  const semaineClosed = congeAnnuel?.actif && weekDates.some(d => isCongeAnnuel(d));
+  // Congé perso qui touche au moins un jour de la semaine affichée
+const congePersoSemaine = (currentUserId &&  congesReady)
+  ? weekDates.reduce((found, d) => {
+      if (found) return found;
+      return getCongeActifMoniteur(currentUserId, d) || null;
+    }, null)
+  : null;
 
-  useEffect(() => {
+ useEffect(() => {
+  if (currentUserId) {
+    // D'abord charger les congés, PUIS les séances
+    Promise.all([
+      refreshMoniteur(currentUserId),
+      refreshCongeAnnuel(),
+    ]).then(() => {
+      setCongesReady(true);
+      loadSeances(); // séances chargées après que les congés soient prêts
+    });
+  } else {
     loadSeances();
-    if (currentUserId) {
-      // Charger les congés du moniteur avant d'évaluer le blocage
-      refreshMoniteur(currentUserId)
-        .then(() => setCongesReady(true));
-      refreshCongeAnnuel();        // Recharger le congé annuel
-    }
-  }, [currentUserId, refreshMoniteur, refreshCongeAnnuel]);
+  }
+}, [currentUserId]);
 
   async function loadSeances() {
     setLoading(true);
@@ -1028,21 +1116,20 @@ export default function AgendaMoniteur() {
   }, [examensList]);
 
   // ── isDateBloquee : retourne le congé si la date est bloquée (personnel + annuel) ─────────────
-  const isDateBloquee = useCallback((dateStr) => {
-    if (!dateStr || !currentUserId) return null;
-    const d = new Date(dateStr + "T12:00:00");
+const isDateBloquee = useCallback((dateStr) => {
+  if (!dateStr || !currentUserId || !congesReady) return null;
+  const d = new Date(dateStr + "T12:00:00");
 
-    // 1. Congé personnel du moniteur (la fonction est maintenant corrigée dans le contexte)
-    const congePerso = getCongeActifMoniteur(currentUserId, d);
-    if (congePerso) return congePerso;
+  const congePerso = getCongeActifMoniteur(currentUserId, d);
+  console.log("🔍 isDateBloquee", { dateStr, currentUserId, congePerso, d });
 
-    // 2. Congé annuel de l'auto-école
-    if (isCongeAnnuel && isCongeAnnuel(d) && congeAnnuel) {
-      return { ...congeAnnuel, type: "annuel" };
-    }
+  if (congePerso) return congePerso;
 
-    return null;
-  }, [currentUserId, getCongeActifMoniteur, isCongeAnnuel, congeAnnuel]);
+  if (isCongeAnnuel && isCongeAnnuel(d) && congeAnnuel) {
+    return { ...congeAnnuel, type: "annuel" };
+  }
+  return null;
+}, [currentUserId, getCongeActifMoniteur, isCongeAnnuel, congeAnnuel, congesReady]);
 
   const handleCandidatPermisClick = (rawRow) => {
     const candidatId = rawRow?.candidatsIds ? String(rawRow.candidatsIds.split(",")[0].trim()) : null;
@@ -1288,7 +1375,13 @@ export default function AgendaMoniteur() {
         </div>
 
         {/* CALENDRIER */}
-        <div style={{ flex:1, overflowY:"auto", overflowX:"auto", padding:"16px 28px 20px", position:"relative" }}>
+     <div style={{ flex:1, overflowY:"auto", overflowX:"auto", padding:"16px 28px 20px", position:"relative" }}>
+         {(semaineClosed || congePersoSemaine) && (
+  <CongeAnnuelBanner
+    congeAnnuel={semaineClosed ? congeAnnuel : null}
+    congePersoSemaine={congePersoSemaine}
+  />
+)}
           {loading && (
             <div style={{ position:"absolute", inset:0, zIndex:20, background:"rgba(241,245,249,0.7)",
               display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12 }}>
@@ -1297,12 +1390,15 @@ export default function AgendaMoniteur() {
               <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
             </div>
           )}
-          <CalendarGrid
+        <CalendarGrid
             sessions={filtered}
             weekDates={weekDates}
             todayIdx={todayIdx}
             currentUserId={currentUserId}
+            congesReady={congesReady}  
             aObtenuPermis={aObtenuPermis}
+            isCongeAnnuel={isCongeAnnuel}
+            isMoniteurEnConge={isMoniteurEnConge}
             onCandidatPermisClick={handleCandidatPermisClick}
             onSessionClick={(s, rect) => setPopup({ session:s, anchor:rect })}
             onGroupClick={(group) => setGroupModal(group)}
@@ -1316,6 +1412,16 @@ export default function AgendaMoniteur() {
               <div style={{ width:12, height:12, borderRadius:3, background:col.bg }} />{cap(type)}
             </div>
           ))}
+        {congeAnnuel?.actif && (
+            <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:"0.72rem", color:"#ea580c", background:"#fff7ed", border:"1px solid #fed7aa", padding:"3px 10px", borderRadius:20 }}>
+              🏖️ Congé annuel actif
+            </div>
+          )}
+          {congeAujourdhui && (
+            <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:"0.72rem", color:"#7c3aed", background:"#f5f3ff", border:"1px solid #ddd6fe", padding:"3px 10px", borderRadius:20 }}>
+              🌴 Vous êtes en congé
+            </div>
+          )}
           <div style={{ marginLeft:"auto", fontSize:"0.7rem", color:"#94a3b8", fontStyle:"italic" }}>
             🎓 = Candidat permis obtenu (clic pour séance supplémentaire)
           </div>
