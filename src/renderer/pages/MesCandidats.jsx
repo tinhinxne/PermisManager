@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { TrendingUp, Users, Plus, Trash2, FileText, X, Filter } from "lucide-react";
+import { Users, Plus, Trash2, FileText, X, Filter } from "lucide-react";
 import ConnexionImg from "../../assets/Connexion.png";
 import SmallCar from "../../assets/SmallCar.png";
 import { useAuth } from "../context/AuthContext";
@@ -432,7 +432,7 @@ const MesCandidats = () => {
   };
 
   // ── Stats + filtre ────────────────────────────────────────────────────────────
-  const onTrack  = candidats.filter((c) => c.sessions / c.total >= 0.5).length;
+ 
   const filtered = candidats.filter(
     (c) =>
       c.nom.toLowerCase().includes(search.toLowerCase()) ||
@@ -487,15 +487,7 @@ const MesCandidats = () => {
             </div>
           </div>
 
-          <div className="interactive-stat-card-small large-stat">
-            <div className="stat-data">
-              <p className="stat-label-small">En bonne voie</p>
-              <h3 className="stat-number-small">{onTrack}</h3>
-            </div>
-            <div className="stat-icon-circle-small large-icon" style={{ backgroundColor: "#d4edda" }}>
-              <TrendingUp size={24} color="green" />
-            </div>
-          </div>
+         
 
           {/* Stat bonus : nombre de "mes candidats" — visible seulement en vue complète */}
           {CAN_VIEW_ALL_CANDIDATES && (
