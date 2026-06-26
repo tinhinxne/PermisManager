@@ -1334,15 +1334,51 @@ ipcMain.handle("get-conges-en-attente", async () => {
 // Admin crée un congé directement validé
 ipcMain.handle("add-conge-moniteur", async (event, data) => {
   const { moniteurId, dateDebut, dateFin, raison, precision } = data;
+
   return new Promise((resolve) => {
+    // ── 1. Vérification chevauchement côté DB ────────────────────────────
     db.query(
-      `INSERT INTO CongeMoniteur
-        (moniteur_id, dateDebut, dateFin, raison, \`precision\`, statut, demande_par, traite_at)
-       VALUES (?, ?, ?, ?, ?, 'validee', 'admin', NOW())`,
-      [moniteurId, dateDebut, dateFin, raison || "autre", precision || null],
-      (err, res) => {
-        if (err) { console.error("add-conge-moniteur:", err); resolve({ success: false, error: err.message }); }
-        else resolve({ success: true, id: res.insertId });
+      `SELECT id, dateDebut, dateFin FROM CongeMoniteur
+       WHERE moniteur_id = ?
+         AND statut = 'validee'
+         AND dateDebut <= ?
+         AND dateFin   >= ?
+       LIMIT 1`,
+      [moniteurId, dateFin, dateDebut],
+      (errCheck, rows) => {
+        if (errCheck) {
+          console.error("add-conge-moniteur (check):", errCheck);
+          return resolve({ success: false, error: errCheck.message });
+        }
+
+        if (rows.length > 0) {
+          // Conflit trouvé → on refuse l'insertion
+          const existing = rows[0];
+          return resolve({
+            success: false,
+            conflict: true,
+            existing: {
+              id:        existing.id,
+              dateDebut: existing.dateDebut,
+              dateFin:   existing.dateFin,
+            },
+          });
+        }
+
+        // ── 2. Pas de conflit → on insère ────────────────────────────────
+        db.query(
+          `INSERT INTO CongeMoniteur
+             (moniteur_id, dateDebut, dateFin, raison, \`precision\`, statut, demande_par, traite_at)
+           VALUES (?, ?, ?, ?, ?, 'validee', 'admin', NOW())`,
+          [moniteurId, dateDebut, dateFin, raison || "autre", precision || null],
+          (errInsert, res) => {
+            if (errInsert) {
+              console.error("add-conge-moniteur (insert):", errInsert);
+              return resolve({ success: false, error: errInsert.message });
+            }
+            resolve({ success: true, id: res.insertId });
+          }
+        );
       }
     );
   });

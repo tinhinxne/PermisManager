@@ -38,7 +38,6 @@ const isActive   = (d, f) => { const now = new Date(); return parseDate(d) <= no
 const isExpired  = (f)    => parseDate(f) < new Date();
 const isUpcoming = (d)    => parseDate(d) > new Date();
 
-// ── Vérifie si deux plages de dates se chevauchent ────────────────────────────
 const datesSeChevachent = (debut1, fin1, debut2, fin2) => {
   const d1 = new Date(debut1 + "T00:00:00");
   const f1 = new Date(fin1   + "T23:59:59");
@@ -47,7 +46,6 @@ const datesSeChevachent = (debut1, fin1, debut2, fin2) => {
   return d1 <= f2 && d2 <= f1;
 };
 
-// ── Trouve le congé validé qui chevauche une plage donnée ─────────────────────
 const trouverCongeEnConflit = (conges, newDebut, newFin) => {
   return conges.find(c => {
     if (c.statut !== "validee") return false;
@@ -62,7 +60,7 @@ const inp = {
   color: "#1e293b", background: "#f8fafc", outline: "none",
 };
 
-const isDatePasse  = (val) =>
+const isDatePasse = (val) =>
   !!(val && new Date(val + "T12:00:00") < new Date(new Date().toDateString()));
 
 const isDateFinInvalide = (debut, fin) =>
@@ -102,15 +100,16 @@ function TabCongeAnnuel() {
     else setError("Erreur lors de la sauvegarde.");
   };
 
-  const jours = actif && dateDebut && dateFin ? nbJours(dateDebut, dateFin) : 0;
+  const jours  = actif && dateDebut && dateFin ? nbJours(dateDebut, dateFin) : 0;
   const statut = actif && dateDebut && dateFin
-    ? isActive(dateDebut, dateFin) ? "en_cours"
-    : isExpired(dateFin) ? "expire"
+    ? isActive(dateDebut, dateFin)  ? "en_cours"
+    : isExpired(dateFin)            ? "expire"
     : "a_venir"
     : null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
       {/* Toggle actif */}
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -127,8 +126,12 @@ function TabCongeAnnuel() {
             <Building2 size={18} color={actif ? "#fff" : "#94a3b8"} />
           </div>
           <div>
-            <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#1e293b" }}>Congé annuel de l'auto-école</div>
-            <div style={{ fontSize: "0.72rem", color: "#64748b" }}>Aucune séance ne pourra être créée durant cette période</div>
+            <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#1e293b" }}>
+              Congé annuel de l'auto-école
+            </div>
+            <div style={{ fontSize: "0.72rem", color: "#64748b" }}>
+              Aucune séance ne pourra être créée durant cette période
+            </div>
           </div>
         </div>
         <div
@@ -157,7 +160,11 @@ function TabCongeAnnuel() {
             <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4 }}>
               Libellé du congé
             </label>
-            <input style={inp} type="text" value={label} onChange={e => setLabel(e.target.value)} placeholder="ex: Congé annuel été 2025" />
+            <input
+              style={inp} type="text" value={label}
+              onChange={e => setLabel(e.target.value)}
+              placeholder="ex: Congé annuel été 2025"
+            />
           </div>
 
           {/* Dates */}
@@ -167,8 +174,7 @@ function TabCongeAnnuel() {
                 Date de début <span style={{ color: "#ef4444" }}>*</span>
               </label>
               <input
-                style={inp}
-                type="date" value={dateDebut}
+                style={inp} type="date" value={dateDebut}
                 onChange={e => { setDateDebut(e.target.value); setError(""); }}
               />
             </div>
@@ -177,8 +183,7 @@ function TabCongeAnnuel() {
                 Date de fin <span style={{ color: "#ef4444" }}>*</span>
               </label>
               <input
-                style={inp}
-                type="date" value={dateFin}
+                style={inp} type="date" value={dateFin}
                 onChange={e => { setDateFin(e.target.value); setError(""); }}
               />
             </div>
@@ -203,7 +208,7 @@ function TabCongeAnnuel() {
               <span style={{
                 fontSize: "0.7rem", fontWeight: 700, padding: "3px 10px", borderRadius: 20,
                 background: statut === "en_cours" ? "#dcfce7" : statut === "expire" ? "#f1f5f9" : "#dce6f0",
-                color: statut === "en_cours" ? "#16a34a" : statut === "expire" ? "#94a3b8" : "#2b537e",
+                color:      statut === "en_cours" ? "#16a34a" : statut === "expire" ? "#94a3b8" : "#2b537e",
               }}>
                 {statut === "en_cours" ? "🟢 En cours" : statut === "expire" ? "⚫ Expiré" : "🟡 À venir"}
               </span>
@@ -219,12 +224,18 @@ function TabCongeAnnuel() {
         }}>
           <CalendarOff size={32} color="#cbd5e1" style={{ marginBottom: 8 }} />
           <div style={{ fontSize: "0.8rem", color: "#94a3b8" }}>Aucun congé annuel actif</div>
-          <div style={{ fontSize: "0.72rem", color: "#cbd5e1", marginTop: 4 }}>Activez le toggle pour définir une période de fermeture</div>
+          <div style={{ fontSize: "0.72rem", color: "#cbd5e1", marginTop: 4 }}>
+            Activez le toggle pour définir une période de fermeture
+          </div>
         </div>
       )}
 
       {error && (
-        <div style={{ padding: "8px 12px", borderRadius: 8, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontSize: "0.75rem", fontWeight: 600 }}>
+        <div style={{
+          padding: "8px 12px", borderRadius: 8,
+          background: "#fef2f2", border: "1px solid #fca5a5",
+          color: "#dc2626", fontSize: "0.75rem", fontWeight: 600,
+        }}>
           ⚠️ {error}
         </div>
       )}
@@ -236,7 +247,8 @@ function TabCongeAnnuel() {
           padding: "10px 0", borderRadius: 10, border: "none",
           background: saved ? "#22c55e" : saving ? "#94a3b8" : "#2b537e",
           color: "#fff", fontFamily: "'Poppins',sans-serif",
-          fontSize: "0.85rem", fontWeight: 700, cursor: saving ? "not-allowed" : "pointer",
+          fontSize: "0.85rem", fontWeight: 700,
+          cursor: saving ? "not-allowed" : "pointer",
           display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
           transition: "background 0.3s",
         }}
@@ -250,12 +262,13 @@ function TabCongeAnnuel() {
 // ── Onglet Congés Moniteurs ───────────────────────────────────────────────────
 function TabCongesMoniteurs() {
   const { congesMoniteurs, addCongeMoniteur, removeCongeMoniteur, refreshMoniteur } = useCongeCtx();
+
   const [moniteurs,   setMoniteurs]   = useState([]);
   const [selectedId,  setSelectedId]  = useState(null);
   const [showForm,    setShowForm]    = useState(false);
   const [form,        setForm]        = useState({ dateDebut: "", dateFin: "", raison: "maladie", precision: "" });
   const [error,       setError]       = useState("");
-  const [conflit,     setConflit]     = useState(null); // congé en conflit détecté
+  const [conflit,     setConflit]     = useState(null);
   const [loadingMons, setLoadingMons] = useState(true);
 
   useEffect(() => {
@@ -273,7 +286,7 @@ function TabCongesMoniteurs() {
   const conges      = selectedId ? (congesMoniteurs[selectedId] || []) : [];
   const selectedMon = moniteurs.find(m => String(m.id) === selectedId);
 
-  // ── Vérifie le chevauchement en temps réel quand les dates changent ──────
+  // Détection chevauchement en temps réel
   useEffect(() => {
     if (!form.dateDebut || !form.dateFin) { setConflit(null); return; }
     if (isDateFinInvalide(form.dateDebut, form.dateFin)) { setConflit(null); return; }
@@ -285,22 +298,38 @@ function TabCongesMoniteurs() {
     if (!form.dateDebut || !form.dateFin) { setError("Renseignez les deux dates."); return; }
     const today = new Date(new Date().toDateString());
     if (new Date(form.dateDebut + "T12:00:00") < today) { setError("La date de début ne peut pas être dans le passé."); return; }
-    if (new Date(form.dateFin   + "T12:00:00") < today) { setError("La date de fin ne peut pas être dans le passé."); return; }
-    if (new Date(form.dateFin) < new Date(form.dateDebut)) { setError("La fin doit être après le début."); return; }
-    if (form.raison === "autre" && !form.precision.trim()) { setError("Précisez la raison."); return; }
+    if (new Date(form.dateFin   + "T12:00:00") < today) { setError("La date de fin ne peut pas être dans le passé.");   return; }
+    if (new Date(form.dateFin) < new Date(form.dateDebut))  { setError("La fin doit être après le début."); return; }
+    if (form.raison === "autre" && !form.precision.trim())  { setError("Précisez la raison."); return; }
 
-    // ── Blocage chevauchement ─────────────────────────────────────────────
+    // Vérif frontend
     const congeEnConflit = trouverCongeEnConflit(conges, form.dateDebut, form.dateFin);
     if (congeEnConflit) {
       setError(
-        `Ce moniteur a déjà un congé du ${formatDate(congeEnConflit.dateDebut)} au ${formatDate(congeEnConflit.dateFin)}. ` +
-        `Impossible d'ajouter un congé qui chevauche cette période.`
+        `Ce moniteur a déjà un congé accordé du ${formatDate(congeEnConflit.dateDebut)} ` +
+        `au ${formatDate(congeEnConflit.dateFin)}.`
       );
       return;
     }
 
     setError("");
-    await addCongeMoniteur(Number(selectedId), { ...form, precision: form.precision.trim() });
+    const result = await addCongeMoniteur(Number(selectedId), { ...form, precision: form.precision.trim() });
+
+    if (!result?.success) {
+      if (result?.conflict) {
+        // Chevauchement détecté côté serveur (données frontend désynchronisées)
+        const ex = result.existing;
+        setError(
+          `⛔ Conflit détecté : ce moniteur a déjà un congé du ` +
+          `${formatDate(ex.dateDebut)} au ${formatDate(ex.dateFin)}.`
+        );
+        await refreshMoniteur(Number(selectedId));
+      } else {
+        setError("Erreur lors de l'enregistrement. Réessaie.");
+      }
+      return;
+    }
+
     setForm({ dateDebut: "", dateFin: "", raison: "maladie", precision: "" });
     setConflit(null);
     setShowForm(false);
@@ -311,17 +340,20 @@ function TabCongesMoniteurs() {
   };
 
   if (loadingMons) return (
-    <div style={{ textAlign: "center", padding: "30px 0", color: "#94a3b8", fontSize: "0.82rem" }}>Chargement…</div>
+    <div style={{ textAlign: "center", padding: "30px 0", color: "#94a3b8", fontSize: "0.82rem" }}>
+      Chargement…
+    </div>
   );
 
   if (moniteurs.length === 0) return (
-    <div style={{ textAlign: "center", padding: "30px 0", color: "#94a3b8", fontSize: "0.82rem" }}>Aucun moniteur trouvé.</div>
+    <div style={{ textAlign: "center", padding: "30px 0", color: "#94a3b8", fontSize: "0.82rem" }}>
+      Aucun moniteur trouvé.
+    </div>
   );
 
   const congeActif   = conges.find(c => c.statut === "validee" && isActive(c.dateDebut, c.dateFin));
   const congesAvenir = conges.filter(c => c.statut === "validee" && isUpcoming(c.dateDebut));
 
-  // ── Le bouton Enregistrer est bloqué si conflit ou dates invalides ────────
   const formBloque =
     isDatePasse(form.dateDebut) ||
     isDatePasse(form.dateFin)   ||
@@ -330,6 +362,7 @@ function TabCongesMoniteurs() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
       {/* Sélecteur moniteur */}
       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4 }}>
@@ -361,7 +394,8 @@ function TabCongesMoniteurs() {
             width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
             background: congeActif ? "linear-gradient(135deg,#2b537e,#3a6da0)" : "#e2e8f0",
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: "0.9rem", fontWeight: 700, color: congeActif ? "#fff" : "#64748b",
+            fontSize: "0.9rem", fontWeight: 700,
+            color: congeActif ? "#fff" : "#64748b",
           }}>
             {selectedMon.prenom?.[0]}{selectedMon.nom?.[0]}
           </div>
@@ -398,7 +432,7 @@ function TabCongesMoniteurs() {
             background: "#f8fafc", borderRadius: 10,
             border: "1px dashed #e2e8f0",
           }}>
-            <CalendarOff size={28} color="#cbd5e1" style={{ marginBottom: 6, display: "block", margin: "0 auto 8px" }} />
+            <CalendarOff size={28} color="#cbd5e1" style={{ display: "block", margin: "0 auto 8px" }} />
             Aucun congé pour ce moniteur
           </div>
         ) : (
@@ -436,7 +470,8 @@ function TabCongesMoniteurs() {
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
                     <span style={{ fontSize: "0.84rem", fontWeight: 700, color: "#1e293b" }}>{titre}</span>
                     <span style={{
-                      fontSize: "0.65rem", fontWeight: 700, padding: "2px 8px", borderRadius: 20, flexShrink: 0,
+                      fontSize: "0.65rem", fontWeight: 700, padding: "2px 8px",
+                      borderRadius: 20, flexShrink: 0,
                       background: badgeBg, color: badgeColor,
                     }}>
                       {badgeLabel}
@@ -483,13 +518,17 @@ function TabCongesMoniteurs() {
           {/* Raisons */}
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
             {RAISONS.map(r => (
-              <button key={r.value} onClick={() => setForm(f => ({ ...f, raison: r.value }))} style={{
-                padding: "4px 10px", borderRadius: 20, fontSize: "0.72rem", cursor: "pointer",
-                border: `1.5px solid ${form.raison === r.value ? r.color : "#e2e8f0"}`,
-                background: form.raison === r.value ? r.color + "18" : "white",
-                color: form.raison === r.value ? r.color : "#64748b",
-                fontWeight: form.raison === r.value ? 700 : 400,
-              }}>
+              <button
+                key={r.value}
+                onClick={() => setForm(f => ({ ...f, raison: r.value }))}
+                style={{
+                  padding: "4px 10px", borderRadius: 20, fontSize: "0.72rem", cursor: "pointer",
+                  border: `1.5px solid ${form.raison === r.value ? r.color : "#e2e8f0"}`,
+                  background: form.raison === r.value ? r.color + "18" : "white",
+                  color: form.raison === r.value ? r.color : "#64748b",
+                  fontWeight: form.raison === r.value ? 700 : 400,
+                }}
+              >
                 {r.label}
               </button>
             ))}
@@ -505,10 +544,13 @@ function TabCongesMoniteurs() {
             </div>
           )}
 
+          {/* Dates */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
             {[["dateDebut", "Date de début"], ["dateFin", "Date de fin"]].map(([key, lbl]) => (
               <div key={key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <label style={{ fontSize: "0.68rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>{lbl}</label>
+                <label style={{ fontSize: "0.68rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>
+                  {lbl}
+                </label>
                 <input
                   style={{
                     ...inp,
@@ -519,17 +561,17 @@ function TabCongesMoniteurs() {
                   onChange={e => { setForm(f => ({ ...f, [key]: e.target.value })); setError(""); }}
                 />
                 {key === "dateFin" && isDateFinInvalide(form.dateDebut, form.dateFin) && (
-                  <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:"0.72rem", color:"#dc2626", fontWeight:600, marginTop:3 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#dc2626", fontWeight: 600, marginTop: 3 }}>
                     <span>📅</span> Doit être après la date de début
                   </div>
                 )}
                 {key === "dateDebut" && isDatePasse(form.dateDebut) && (
-                  <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:"0.72rem", color:"#dc2626", fontWeight:600, marginTop:3 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#dc2626", fontWeight: 600, marginTop: 3 }}>
                     <span>📅</span> Date dans le passé
                   </div>
                 )}
                 {key === "dateFin" && isDatePasse(form.dateFin) && (
-                  <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:"0.72rem", color:"#dc2626", fontWeight:600, marginTop:3 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#dc2626", fontWeight: 600, marginTop: 3 }}>
                     <span>📅</span> Date dans le passé
                   </div>
                 )}
@@ -544,7 +586,7 @@ function TabCongesMoniteurs() {
             </div>
           )}
 
-          {/* ── Alerte chevauchement ── */}
+          {/* Alerte chevauchement */}
           {conflit && (
             <div style={{
               padding: "10px 12px", borderRadius: 8, marginBottom: 8,
@@ -568,16 +610,21 @@ function TabCongesMoniteurs() {
 
           {/* Erreur générique */}
           {error && !conflit && (
-            <div style={{ fontSize: "0.72rem", color: "#ef4444", marginBottom: 8, fontWeight: 600 }}>⚠️ {error}</div>
+            <div style={{ fontSize: "0.72rem", color: "#ef4444", marginBottom: 8, fontWeight: 600 }}>
+              ⚠️ {error}
+            </div>
           )}
 
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => { setShowForm(false); setError(""); setConflit(null); }} style={{
-              flex: 1, padding: "8px", borderRadius: 8,
-              border: "1px solid #e2e8f0", background: "white",
-              color: "#64748b", fontSize: "0.8rem", cursor: "pointer",
-              fontFamily: "'Poppins',sans-serif",
-            }}>
+            <button
+              onClick={() => { setShowForm(false); setError(""); setConflit(null); }}
+              style={{
+                flex: 1, padding: "8px", borderRadius: 8,
+                border: "1px solid #e2e8f0", background: "white",
+                color: "#64748b", fontSize: "0.8rem", cursor: "pointer",
+                fontFamily: "'Poppins',sans-serif",
+              }}
+            >
               Annuler
             </button>
             <button
@@ -586,8 +633,8 @@ function TabCongesMoniteurs() {
               style={{
                 flex: 2, padding: "8px", borderRadius: 8, border: "none",
                 background: formBloque ? "#94a3b8" : "#6366f1",
-                color: "white",
-                fontSize: "0.8rem", fontWeight: 700, cursor: formBloque ? "not-allowed" : "pointer",
+                color: "white", fontSize: "0.8rem", fontWeight: 700,
+                cursor: formBloque ? "not-allowed" : "pointer",
                 fontFamily: "'Poppins',sans-serif",
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                 transition: "background 0.2s",
@@ -598,14 +645,17 @@ function TabCongesMoniteurs() {
           </div>
         </div>
       ) : (
-        <button onClick={() => setShowForm(true)} style={{
-          padding: "9px", borderRadius: 8,
-          border: "1.5px dashed #c7d2fe", background: "#f0f0ff",
-          color: "#6366f1", fontWeight: 600, fontSize: "0.8rem",
-          cursor: "pointer", display: "flex", alignItems: "center",
-          justifyContent: "center", gap: 6,
-          fontFamily: "'Poppins',sans-serif",
-        }}>
+        <button
+          onClick={() => setShowForm(true)}
+          style={{
+            padding: "9px", borderRadius: 8,
+            border: "1.5px dashed #c7d2fe", background: "#f0f0ff",
+            color: "#6366f1", fontWeight: 600, fontSize: "0.8rem",
+            cursor: "pointer", display: "flex", alignItems: "center",
+            justifyContent: "center", gap: 6,
+            fontFamily: "'Poppins',sans-serif",
+          }}
+        >
           <Plus size={14} /> Ajouter un congé
         </button>
       )}
@@ -627,12 +677,13 @@ export default function ModalConges({ onClose }) {
   });
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 500,
-      background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "'Poppins',sans-serif",
-    }}
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 500,
+        background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontFamily: "'Poppins',sans-serif",
+      }}
       onClick={e => e.target === e.currentTarget && onClose()}
     >
       <div style={{
@@ -641,6 +692,7 @@ export default function ModalConges({ onClose }) {
         display: "flex", flexDirection: "column",
         boxShadow: "0 30px 80px rgba(0,0,0,0.2)", overflow: "hidden",
       }}>
+
         {/* Header */}
         <div style={{
           background: "linear-gradient(135deg,#2b537e,#3a6da0)",
@@ -660,12 +712,15 @@ export default function ModalConges({ onClose }) {
               <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.8)" }}>Congé annuel & congés personnels</div>
             </div>
           </div>
-          <button onClick={onClose} style={{
-            background: "rgba(255,255,255,0.2)", border: "none",
-            borderRadius: 8, width: 30, height: 30,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: "pointer",
-          }}>
+          <button
+            onClick={onClose}
+            style={{
+              background: "rgba(255,255,255,0.2)", border: "none",
+              borderRadius: 8, width: 30, height: 30,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer",
+            }}
+          >
             <X size={15} color="white" />
           </button>
         </div>
