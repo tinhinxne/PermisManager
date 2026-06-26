@@ -8,7 +8,7 @@ import {
   BookOpen, Check, X, Save, CalendarOff, Eye, EyeOff,
   Users, Calendar, CreditCard, ClipboardCheck, Umbrella,
   Eye as EyeIcon, UserPlus, Trash2, CalendarPlus,
-  Receipt, PenLine, CalendarX, Lock, LockOpen,
+  Receipt, PenLine, CalendarX, Lock, LockOpen, FileSpreadsheet,
 } from "lucide-react";
 import { useRulesCtx }       from "../context/RulesContext";
 import { usePermissionsCtx } from "../context/PermissionsContext";
@@ -73,15 +73,16 @@ const PERM_GROUPS = [
     ],
   },
   {
-    id: "examens",
-    Icon: ClipboardCheck,
-    label: "Examens",
-    desc: "Résultats des sessions d'examen",
-    color: "#854F0B", bg: "#FAEEDA", textColor: "#633806", border: "#EF9F27",
-    perms: [
-      { key: "CAN_TOGGLE_STATUS", Icon: PenLine, label: "Modifier le résultat d'un examen" },
-    ],
-  },
+  id: "examens",
+  Icon: ClipboardCheck,
+  label: "Examens",
+  desc: "Résultats des sessions d'examen",
+  color: "#854F0B", bg: "#FAEEDA", textColor: "#633806", border: "#EF9F27",
+  perms: [
+    { key: "CAN_TOGGLE_STATUS",          Icon: PenLine,   label: "Modifier le résultat d'un examen" },
+    { key: "CAN_EXPORT_LISTE_CANDIDATS", Icon: FileSpreadsheet, label: "Générer قائمة المترشحين (PDF)" },
+  ],
+},
   {
     id: "rh",
     Icon: Umbrella,

@@ -285,26 +285,32 @@ const MesCandidats = () => {
       ]);
 
       const moniteurId = currentUser?.id;
-      const mesSeances = CAN_VIEW_ALL_CANDIDATES
-        ? rawSeances
-        : moniteurId
-          ? rawSeances.filter((s) => s.moniteur_id === moniteurId)
-          : [];
 
-      const candidatIdSet = new Set();
+      // ── IMPORTANT : on calcule TOUJOURS les séances/candidats du moniteur,
+      // même si CAN_VIEW_ALL_CANDIDATES est actif, pour pouvoir distinguer
+      // "mes candidats" des "candidats des autres moniteurs" dans l'affichage.
+      const mesSeances = moniteurId
+        ? rawSeances.filter((s) => s.moniteur_id === moniteurId)
+        : [];
+
+      const mesCandidatIdSet = new Set();
       mesSeances.forEach((s) => {
         if (!s.candidatsIds) return;
         String(s.candidatsIds).split(",")
-          .forEach((id) => candidatIdSet.add(parseInt(id.trim())));
+          .forEach((id) => mesCandidatIdSet.add(parseInt(id.trim())));
       });
+
+      // Séances utilisées pour le calcul des sessions/prochaine séance :
+      // toutes si vue complète, sinon seulement les miennes.
+      const seancesPourCalcul = CAN_VIEW_ALL_CANDIDATES ? rawSeances : mesSeances;
 
       const todayMidnight = new Date();
       todayMidnight.setHours(0, 0, 0, 0);
 
       const formatted = rawCandidats
-        .filter((c) => CAN_VIEW_ALL_CANDIDATES || candidatIdSet.has(c.idCandidat))
+        .filter((c) => CAN_VIEW_ALL_CANDIDATES || mesCandidatIdSet.has(c.idCandidat))
         .map((c, index) => {
-          const seancesDuCandidat = mesSeances.filter((s) => {
+          const seancesDuCandidat = seancesPourCalcul.filter((s) => {
             if (!s.candidatsIds) return false;
             return String(s.candidatsIds).split(",")
               .map((id) => parseInt(id.trim()))
@@ -349,6 +355,7 @@ const MesCandidats = () => {
             total:           20,
             nextSession,
             status:          c.statut,
+            isMien:          mesCandidatIdSet.has(c.idCandidat),
             _raw:            c,
             ...AVATAR_COLORS[index % AVATAR_COLORS.length],
           };
@@ -470,6 +477,19 @@ const MesCandidats = () => {
               <TrendingUp size={24} color="green" />
             </div>
           </div>
+
+          {/* ── Stat bonus : nombre de "mes candidats" — visible seulement en mode vue complète ── */}
+          {CAN_VIEW_ALL_CANDIDATES && (
+            <div className="interactive-stat-card-small large-stat">
+              <div className="stat-data">
+                <p className="stat-label-small">Mes Candidats</p>
+                <h3 className="stat-number-small">{candidats.filter((c) => c.isMien).length}</h3>
+              </div>
+              <div className="stat-icon-circle-small large-icon" style={{ backgroundColor: "rgba(22,163,74,0.15)" }}>
+                <Users size={24} color="#16a34a" />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* SECTION CANDIDATS */}
@@ -548,7 +568,13 @@ const MesCandidats = () => {
               {filtered.map((c) => {
                 const pct = Math.min(Math.round((c.sessions / c.total) * 100), 100);
                 return (
-                  <div key={c.id} style={candidateCard}>
+                  <div
+                    key={c.id}
+                    style={{
+                      ...candidateCard,
+                      ...(CAN_VIEW_ALL_CANDIDATES && c.isMien ? candidateCardMien : {}),
+                    }}
+                  >
 
                     {/* Avatar + nom */}
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
@@ -560,20 +586,42 @@ const MesCandidats = () => {
                       }}>
                         {getInitials(c.nom)}
                       </div>
-                      <div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>{c.nom}</div>
                         <div style={{ fontSize: 12, color: "#64748B" }}>{c.tel}</div>
                       </div>
                     </div>
 
-                    {/* Badge catégorie */}
-                    <span style={{
-                      fontSize: "11px", background: "#e0f2fe", color: "#0369a1",
-                      padding: "2px 8px", borderRadius: "4px", fontWeight: "bold",
-                      display: "inline-block", marginBottom: 10,
-                    }}>
-                      Catégorie {c.categoriePermis}
-                    </span>
+                    {/* Badge catégorie + badge "mien / autre moniteur" (uniquement en vue complète) */}
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                      <span style={{
+                        fontSize: "11px", background: "#e0f2fe", color: "#0369a1",
+                        padding: "2px 8px", borderRadius: "4px", fontWeight: "bold",
+                        display: "inline-block",
+                      }}>
+                        Catégorie {c.categoriePermis}
+                      </span>
+
+                      {CAN_VIEW_ALL_CANDIDATES && (
+                        c.isMien ? (
+                          <span style={{
+                            fontSize: 10.5, background: "#dcfce7", color: "#166534",
+                            padding: "2px 8px", borderRadius: 10, fontWeight: 600,
+                            display: "inline-flex", alignItems: "center",
+                          }}>
+                            Mon candidat
+                          </span>
+                        ) : (
+                          <span style={{
+                            fontSize: 10.5, background: "#f1f5f9", color: "#64748b",
+                            padding: "2px 8px", borderRadius: 10, fontWeight: 500,
+                            display: "inline-flex", alignItems: "center",
+                          }}>
+                            Autre moniteur
+                          </span>
+                        )
+                      )}
+                    </div>
 
                     {/* Progress */}
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
@@ -649,6 +697,11 @@ const candidateCard = {
   border: "1px solid #e2eaf6",
   borderRadius: 10,
   padding: "1rem 1.25rem",
+};
+
+const candidateCardMien = {
+  border: "1px solid #86efac",
+  boxShadow: "0 0 0 1px rgba(22,163,74,0.12)",
 };
 
 export default MesCandidats;

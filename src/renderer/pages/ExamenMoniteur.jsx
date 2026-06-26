@@ -4,6 +4,7 @@ import {
   FaCalendarDay, FaCheckCircle, FaTimesCircle,
   FaClock, FaTrashAlt, FaExchangeAlt, FaUser,
   FaSync, FaInfoCircle, FaCalendarPlus, FaFilePdf, FaTimes,
+  FaLock,
 } from "react-icons/fa";
 
 import SelectFilter from "../components/SelectFilter";
@@ -14,7 +15,7 @@ import "../../styles/Examens.css";
 
 import { useExamenCtx } from "../context/ExamenContext";
 import { useExamenRulesCtx } from "../context/ExamenRulesContext";
-import { usePermissionsCtx } from "../context/PermissionsContext";
+import { useMyPermissions } from "../context/PermissionsContext";
 import { useAuth } from "../context/AuthContext";
 
 // ─────────────────────────────────────────────
@@ -107,10 +108,9 @@ const ExamensMoniteur = () => {
   } = useExamenCtx();
   const { examRules } = useExamenRulesCtx();
   const { currentUser } = useAuth();
-  const { getPermissions } = usePermissionsCtx();
 
-  // Permissions dynamiques du moniteur
-  const perms = getPermissions(currentUser?.id) || { CAN_REMOVE_CANDIDAT: false, CAN_TOGGLE_STATUS: false };
+  // Permissions dynamiques du moniteur connecté (lit son id automatiquement)
+  const { CAN_VIEW_ALL_CANDIDATES, CAN_REMOVE_CANDIDAT, CAN_TOGGLE_STATUS, CAN_EXPORT_LISTE_CANDIDATS } = useMyPermissions();
 
   // ── state ──
   const [selectedExamen, setSelectedExamen] = useState(null);
@@ -152,11 +152,33 @@ const ExamensMoniteur = () => {
       ]);
 
       // Filtrer les candidats affectés à ce moniteur spécifique
+      // (toujours calculé, même si CAN_VIEW_ALL_CANDIDATES est actif —
+      // utile si la permission est retirée plus tard sans recharger la page)
       if (currentUser?.id) {
-        const ids = seances
-          .filter(s => String(s.moniteurId) === String(currentUser.id))
-          .map(s => String(s.candidatId));
-        setMesCandidatIds([...new Set(ids)]);
+        const mesSeances = seances.filter(
+          s => String(s.moniteur_id ?? s.moniteurId) === String(currentUser.id)
+        );
+
+        const ids = new Set();
+        mesSeances.forEach(s => {
+          const rawIds = s.candidatsIds ?? s.candidats_ids ?? s.candidatId ?? s.candidat_id ?? null;
+          if (rawIds == null) return;
+
+          const str = String(rawIds).trim();
+          let parsed = [];
+          if (str.startsWith("[")) {
+            try {
+              parsed = JSON.parse(str).map(x => String(x).trim()).filter(Boolean);
+            } catch {
+              parsed = str.replace(/[\[\]]/g, "").split(",").map(x => x.trim()).filter(Boolean);
+            }
+          } else {
+            parsed = str.split(",").map(x => x.trim()).filter(Boolean);
+          }
+          parsed.forEach(id => ids.add(id));
+        });
+
+        setMesCandidatIds([...ids]);
       }
 
       const map = {};
@@ -179,12 +201,12 @@ const ExamensMoniteur = () => {
     setLoading(false);
   };
 
-  useEffect(() => { handleGenerate(); }, [currentUser?.id]);
+  useEffect(() => { handleGenerate(); }, [currentUser?.id, CAN_VIEW_ALL_CANDIDATES]);
 
   // ── actions sécurisées par permissions ──
   const handleRemove = (id, e) => {
     e.stopPropagation();
-    if (!perms.CAN_REMOVE_CANDIDAT) return;
+    if (!CAN_REMOVE_CANDIDAT) return;
     if (window.confirm("Retirer ce candidat ? Il sera re-suggéré automatiquement à la prochaine date d'examen selon les règles configurées.")) {
       retirerCandidat(id);
     }
@@ -192,7 +214,7 @@ const ExamensMoniteur = () => {
 
   const handleToggle = (id, e) => {
     e.stopPropagation();
-    if (!perms.CAN_TOGGLE_STATUS) return;
+    if (!CAN_TOGGLE_STATUS) return;
 
     const examen = examensList.find((x) => x.id === id);
     if (!examen) return;
@@ -213,17 +235,19 @@ const ExamensMoniteur = () => {
     toggleExamenStatus(id);
   };
 
-  // ── filtrage strict (Par Moniteur + Filtres de l'UI) ──
+  // ── filtrage : Par Moniteur (sauf si permission "voir tout") + Filtres de l'UI ──
   const filtered = examensList.filter(e => {
-    const appartientAuMoniteur = mesCandidatIds.includes(String(e.candidatId));
+    const appartientAuMoniteur = CAN_VIEW_ALL_CANDIDATES
+      ? true
+      : mesCandidatIds.includes(String(e.candidatId));
     const matchStatus = statusFilter === "Tous" || e.status === statusFilter;
     const matchType   = typeFilter   === "Tous" || e.type   === typeFilter;
     return appartientAuMoniteur && matchStatus && matchType;
   });
 
-  // Filtrer également la liste des candidats reportés propres à ce moniteur
-  const reportesEntries = Object.entries(candidatsReportes).filter(([cid]) => 
-    mesCandidatIds.includes(String(cid))
+  // Filtrer également la liste des candidats reportés (tous si permission, sinon les siens)
+  const reportesEntries = Object.entries(candidatsReportes).filter(([cid]) =>
+    CAN_VIEW_ALL_CANDIDATES ? true : mesCandidatIds.includes(String(cid))
   );
 
   const getCandidatName = (id) => {
@@ -235,7 +259,7 @@ const ExamensMoniteur = () => {
 
   // ── stats calculées dynamiquement sur le périmètre du moniteur ──
   const statsData = [
-    { label: "Mes candidats", val: filtered.length,                                             color: "blue",   icon: <FaUser />,        trend: "Session"        },
+    { label: CAN_VIEW_ALL_CANDIDATES ? "Total candidats" : "Mes candidats", val: filtered.length,                                             color: "blue",   icon: <FaUser />,        trend: "Session"        },
     { label: "Réussites",     val: filtered.filter(e => e.status === "Passed").length,    color: "green",  icon: <FaCheckCircle />, trend: "Validés"        },
     { label: "Échecs",        val: filtered.filter(e => e.status === "Failed").length,    color: "red",    icon: <FaTimesCircle />, trend: "À reprogrammer" },
     { label: "En attente",    val: filtered.filter(e => e.status === "Scheduled").length, color: "orange", icon: <FaClock />,       trend: "À évaluer"      },
@@ -244,8 +268,9 @@ const ExamensMoniteur = () => {
   const th = { padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "13px" };
   const td = { padding: "12px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "13px", color: "#1F2937" };
 
-  // ── export PDF ──
+  // ── export PDF (protégé par permission) ──
   const openExportModal = () => {
+    if (!CAN_EXPORT_LISTE_CANDIDATS) return;
     if (filtered.length === 0) {
       alert("Aucun candidat dans votre liste actuelle à exporter. Ajustez vos filtres.");
       return;
@@ -321,15 +346,36 @@ const ExamensMoniteur = () => {
       <div className="header">
         <img src={ConnexionImg} alt="illustration" className="header-img" />
         <h1><img src={SmallCar} alt="" width={40} /> Espace Moniteur</h1>
-        <p>Suivi et gestion de mes candidats aux examens</p>
+        <p>
+          {CAN_VIEW_ALL_CANDIDATES
+            ? "Suivi et gestion de tous les candidats aux examens"
+            : "Suivi et gestion de mes candidats aux examens"}
+        </p>
       </div>
 
       <div className="examens-content">
 
+        {/* ── Badge mode d'accès ── */}
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 8,
+          background: CAN_VIEW_ALL_CANDIDATES ? "rgba(22,101,52,0.08)" : "rgba(148,163,184,0.12)",
+          border: `1px solid ${CAN_VIEW_ALL_CANDIDATES ? "rgba(22,101,52,0.25)" : "#e2e8f0"}`,
+          borderRadius: 10, padding: "6px 14px",
+          fontSize: "0.75rem",
+          color: CAN_VIEW_ALL_CANDIDATES ? "#166534" : "#64748b",
+          fontWeight: 600, marginBottom: 14,
+        }}>
+          {CAN_VIEW_ALL_CANDIDATES
+            ? "👥 Accès complet — vous voyez tous les candidats aux examens"
+            : "🔒 Vue restreinte — vos candidats uniquement"}
+        </div>
+
         {/* ── Header + Bouton Export ── */}
         <div className="examens-page-header">
           <div>
-            <h2 className="examens-page-title">Mes Sessions d'examens</h2>
+            <h2 className="examens-page-title">
+              {CAN_VIEW_ALL_CANDIDATES ? "Sessions d'examens" : "Mes Sessions d'examens"}
+            </h2>
             <p className="examens-page-sub">
               Seuils : Code ≥{EXAM_THRESHOLDS.Code} · Créneau ≥{EXAM_THRESHOLDS.Créneau} · Circulation ≥{EXAM_THRESHOLDS.Circulation}
               {lastGenerated && (
@@ -342,9 +388,18 @@ const ExamensMoniteur = () => {
           <div style={{ display: "flex", gap: 10 }}>
             <button
               onClick={openExportModal}
-              style={{ display: "flex", alignItems: "center", gap: 8, background: "#2b537e", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600 }}
+              disabled={!CAN_EXPORT_LISTE_CANDIDATS}
+              title={CAN_EXPORT_LISTE_CANDIDATS ? "" : "Permission requise — contactez l'admin"}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                background: CAN_EXPORT_LISTE_CANDIDATS ? "#2b537e" : "#cbd5e1",
+                color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10,
+                cursor: CAN_EXPORT_LISTE_CANDIDATS ? "pointer" : "not-allowed",
+                fontSize: 14, fontWeight: 600,
+                opacity: CAN_EXPORT_LISTE_CANDIDATS ? 1 : 0.7,
+              }}
             >
-              <FaFilePdf /> قائمة المترشحين
+              {CAN_EXPORT_LISTE_CANDIDATS ? <FaFilePdf /> : <FaLock size={12} />} قائمة المترشحين
             </button>
           </div>
         </div>
@@ -399,7 +454,7 @@ const ExamensMoniteur = () => {
                   <th style={th}>Lieu</th>
                   <th style={th}>Séances</th>
                   <th style={th}>Résultat</th>
-                  {perms.CAN_REMOVE_CANDIDAT && <th style={th}>Actions</th>}
+                  {CAN_REMOVE_CANDIDAT && <th style={th}>Actions</th>}
                 </tr>
               </thead>
               <tbody>
@@ -415,8 +470,19 @@ const ExamensMoniteur = () => {
                       >
                         <td style={{ ...td, fontWeight: 600 }}>
                           {examen.candidat}
+                          {CAN_VIEW_ALL_CANDIDATES && (
+                            mesCandidatIds.includes(String(examen.candidatId)) ? (
+                              <span style={{ marginLeft: 8, fontSize: 10, background: "#dcfce7", color: "#166534", padding: "2px 6px", borderRadius: 10, fontWeight: 600 }}>
+                                Mon candidat
+                              </span>
+                            ) : (
+                              <span style={{ marginLeft: 8, fontSize: 10, background: "#f1f5f9", color: "#64748b", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>
+                                Autre moniteur
+                              </span>
+                            )
+                          )}
                           {examen.autoGenerated && (
-                            <span style={{ marginLeft: 8, fontSize: 10, background: "#e0f2fe", color: "#0369a1", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>auto</span>
+                            <span style={{ marginLeft: 4, fontSize: 10, background: "#e0f2fe", color: "#0369a1", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>auto</span>
                           )}
                           {examen.suggested && (
                             <span style={{ marginLeft: 4, fontSize: 10, background: "#fef3c7", color: "#92400e", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>re-suggéré</span>
@@ -437,14 +503,14 @@ const ExamensMoniteur = () => {
                         </td>
                         <td style={td}>
                           <div
-                            style={{ background: st.bg, color: st.color, display: "inline-flex", alignItems: "center", padding: "4px 10px", borderRadius: 20, fontWeight: 600, fontSize: 13, cursor: perms.CAN_TOGGLE_STATUS ? "pointer" : "default" }}
+                            style={{ background: st.bg, color: st.color, display: "inline-flex", alignItems: "center", padding: "4px 10px", borderRadius: 20, fontWeight: 600, fontSize: 13, cursor: CAN_TOGGLE_STATUS ? "pointer" : "default" }}
                             onClick={e => handleToggle(examen.id, e)}
                           >
-                            {perms.CAN_TOGGLE_STATUS && <FaExchangeAlt style={{ marginRight: 8, fontSize: 10 }} />}
+                            {CAN_TOGGLE_STATUS && <FaExchangeAlt style={{ marginRight: 8, fontSize: 10 }} />}
                             {st.label}
                           </div>
                         </td>
-                        {perms.CAN_REMOVE_CANDIDAT && (
+                        {CAN_REMOVE_CANDIDAT && (
                           <td style={td}>
                             <button
                               onClick={e => handleRemove(examen.id, e)}
@@ -459,7 +525,7 @@ const ExamensMoniteur = () => {
                     );
                   }) : (
                     <tr>
-                      <td colSpan={perms.CAN_REMOVE_CANDIDAT ? 7 : 6} style={{ textAlign: "center", padding: 40, color: "#A0AEC0" }}>
+                      <td colSpan={CAN_REMOVE_CANDIDAT ? 7 : 6} style={{ textAlign: "center", padding: 40, color: "#A0AEC0" }}>
                         Aucun examen trouvé pour vos candidats.
                       </td>
                     </tr>
@@ -532,7 +598,7 @@ const ExamensMoniteur = () => {
 
       {/* Modales Annexes */}
       <ExamenModal examen={selectedExamen} onClose={() => setSelectedExamen(null)} />
-      
+
       {alertInfo && (
         <AlertModal
           icon={alertInfo.icon}
@@ -544,7 +610,7 @@ const ExamensMoniteur = () => {
       )}
 
       {/* Modale d'exportation PDF */}
-      {showExportModal && (
+      {showExportModal && CAN_EXPORT_LISTE_CANDIDATS && (
         <div
           style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
           onClick={() => !pdfLoading && setShowExportModal(false)}
