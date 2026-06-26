@@ -77,7 +77,12 @@ function TabCongeAnnuel() {
   const [saving,    setSaving]    = useState(false);
   const [saved,     setSaved]     = useState(false);
   const [error,     setError]     = useState("");
-
+const dateBloquee =
+  actif && (
+    isDatePasse(dateDebut) ||
+    isDatePasse(dateFin)   ||
+    isDateFinInvalide(dateDebut, dateFin)
+  );
   useEffect(() => {
     if (congeAnnuel) {
       setActif(congeAnnuel.actif ?? false);
@@ -90,7 +95,7 @@ function TabCongeAnnuel() {
   const handleSave = async () => {
     if (actif) {
       if (!dateDebut || !dateFin) { setError("Renseignez les deux dates."); return; }
-      if (new Date(dateFin) < new Date(dateDebut)) { setError("La date de fin doit être après le début."); return; }
+if (isDateFinInvalide(dateDebut, dateFin)) { setError("La date de fin doit être après le début."); return; }
     }
     setError("");
     setSaving(true);
@@ -167,7 +172,7 @@ function TabCongeAnnuel() {
             />
           </div>
 
-          {/* Dates */}
+          {/* Dates
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4 }}>
@@ -186,6 +191,54 @@ function TabCongeAnnuel() {
                 style={inp} type="date" value={dateFin}
                 onChange={e => { setDateFin(e.target.value); setError(""); }}
               />
+            </div>
+          </div> */}
+
+
+          {/* Dates */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                Date de début <span style={{ color: "#ef4444" }}>*</span>
+              </label>
+              <input
+                style={{
+                  ...inp,
+                  borderColor: isDatePasse(dateDebut) ? "#fca5a5" : "#e2e8f0",
+                  background:  isDatePasse(dateDebut) ? "#fef2f2" : "#f8fafc",
+                }}
+                type="date" value={dateDebut}
+                onChange={e => { setDateDebut(e.target.value); setError(""); }}
+              />
+              {isDatePasse(dateDebut) && (
+                <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#dc2626", fontWeight: 600, marginTop: 3 }}>
+                  <span>📅</span> Date dans le passé
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                Date de fin <span style={{ color: "#ef4444" }}>*</span>
+              </label>
+              <input
+                style={{
+                  ...inp,
+                  borderColor: isDatePasse(dateFin) || isDateFinInvalide(dateDebut, dateFin) ? "#fca5a5" : "#e2e8f0",
+                  background:  isDatePasse(dateFin) || isDateFinInvalide(dateDebut, dateFin) ? "#fef2f2" : "#f8fafc",
+                }}
+                type="date" value={dateFin}
+                onChange={e => { setDateFin(e.target.value); setError(""); }}
+              />
+              {isDatePasse(dateFin) && (
+                <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#dc2626", fontWeight: 600, marginTop: 3 }}>
+                  <span>📅</span> Date dans le passé
+                </div>
+              )}
+              {isDateFinInvalide(dateDebut, dateFin) && (
+                <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#dc2626", fontWeight: 600, marginTop: 3 }}>
+                  <span>📅</span> Doit être après la date de début
+                </div>
+              )}
             </div>
           </div>
 
@@ -240,12 +293,16 @@ function TabCongeAnnuel() {
         </div>
       )}
 
-      <button
+      {/* <button
         onClick={handleSave}
-        disabled={saving}
+        disabled={saving} */}
+        <button
+  onClick={handleSave}
+  disabled={saving || dateBloquee}
         style={{
           padding: "10px 0", borderRadius: 10, border: "none",
-          background: saved ? "#22c55e" : saving ? "#94a3b8" : "#2b537e",
+          // background: saved ? "#22c55e" : saving ? "#94a3b8" : "#2b537e",
+          background: saved ? "#22c55e" : (saving || dateBloquee) ? "#94a3b8" : "#2b537e",
           color: "#fff", fontFamily: "'Poppins',sans-serif",
           fontSize: "0.85rem", fontWeight: 700,
           cursor: saving ? "not-allowed" : "pointer",
