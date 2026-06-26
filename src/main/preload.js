@@ -86,3 +86,6 @@ testChargilyConfig: (data) => ipcRenderer.invoke("test-chargily-config", data),
   getCandidatsDebiteurs:  ()     => ipcRenderer.invoke('get-candidats-debiteurs'),
   getCreditSeancesSup: (candidatId) => ipcRenderer.invoke('get-credit-seances-sup', candidatId),
 });
+
+// EXAMENS 
+getExamensCandidat: (candidatId) => ipcRenderer.invoke("get-examens-candidat", candidatId)

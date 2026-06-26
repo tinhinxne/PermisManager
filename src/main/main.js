@@ -1594,6 +1594,7 @@ ipcMain.handle("remove-conge-moniteur", async (event, congeId) => {
   });
 });
 
+
 // Moniteur annule SA propre demande (seulement si encore en_attente)
 // args séparés (event, congeId, moniteurId)
 ipcMain.handle("annuler-ma-demande-conge", async (event, congeId, moniteurId) => {
@@ -1847,4 +1848,55 @@ if (data.wallets || data.entity === "balance") return { success: true };    retu
   } catch (err) {
     return { success: false, message: err.message };
   }
+});
+
+ipcMain.handle("get-examens-candidat", async (event, candidatId) => {
+  return new Promise((resolve) => {
+    db.query(
+      `SELECT 
+         ie.idInscription AS id,
+         ie.idCandidat    AS candidatId,
+         e.typeExamen     AS type,
+         ie.resultat      AS resultat,
+         ie.statut        AS statut,
+         e.date           AS date
+       FROM InscriptionExamen ie
+       JOIN Examen e ON ie.idExamen = e.idExamen
+       WHERE ie.idCandidat = ?
+       ORDER BY e.date ASC`,
+      [candidatId],
+      (err, rows) => {
+        if (err) { console.error("get-examens-candidat:", err); return resolve([]); }
+
+        // Normalise vers le format attendu par ExamenContext
+        // type: "Code" | "Créneau" | "Circulation"
+        // status: "Passed" | "Failed" | "Scheduled"
+        const TYPE_MAP = {
+          CODE:        "Code",
+          CRENEAU:     "Créneau",
+          CIRCULATION: "Circulation",
+        };
+        const STATUS_MAP = {
+          reussi:     "Passed",
+          echoue:     "Failed",
+          admis:      "Passed",
+          refuse:     "Failed",
+          en_attente: "Scheduled",
+          planifie:   "Scheduled",
+        };
+
+        const result = rows.map(r => ({
+          id:          String(r.id),
+          candidatId:  String(r.candidatId),
+          type:        TYPE_MAP[r.type?.toUpperCase()] || r.type,
+          status:      STATUS_MAP[r.resultat?.toLowerCase()] 
+                         || STATUS_MAP[r.statut?.toLowerCase()] 
+                         || "Scheduled",
+          date:        r.date ? new Date(r.date).toISOString().split("T")[0] : null,
+        }));
+
+        resolve(result);
+      }
+    );
+  });
 });
