@@ -744,12 +744,12 @@ const Condidats = () => {
           prenom:          c.prenom,
           tel:             c.telephone,
           categoriePermis: currentCat, 
-          inscription: c.date_inscription
-            ? new Date(c.date_inscription).toISOString().split("T")[0]
-            : "",
-          dob: c.date_naissance
-            ? new Date(c.date_naissance).toISOString().split("T")[0]
-            : "",
+         inscription: c.date_inscription
+  ? new Date(c.date_inscription).toLocaleDateString("en-CA")
+  : "",
+dob: c.date_naissance
+  ? new Date(c.date_naissance).toLocaleDateString("en-CA")
+  : "",
           sessions: nbSessions,
           status:   c.statut, 
           sexe:     c.sexe,

@@ -30,8 +30,19 @@ const nbJours = (d1, d2) => {
   return Math.max(0, Math.round((new Date(d2) - new Date(d1)) / 86400000) + 1);
 };
 
-const isActive  = (d, f) => { const now = new Date(); return new Date(d) <= now && now <= new Date(f + "T23:59:59"); };
-const isExpired = (f)    => new Date(f + "T23:59:59") < new Date();
+// const isActive  = (d, f) => { const now = new Date(); return new Date(d) <= now && now <= new Date(f + "T23:59:59"); };
+// const isExpired = (f)    => new Date(f + "T23:59:59") < new Date();
+
+const isDatePasse = (val) =>
+  !!(val && new Date(val + "T12:00:00") < new Date(new Date().toDateString()));
+
+const isDateFinInvalide = (debut, fin) =>
+  !!(debut && fin && new Date(fin + "T12:00:00") < new Date(debut + "T12:00:00"));
+
+const isActive   = (d, f) => { const now = new Date(); return new Date(d + "T00:00:00") <= now && now <= new Date(f + "T23:59:59"); };
+const isExpired  = (f)    => new Date(f + "T23:59:59") < new Date();
+const isUpcoming = (d)    => new Date(d + "T00:00:00") > new Date();
+
 
 // ── Vérifie si deux plages se chevauchent ─────────────────────────────────────
 const datesSeChevachent = (debut1, fin1, debut2, fin2) => {
@@ -84,9 +95,7 @@ const StatutBadge = ({ conge }) => {
       </span>
     );
   }
-  const actif  = isActive(conge.dateDebut, conge.dateFin);
-  const expire = isExpired(conge.dateFin);
-  if (actif) {
+  if (isActive(conge.dateDebut, conge.dateFin)) {
     return (
       <span style={{
         display: "inline-flex", alignItems: "center", gap: 4,
@@ -98,27 +107,30 @@ const StatutBadge = ({ conge }) => {
       </span>
     );
   }
-  if (expire) {
+  if (isExpired(conge.dateFin)) {
     return (
       <span style={{
         fontSize: "0.68rem", fontWeight: 700, padding: "3px 9px",
         borderRadius: 20, background: "#f1f5f9", color: "#94a3b8",
         whiteSpace: "nowrap",
       }}>
-        Terminé
+        ⚫ Expiré
       </span>
     );
   }
-  return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      fontSize: "0.68rem", fontWeight: 700, padding: "3px 9px",
-      borderRadius: 20, background: "#fff7ed", color: "#ea580c",
-      whiteSpace: "nowrap",
-    }}>
-      <CheckCircle2 size={11} /> Validé · à venir
-    </span>
-  );
+  if (isUpcoming(conge.dateDebut)) {
+    return (
+      <span style={{
+        display: "inline-flex", alignItems: "center", gap: 4,
+        fontSize: "0.68rem", fontWeight: 700, padding: "3px 9px",
+        borderRadius: 20, background: "#fff7ed", color: "#ea580c",
+        whiteSpace: "nowrap",
+      }}>
+        🟡 À venir
+      </span>
+    );
+  }
+  return null;
 };
 
 /* ── Carte congé individuelle ──────────────────────────────────────────── */
@@ -299,7 +311,11 @@ console.log("conflit:", congeEnConflit)
   const isLoading = loading || localLoading;
 
   // Le bouton Envoyer est bloqué si conflit détecté
-  const formBloque = !!conflit;
+ const formBloque =
+    isDatePasse(form.dateDebut)  ||
+    isDatePasse(form.dateFin)    ||
+    isDateFinInvalide(form.dateDebut, form.dateFin) ||
+    !!conflit;
 
   return (
     <div style={{ padding: "28px 32px", fontFamily: "'Poppins', sans-serif" }}>
@@ -441,7 +457,7 @@ console.log("conflit:", congeEnConflit)
           )}
 
           {/* Dates */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+          {/* <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
             {[["dateDebut", "Date de début"], ["dateFin", "Date de fin"]].map(([key, lbl]) => (
               <div key={key}>
                 <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4, display: "block", marginBottom: 5 }}>
@@ -451,6 +467,41 @@ console.log("conflit:", congeEnConflit)
                   style={inp} type="date" value={form[key]}
                   onChange={e => { setForm(f => ({ ...f, [key]: e.target.value })); setError(""); }}
                 />
+              </div>
+            ))}
+          </div> */}
+
+          {/* Dates */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+            {[["dateDebut", "Date de début"], ["dateFin", "Date de fin"]].map(([key, lbl]) => (
+              <div key={key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                  {lbl}
+                </label>
+                <input
+                  style={{
+                    ...inp,
+                    borderColor: isDatePasse(form[key]) ? "#fca5a5" : "#e2e8f0",
+                    background:  isDatePasse(form[key]) ? "#fef2f2" : "#f8fafc",
+                  }}
+                  type="date" value={form[key]}
+                  onChange={e => { setForm(f => ({ ...f, [key]: e.target.value })); setError(""); }}
+                />
+                {key === "dateDebut" && isDatePasse(form.dateDebut) && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#dc2626", fontWeight: 600, marginTop: 3 }}>
+                    <span>📅</span> Date dans le passé
+                  </div>
+                )}
+                {key === "dateFin" && isDatePasse(form.dateFin) && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#dc2626", fontWeight: 600, marginTop: 3 }}>
+                    <span>📅</span> Date dans le passé
+                  </div>
+                )}
+                {key === "dateFin" && isDateFinInvalide(form.dateDebut, form.dateFin) && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#dc2626", fontWeight: 600, marginTop: 3 }}>
+                    <span>📅</span> Doit être après la date de début
+                  </div>
+                )}
               </div>
             ))}
           </div>
