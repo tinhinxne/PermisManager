@@ -57,6 +57,90 @@ function formatDateAr(isoDate) {
   const j = String(d.getDate()).padStart(2, "0");
   return `${y}/${m}/${j}`;
 }
+function ResultModal({ examen, onClose, onConfirm }) {
+  const [correctMode, setCorrectMode] = useState(false);
+  if (!examen) return null;
+
+  const dejaEvalue = examen.status === "Passed" || examen.status === "Failed";
+  const st = STATUS_CONFIG[examen.status];
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 2000, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{ background: "#fff", borderRadius: 16, width: 380, maxWidth: "90vw", padding: 24, boxShadow: "0 30px 70px rgba(0,0,0,0.22)" }}>
+        <h3 style={{ margin: 0, marginBottom: 4, fontSize: 16, color: "#1e293b" }}>{examen.candidat}</h3>
+        <p style={{ margin: 0, marginBottom: 18, fontSize: 12.5, color: "#64748b" }}>
+          {examen.type} · {examen.date}
+        </p>
+
+        {dejaEvalue && !correctMode ? (
+          <>
+            <div style={{ background: st.bg, color: st.color, padding: "10px 14px", borderRadius: 10, fontWeight: 700, fontSize: 14, marginBottom: 14, textAlign: "center" }}>
+              Résultat enregistré : {st.label}
+            </div>
+            <p style={{ fontSize: 12, color: "#94a3b8", marginBottom: 14 }}>
+              Pour éviter les erreurs, ce résultat n'est pas modifiable en un clic. Si tu t'es trompé(e), tu peux le corriger ci-dessous.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={onClose} style={btnSecondary}>Fermer</button>
+              <button onClick={() => setCorrectMode(true)} style={btnWarning}>Corriger</button>
+            </div>
+          </>
+        ) : (
+          <>
+            {dejaEvalue && (
+              <p style={{ fontSize: 12, color: "#dc2626", marginBottom: 10, fontWeight: 600 }}>
+                ⚠️ Tu vas changer un résultat déjà enregistré ({st.label}).
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+              <button onClick={() => onConfirm(examen.id, "Passed")} style={btnGreen}>✅ Réussi</button>
+              <button onClick={() => onConfirm(examen.id, "Failed")} style={btnRed}>❌ Échoué</button>
+            </div>
+            <button onClick={onClose} style={{ ...btnSecondary, width: "100%" }}>Annuler</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PermisObtenuModal({ candidatName, onClose }) {
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 2100, background: "rgba(15,23,42,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{ background: "#fff", borderRadius: 20, width: 420, maxWidth: "92vw", boxShadow: "0 30px 80px rgba(0,0,0,0.22)", overflow: "hidden", animation: "alertPop .22s cubic-bezier(.34,1.56,.64,1)" }}>
+        <div style={{ background: "linear-gradient(135deg,#22c55e,#16a34a)", padding: "26px 24px 20px", textAlign: "center" }}>
+          <div style={{ fontSize: 46, marginBottom: 6 }}>🎓</div>
+          <div style={{ fontSize: "1.15rem", fontWeight: 800, color: "#fff" }}>Permis obtenu !</div>
+        </div>
+        <div style={{ padding: "22px 24px" }}>
+          <p style={{ fontSize: "0.92rem", color: "#1e293b", fontWeight: 600, textAlign: "center", margin: "0 0 8px" }}>
+            🎉 <strong>{candidatName}</strong> a réussi ses 3 examens (Code, Créneau, Circulation).
+          </p>
+          <p style={{ fontSize: "0.8rem", color: "#64748b", textAlign: "center", margin: 0 }}>
+            Son dossier est marqué comme « obtenu ». Il peut désormais bénéficier de séances supplémentaires si besoin.
+          </p>
+        </div>
+        <div style={{ padding: "0 24px 22px", display: "flex", justifyContent: "center" }}>
+          <button onClick={onClose} style={{ padding: "10px 36px", borderRadius: 10, background: "#16a34a", border: "none", color: "#fff", fontSize: "0.88rem", fontWeight: 700, cursor: "pointer" }}>
+            Compris
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const btnBase = { flex: 1, padding: "10px 0", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 13.5 };
+const btnSecondary = { ...btnBase, border: "1px solid #e2e8f0", background: "#fff", color: "#475569" };
+const btnWarning   = { ...btnBase, background: "#fef3c7", color: "#92400e" };
+const btnGreen     = { ...btnBase, background: "#dcfce7", color: "#166534" };
+const btnRed       = { ...btnBase, background: "#fee2e2", color: "#991b1b" };
 
 function getDiffDays(dateStr) {
   if (!dateStr) return null;
@@ -430,6 +514,7 @@ const ExamensMoniteur = () => {
   const { CAN_VIEW_ALL_CANDIDATES, CAN_REMOVE_CANDIDAT, CAN_TOGGLE_STATUS, CAN_EXPORT_LISTE_CANDIDATS } = useMyPermissions();
 
   // ── state ──
+<<<<<<< HEAD
   const [selectedExamen,     setSelectedExamen]     = useState(null);
   const [typeFilter,         setTypeFilter]         = useState("Tous");
   const [loading,            setLoading]            = useState(false);
@@ -441,6 +526,8 @@ const ExamensMoniteur = () => {
   const [absenceModalExamen, setAbsenceModalExamen] = useState(null);
   const [resultModalExamen,  setResultModalExamen]  = useState(null);
   const [activeHistoryTab,   setActiveHistoryTab]   = useState("Passed");
+  const [permisObtenuInfo,  setPermisObtenuInfo]  = useState(null);
+
 
   const [showExportModal, setShowExportModal] = useState(false);
   const [pdfLoading,      setPdfLoading]      = useState(false);
@@ -742,6 +829,22 @@ const ExamensMoniteur = () => {
               );
             })}
           </div>
+                        <td style={td}>{examen.lieu}</td>
+                        <td style={td}>
+                          <span style={{ background: "#f1f5f9", color: "#475569", padding: "2px 8px", borderRadius: 10, fontSize: 12, fontWeight: 600 }}>
+                            {examen.nbSeances || "—"} séances
+                          </span>
+                        </td>
+                        <td style={td}>
+                          <div
+                            style={{ background: st.bg, color: st.color, display: "inline-flex", alignItems: "center", padding: "4px 10px", borderRadius: 20, fontWeight: 600, fontSize: 13, cursor: CAN_TOGGLE_STATUS ? "pointer" : "default" }}
+                            onClick={e => handleOpenResultModal(examen.id, e)}
+                          >
+                            {CAN_TOGGLE_STATUS && examen.status !== "Absent" && <FaExchangeAlt style={{ marginRight: 8, fontSize: 10 }} />}
+                            {examen.status === "Absent" && <FaUserSlash style={{ marginRight: 8, fontSize: 10 }} />}
+                            {st.label}
+                          </div>
+                        </td>
 
           {/* Contenu tab */}
           <div style={{ background: "#fff", borderRadius: "0 12px 12px 12px", overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)", border: "2px solid #e2e8f0", borderTop: "none" }}>
@@ -840,6 +943,36 @@ const ExamensMoniteur = () => {
         onClose={() => setAbsenceModalExamen(null)}
         onConfirm={handleConfirmAbsence}
       />
+      <ResultModal
+  examen={resultModalExamen}
+  onClose={() => setResultModalExamen(null)}
+  onConfirm={(id, status) => {
+    setExamenResult(id, status);
+
+    if (status === "Passed") {
+      const examen = examensList.find((e) => e.id === id);
+      if (examen) {
+        const cid = examen.candidatId;
+        const passe = (type) =>
+          type === examen.type ||
+          examensList.some((e) => e.candidatId === cid && e.type === type && e.status === "Passed");
+
+        if (passe("Code") && passe("Créneau") && passe("Circulation")) {
+          setPermisObtenuInfo({ candidat: examen.candidat });
+        }
+      }
+    }
+
+    setResultModalExamen(null);
+  }}
+/>
+
+{permisObtenuInfo && (
+  <PermisObtenuModal
+    candidatName={permisObtenuInfo.candidat}
+    onClose={() => setPermisObtenuInfo(null)}
+  />
+)}
 
       <ResultModal
         examen={resultModalExamen}
