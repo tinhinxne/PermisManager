@@ -1286,75 +1286,99 @@ ipcMain.handle("add-conge-moniteur", async (event, data) => {
     );
   });
 });
-
-// Moniteur soumet une demande (statut en_attente)
 ipcMain.handle("request-conge-moniteur", async (event, data) => {
   console.log("📥 [1] request-conge-moniteur appelé avec:", data);
 
   const { moniteurId, dateDebut, dateFin, raison, precision } = data;
 
-  return new Promise((resolve) => {
-    db.query(
-      `INSERT INTO CongeMoniteur
-        (moniteur_id, dateDebut, dateFin, raison, \`precision\`, statut, demande_par)
-       VALUES (?, ?, ?, ?, ?, 'en_attente', 'moniteur')`,
-      [moniteurId, dateDebut, dateFin, raison || "autre", precision || null],
-      async (err, res) => {
-        if (err) {
-          console.error("❌ [2] Erreur INSERT CongeMoniteur:", err.message);
-          return resolve({ success: false, error: err.message });
-        }
+  return new Promise(async (resolve) => {
 
-        const congeId = res.insertId;
-        console.log("✅ [2] Congé inséré en BDD, id:", congeId);
+    // ── Vérification chevauchement AVANT l'insert ──────────────────────────
+    const checkQuery = `
+      SELECT id, dateDebut, dateFin FROM CongeMoniteur
+      WHERE moniteur_id = ?
+        AND statut IN ('validee', 'en_attente')
+        AND dateDebut <= ?
+        AND dateFin   >= ?
+      LIMIT 1
+    `;
 
-        // Récupère le nom du moniteur pour personnaliser l'email admin
-        db.query(
-          `SELECT u.nom, u.prenom FROM Utilisateur u WHERE u.id = ?`,
-          [moniteurId],
-          async (err2, rows) => {
-            console.log("📋 [3] Résultat lookup moniteur:", { err2: err2?.message, rows });
-
-            if (err2 || !rows.length) {
-              console.error("❌ [3] Erreur ou moniteur introuvable, id:", moniteurId);
-              return resolve({ success: true, id: congeId });
-            }
-
-            const moniteur = rows[0];
-            console.log("👤 [4] Moniteur trouvé:", moniteur);
-
-            try {
-              console.log("📤 [5] Tentative envoi email à tinhinanethequeen@gmail.com...");
-
-              const infoMail = await transporter.sendMail({
-                from: '"Auto-École 🚗" <tinhinanethequeen@gmail.com>',
-                to: "tinhinanethequeen@gmail.com",
-                subject: `Nouvelle demande de congé — ${moniteur.prenom} ${moniteur.nom}`,
-                html: buildCongeRequestEmailHtml({
-                  prenom: moniteur.prenom,
-                  nom: moniteur.nom,
-                  dateDebut,
-                  dateFin,
-                  raison: raison || "autre",
-                  precision: precision || "",
-                }),
-              });
-
-              console.log("✅ [6] Email envoyé avec succès ! Réponse SMTP:", infoMail.response);
-
-            } catch (emailErr) {
-              console.error("❌ [6] ÉCHEC envoi email demande congé:", emailErr.message);
-              console.error("❌ [6] Détail complet erreur:", emailErr);
-            }
-
-            resolve({ success: true, id: congeId });
-          }
-        );
+    db.query(checkQuery, [moniteurId, dateFin, dateDebut], async (errCheck, rows) => {
+      if (errCheck) {
+        console.error("❌ Erreur vérification chevauchement:", errCheck.message);
+        return resolve({ success: false, error: errCheck.message });
       }
-    );
+
+      if (rows.length > 0) {
+        const conflit = rows[0];
+        const d = (v) => new Date(v).toLocaleDateString("fr-DZ", { day: "2-digit", month: "long", year: "numeric" });
+        console.warn("⚠️ Chevauchement détecté avec congé id:", conflit.id);
+        return resolve({
+          success: false,
+          error: `Vous avez déjà un congé du ${d(conflit.dateDebut)} au ${d(conflit.dateFin)}.`,
+        });
+      }
+
+      // ── Pas de conflit → INSERT ───────────────────────────────────────────
+      db.query(
+        `INSERT INTO CongeMoniteur
+          (moniteur_id, dateDebut, dateFin, raison, \`precision\`, statut, demande_par)
+         VALUES (?, ?, ?, ?, ?, 'en_attente', 'moniteur')`,
+        [moniteurId, dateDebut, dateFin, raison || "autre", precision || null],
+        async (err, res) => {
+          if (err) {
+            console.error("❌ [2] Erreur INSERT CongeMoniteur:", err.message);
+            return resolve({ success: false, error: err.message });
+          }
+
+          const congeId = res.insertId;
+          console.log("✅ [2] Congé inséré en BDD, id:", congeId);
+
+          db.query(
+            `SELECT u.nom, u.prenom FROM Utilisateur u WHERE u.id = ?`,
+            [moniteurId],
+            async (err2, rows) => {
+              console.log("📋 [3] Résultat lookup moniteur:", { err2: err2?.message, rows });
+
+              if (err2 || !rows.length) {
+                console.error("❌ [3] Erreur ou moniteur introuvable, id:", moniteurId);
+                return resolve({ success: true, id: congeId });
+              }
+
+              const moniteur = rows[0];
+              console.log("👤 [4] Moniteur trouvé:", moniteur);
+
+              try {
+                console.log("📤 [5] Tentative envoi email à tinhinanethequeen@gmail.com...");
+
+                const infoMail = await transporter.sendMail({
+                  from: '"Auto-École 🚗" <tinhinanethequeen@gmail.com>',
+                  to: "tinhinanethequeen@gmail.com",
+                  subject: `Nouvelle demande de congé — ${moniteur.prenom} ${moniteur.nom}`,
+                  html: buildCongeRequestEmailHtml({
+                    prenom: moniteur.prenom,
+                    nom: moniteur.nom,
+                    dateDebut,
+                    dateFin,
+                    raison: raison || "autre",
+                    precision: precision || "",
+                  }),
+                });
+
+                console.log("✅ [6] Email envoyé avec succès ! Réponse SMTP:", infoMail.response);
+
+              } catch (emailErr) {
+                console.error("❌ [6] ÉCHEC envoi email demande congé:", emailErr.message);
+              }
+
+              resolve({ success: true, id: congeId });
+            }
+          );
+        }
+      );
+    });
   });
 });
-
 // Récupère toutes les demandes en attente avec infos du moniteur (alias legacy)
 ipcMain.handle("get-demandes-conge-attente", async () => {
   return new Promise((resolve) => {

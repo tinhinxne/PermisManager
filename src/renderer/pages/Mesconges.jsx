@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useCongeCtx } from "../context/CongeContext";
@@ -16,19 +15,13 @@ const RAISONS = [
   { value: "familial", label: "👨‍👩‍👧 Raison familiale",  color: "#f59e0b" },
   { value: "autre",    label: "📋 Autre",               color: "#8b5cf6" },
 ];
+
 const formatDate = (date) => {
   if (!date) return "—";
-
   const d = new Date(date);
-
-  if (isNaN(d.getTime())) {
-    return "—";
-  }
-
+  if (isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("fr-DZ", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
+    day: "2-digit", month: "long", year: "numeric",
   });
 };
 
@@ -39,6 +32,24 @@ const nbJours = (d1, d2) => {
 
 const isActive  = (d, f) => { const now = new Date(); return new Date(d) <= now && now <= new Date(f + "T23:59:59"); };
 const isExpired = (f)    => new Date(f + "T23:59:59") < new Date();
+
+// ── Vérifie si deux plages se chevauchent ─────────────────────────────────────
+const datesSeChevachent = (debut1, fin1, debut2, fin2) => {
+  const d1 = new Date(debut1 + "T00:00:00");
+  const f1 = new Date(fin1   + "T23:59:59");
+  const d2 = new Date(debut2 + "T00:00:00");
+  const f2 = new Date(fin2   + "T23:59:59");
+  return d1 <= f2 && d2 <= f1;
+};
+
+// ── Trouve un congé validé ou en_attente qui chevauche la plage ───────────────
+const trouverCongeEnConflit = (conges, newDebut, newFin) => {
+  return conges.find(c => {
+    // On bloque aussi sur les congés en attente — pas de double demande
+    if (c.statut !== "validee" && c.statut !== "en_attente") return false;
+    return datesSeChevachent(c.dateDebut, c.dateFin, newDebut, newFin);
+  }) || null;
+};
 
 const inp = {
   width: "100%", boxSizing: "border-box",
@@ -73,7 +84,6 @@ const StatutBadge = ({ conge }) => {
       </span>
     );
   }
-  // validee
   const actif  = isActive(conge.dateDebut, conge.dateFin);
   const expire = isExpired(conge.dateFin);
   if (actif) {
@@ -195,11 +205,12 @@ const MesConges = () => {
   const { getCongesMoniteur, refreshMoniteur, requestCongeMoniteur, annulerMaDemandeConge, loading } = useCongeCtx();
 
   const [localLoading, setLocalLoading] = useState(true);
-  const [showForm, setShowForm]   = useState(false);
-  const [form, setForm]           = useState({ dateDebut: "", dateFin: "", raison: "maladie", precision: "" });
-  const [error, setError]         = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [filter, setFilter]       = useState("tous"); // tous | en_attente | validee | refusee
+  const [showForm,     setShowForm]     = useState(false);
+  const [form,         setForm]         = useState({ dateDebut: "", dateFin: "", raison: "maladie", precision: "" });
+  const [error,        setError]        = useState("");
+  const [conflit,      setConflit]      = useState(null); // congé en conflit détecté en temps réel
+  const [submitting,   setSubmitting]   = useState(false);
+  const [filter,       setFilter]       = useState("tous");
 
   useEffect(() => {
     if (!moniteurId) return;
@@ -209,7 +220,16 @@ const MesConges = () => {
     })();
   }, [moniteurId]);
 
-  // Garde : currentUser pas encore résolu (premier rendu / refresh auth)
+  const conges = getCongesMoniteur(moniteurId);
+
+  // ── Détection chevauchement en temps réel ─────────────────────────────────
+  useEffect(() => {
+    if (!form.dateDebut || !form.dateFin) { setConflit(null); return; }
+    if (new Date(form.dateFin) < new Date(form.dateDebut)) { setConflit(null); return; }
+    const c = trouverCongeEnConflit(conges, form.dateDebut, form.dateFin);
+    setConflit(c || null);
+  }, [form.dateDebut, form.dateFin, conges]);
+
   if (!moniteurId) {
     return (
       <div style={{ padding: "28px 32px", textAlign: "center", color: "#94a3b8", fontSize: "0.85rem" }}>
@@ -217,8 +237,6 @@ const MesConges = () => {
       </div>
     );
   }
-
-  const conges = getCongesMoniteur(moniteurId);
 
   const sorted = useMemo(() => {
     return [...conges].sort((a, b) => new Date(b.dateDebut) - new Date(a.dateDebut));
@@ -231,21 +249,32 @@ const MesConges = () => {
     valides:   conges.filter(c => c.statut === "validee").length,
     refuses:   conges.filter(c => c.statut === "refusee").length,
   }), [conges]);
-  const { getPermissions } = usePermissionsCtx();
-const permissions = getPermissions(moniteurId);
-const peutDemanderConge = !!permissions.CAN_REQUEST_CONGE;
 
+  const { getPermissions } = usePermissionsCtx();
+  const permissions = getPermissions(moniteurId);
+  const peutDemanderConge = !!permissions.CAN_REQUEST_CONGE;
+
+  console.log("conges:", conges);
+console.log("form:", form.dateDebut, form.dateFin);
+const congeEnConflit = trouverCongeEnConflit(conges, form.dateDebut, form.dateFin);
+console.log("conflit:", congeEnConflit)
   const handleSubmit = async () => {
     if (!form.dateDebut || !form.dateFin) { setError("Renseignez les deux dates."); return; }
     if (new Date(form.dateFin) < new Date(form.dateDebut)) { setError("La date de fin doit être après le début."); return; }
     if (new Date(form.dateDebut) < new Date(new Date().toDateString())) { setError("La date de début ne peut pas être dans le passé."); return; }
-    if (new Date(form.dateFin) < new Date(new Date().toDateString())) {
-  setError("La date de fin ne peut pas être dans le passé.");
-  return;
-}
-
-
+    if (new Date(form.dateFin) < new Date(new Date().toDateString())) { setError("La date de fin ne peut pas être dans le passé."); return; }
     if (form.raison === "autre" && !form.precision.trim()) { setError("Précisez la raison de votre congé."); return; }
+
+    // ── Blocage chevauchement ─────────────────────────────────────────────
+    const congeEnConflit = trouverCongeEnConflit(conges, form.dateDebut, form.dateFin);
+    if (congeEnConflit) {
+      const labelStatut = congeEnConflit.statut === "en_attente" ? "en attente de validation" : "déjà accordé";
+      setError(
+        `Vous avez un congé ${labelStatut} du ${formatDate(congeEnConflit.dateDebut)} au ${formatDate(congeEnConflit.dateFin)}. ` +
+        `Impossible d'envoyer une demande qui chevauche cette période.`
+      );
+      return;
+    }
 
     setError("");
     setSubmitting(true);
@@ -254,6 +283,7 @@ const peutDemanderConge = !!permissions.CAN_REQUEST_CONGE;
 
     if (result?.success) {
       setForm({ dateDebut: "", dateFin: "", raison: "maladie", precision: "" });
+      setConflit(null);
       setShowForm(false);
     } else {
       setError(result?.error || "Erreur lors de l'envoi de la demande.");
@@ -268,90 +298,65 @@ const peutDemanderConge = !!permissions.CAN_REQUEST_CONGE;
 
   const isLoading = loading || localLoading;
 
+  // Le bouton Envoyer est bloqué si conflit détecté
+  const formBloque = !!conflit;
+
   return (
     <div style={{ padding: "28px 32px", fontFamily: "'Poppins', sans-serif" }}>
-    {/* HEADER */}
-<div className="header">
-  <img
-    src={ConnexionImg}
-    alt="illustration"
-    className="header-img"
-  />
+      {/* HEADER */}
+      <div className="header">
+        <img src={ConnexionImg} alt="illustration" className="header-img" />
+        <h1>
+          <img src={SmallCar} alt="" width={40} />
+          Gestion des congés
+        </h1>
+        <p>
+          Consultez vos congés et effectuez vos demandes de congé.
+          Chaque demande est soumise à la validation de l'administrateur.
+        </p>
+      </div>
 
-  <h1>
-    <img src={SmallCar} alt="" width={40} />
-    Gestion des congés
-  </h1>
+      {!peutDemanderConge && (
+        <div style={{
+          background: "#fef2f2", border: "1.5px solid #fecaca",
+          borderRadius: 10, padding: "10px 14px", marginBottom: 16,
+          fontSize: "0.78rem", color: "#991b1b",
+          display: "flex", alignItems: "center", gap: 8,
+        }}>
+          🔒 La demande de congé a été désactivée par l'administrateur pour votre compte.
+        </div>
+      )}
 
-  <p>
-    Consultez vos congés et effectuez vos demandes de congé.
-    Chaque demande est soumise à la validation de l'administrateur.
-  </p>
-</div>
-{!peutDemanderConge && (
-  <div style={{
-    background: "#fef2f2", border: "1.5px solid #fecaca",
-    borderRadius: 10, padding: "10px 14px", marginBottom: 16,
-    fontSize: "0.78rem", color: "#991b1b",
-    display: "flex", alignItems: "center", gap: 8,
-  }}>
-    🔒 La demande de congé a été désactivée par l'administrateur pour votre compte.
-  </div>
-)}
-<div
-  style={{
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-  }}
->
-  <div
-    style={{
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 8,
-      background: "rgba(249,115,22,0.08)",
-      border: "1px solid rgba(249,115,22,0.2)",
-      borderRadius: 10,
-      padding: "6px 14px",
-      fontSize: "0.75rem",
-      color: "#ea580c",
-      fontWeight: 600,
-    }}
-  >
-    📅 Suivi de vos demandes de congé
-  </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 8,
+          background: "rgba(249,115,22,0.08)", border: "1px solid rgba(249,115,22,0.2)",
+          borderRadius: 10, padding: "6px 14px",
+          fontSize: "0.75rem", color: "#ea580c", fontWeight: 600,
+        }}>
+          📅 Suivi de vos demandes de congé
+        </div>
 
- <button
-  onClick={() => {
-    if (!peutDemanderConge) return;
-    setShowForm(v => !v);
-    setError("");
-  }}
-  disabled={!peutDemanderConge}
-  title={!peutDemanderConge ? "Cette action a été désactivée par l'administrateur" : undefined}
-  style={{
-    display: "flex",
-    alignItems: "center",
-    gap: 7,
-    padding: "10px 20px",
-    borderRadius: 10,
-    background: !peutDemanderConge ? "#cbd5e1" : "#2b537e",
-    border: "none",
-    color: "#fff",
-    fontFamily: "inherit",
-    fontSize: "0.85rem",
-    fontWeight: 700,
-    cursor: !peutDemanderConge ? "not-allowed" : "pointer",
-    boxShadow: !peutDemanderConge ? "none" : "0 4px 14px rgba(43,83,126,0.3)",
-    opacity: !peutDemanderConge ? 0.7 : 1,
-  }}
->
-  {showForm ? <X size={15} /> : <Plus size={15} />}
-  {showForm ? "Fermer" : "Demander un congé"}
-</button>
-</div>
+        <button
+          onClick={() => { if (!peutDemanderConge) return; setShowForm(v => !v); setError(""); setConflit(null); }}
+          disabled={!peutDemanderConge}
+          title={!peutDemanderConge ? "Cette action a été désactivée par l'administrateur" : undefined}
+          style={{
+            display: "flex", alignItems: "center", gap: 7,
+            padding: "10px 20px", borderRadius: 10,
+            background: !peutDemanderConge ? "#cbd5e1" : "#2b537e",
+            border: "none", color: "#fff", fontFamily: "inherit",
+            fontSize: "0.85rem", fontWeight: 700,
+            cursor: !peutDemanderConge ? "not-allowed" : "pointer",
+            boxShadow: !peutDemanderConge ? "none" : "0 4px 14px rgba(43,83,126,0.3)",
+            opacity: !peutDemanderConge ? 0.7 : 1,
+          }}
+        >
+          {showForm ? <X size={15} /> : <Plus size={15} />}
+          {showForm ? "Fermer" : "Demander un congé"}
+        </button>
+      </div>
+
       {/* ── Stats rapides ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 22 }}>
         {[
@@ -450,13 +455,39 @@ const peutDemanderConge = !!permissions.CAN_REQUEST_CONGE;
             ))}
           </div>
 
+          {/* Résumé durée */}
           {form.dateDebut && form.dateFin && new Date(form.dateFin) >= new Date(form.dateDebut) && (
             <div style={{ fontSize: "0.78rem", color: "#6366f1", marginBottom: 14, fontWeight: 600 }}>
               📅 {formatDate(form.dateDebut)} → {formatDate(form.dateFin)} · {nbJours(form.dateDebut, form.dateFin)} jour(s)
             </div>
           )}
 
-          {error && (
+          {/* ── Alerte chevauchement en temps réel ── */}
+          {conflit && (
+            <div style={{
+              padding: "10px 12px", borderRadius: 8, marginBottom: 14,
+              background: "#fef2f2", border: "1.5px solid #fca5a5",
+              display: "flex", alignItems: "flex-start", gap: 8,
+            }}>
+              <span style={{ fontSize: 16, flexShrink: 0 }}>🚫</span>
+              <div>
+                <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#dc2626" }}>
+                  {conflit.statut === "en_attente"
+                    ? "Vous avez déjà une demande en attente sur cette période"
+                    : "Vous avez déjà un congé accordé sur cette période"}
+                </div>
+                <div style={{ fontSize: "0.73rem", color: "#b91c1c", marginTop: 3 }}>
+                  Congé {conflit.statut === "en_attente" ? "en attente" : "validé"} du{" "}
+                  <strong>{formatDate(conflit.dateDebut)}</strong> au{" "}
+                  <strong>{formatDate(conflit.dateFin)}</strong>.
+                  Attendez la fin ou annulez ce congé avant d'en créer un nouveau.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Erreur générique */}
+          {error && !conflit && (
             <div style={{
               fontSize: "0.78rem", color: "#dc2626", marginBottom: 14, fontWeight: 600,
               background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px",
@@ -467,7 +498,7 @@ const peutDemanderConge = !!permissions.CAN_REQUEST_CONGE;
 
           <div style={{ display: "flex", gap: 10 }}>
             <button
-              onClick={() => { setShowForm(false); setError(""); }}
+              onClick={() => { setShowForm(false); setError(""); setConflit(null); }}
               style={{
                 flex: 1, padding: "10px", borderRadius: 9,
                 border: "1px solid #e2e8f0", background: "white",
@@ -479,13 +510,15 @@ const peutDemanderConge = !!permissions.CAN_REQUEST_CONGE;
             </button>
             <button
               onClick={handleSubmit}
-              disabled={submitting}
+              disabled={submitting || formBloque}
               style={{
                 flex: 2, padding: "10px", borderRadius: 9, border: "none",
-                background: submitting ? "#94a3b8" : "#f97316", color: "white",
-                fontSize: "0.84rem", fontWeight: 700, cursor: submitting ? "not-allowed" : "pointer",
+                background: (submitting || formBloque) ? "#94a3b8" : "#f97316",
+                color: "white", fontSize: "0.84rem", fontWeight: 700,
+                cursor: (submitting || formBloque) ? "not-allowed" : "pointer",
                 fontFamily: "'Poppins', sans-serif",
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                transition: "background 0.2s",
               }}
             >
               <Save size={14} /> {submitting ? "Envoi…" : "Envoyer la demande"}

@@ -41,18 +41,14 @@ export function ExamenProvider({ children }) {
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Trouve le prochain jour autorisé à partir d'une date + délai
-  // fromDate    : string ISO "YYYY-MM-DD" — point de départ (dernière séance ou dernier échec)
-  // delaiJours  : nombre de jours à attendre avant de chercher un jour autorisé
   // ─────────────────────────────────────────────────────────────────────────────
   const getNextExamDate = (fromDate, joursAutorises, delaiJours = 0) => {
     const DAY_MAP    = { Dim: 0, Lun: 1, Mar: 2, Mer: 3, Jeu: 4, Ven: 5, Sam: 6 };
     const allowedDays = (joursAutorises || ["Lun", "Mer", "Ven"]).map(d => DAY_MAP[d]);
 
     const base = new Date(fromDate + "T12:00:00");
-    // On avance d'au moins le délai configuré (minimum 1 jour pour ne pas rester le même jour)
     base.setDate(base.getDate() + Math.max(delaiJours, 1));
 
-    // Cherche le prochain jour autorisé dans les 30 prochains jours
     for (let i = 0; i < 30; i++) {
       if (allowedDays.includes(base.getDay())) {
         return base.toISOString().split("T")[0];
@@ -64,18 +60,14 @@ export function ExamenProvider({ children }) {
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Retourne la date de la dernière séance d'un type donné pour un candidat
-  // seancesCand : liste des séances du candidat
-  // type        : "code" | "creneau" | "circulation" (en minuscule comme dans l'agenda)
-  // Retourne un string ISO ou null
   // ─────────────────────────────────────────────────────────────────────────────
   const getLastSeanceDate = (seancesCand, type) => {
-    const typeNorm = type.toLowerCase().replace("é", "e").replace("è", "e");
+    const typeNorm = type.toLowerCase().replace(/é/g, "e").replace(/è/g, "e").replace(/ê/g, "e");
     const matching = seancesCand.filter(s => {
-      const t = (s.type || "").toLowerCase().replace("é", "e").replace("è", "e");
+      const t = (s.type || "").toLowerCase().replace(/é/g, "e").replace(/è/g, "e").replace(/ê/g, "e");
       return t === typeNorm;
     });
     if (matching.length === 0) return null;
-    // Trie par date décroissante et prend la plus récente
     const sorted = [...matching].sort((a, b) => {
       const da = new Date(a.date || a._raw?.date || "1970-01-01");
       const db = new Date(b.date || b._raw?.date || "1970-01-01");
@@ -83,7 +75,6 @@ export function ExamenProvider({ children }) {
     });
     const raw = sorted[0].date || sorted[0]._raw?.date;
     if (!raw) return null;
-    // Normalise en YYYY-MM-DD
     const d = new Date(raw);
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -93,62 +84,74 @@ export function ExamenProvider({ children }) {
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Calcule la date d'examen optimale pour un candidat et un type d'examen
-  //
-  // Logique :
-  //   1. Si le candidat a déjà échoué → base = date du dernier échec + delaiApresEchec
-  //   2. Sinon → base = date de la dernière séance du type concerné + delaiApresEchec
-  //   3. Si aucune séance trouvée → base = aujourd'hui (fallback)
-  //   4. On cherche ensuite le prochain jour autorisé après la base
   // ─────────────────────────────────────────────────────────────────────────────
   const computeExamDate = (type, seancesCand, examsCand) => {
     const today = new Date().toISOString().split("T")[0];
 
-    // Dernier échec pour ce type ?
     const lastFailed = examsCand
       .filter(e => e.type === type && e.status === "Failed")
       .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
 
     if (lastFailed) {
-      // Base = date du dernier échec + délai règles
       return getNextExamDate(lastFailed.date, examRules.joursAutorises, examRules.delaiApresEchec);
     }
 
-    // Pas d'échec → on se base sur la dernière séance du type correspondant
-    // Mapping type d'examen → type de séance dans l'agenda
     const seanceTypeMap = {
       "Code":        "code",
       "Créneau":     "creneau",
       "Circulation": "circulation",
     };
-    const seanceType    = seanceTypeMap[type] || type.toLowerCase();
+    const seanceType     = seanceTypeMap[type] || type.toLowerCase();
     const lastSeanceDate = getLastSeanceDate(seancesCand, seanceType);
 
     if (lastSeanceDate) {
-      // Base = dernière séance + délai configuré dans les paramètres
       return getNextExamDate(lastSeanceDate, examRules.joursAutorises, examRules.delaiApresEchec);
     }
 
-    // Aucune séance trouvée → fallback aujourd'hui
     return getNextExamDate(today, examRules.joursAutorises, 1);
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // Normalise un type de séance pour la comparaison
+  // ─────────────────────────────────────────────────────────────────────────────
+  const normalizeType = (str) =>
+    (str || "").toLowerCase()
+      .replace(/é/g, "e").replace(/è/g, "e").replace(/ê/g, "e");
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // Génération principale des examens
-  // seances   : toutes les séances (depuis l'agenda)
-  // candidats : liste complète des candidats
   // ─────────────────────────────────────────────────────────────────────────────
   const generateExamens = async (seances, candidats) => {
     const today           = new Date().toISOString().split("T")[0];
     const currentExamens  = examensListRef.current;
     const currentReportes = candidatsReportesRef.current;
 
-    // Groupe les séances par candidat (id → liste de séances)
+    // ── BUG 1 FIX : parsing robuste de candidatsIds (JSON array ou CSV) ──────
     const seancesParCandidat = {};
     seances.forEach(s => {
-      // Selon la structure de ta DB, les candidatsIds peuvent être une string "1,2,3" ou un seul id
-      const ids = s.candidatsIds
-        ? String(s.candidatsIds).split(",").map(x => x.trim()).filter(Boolean)
-        : s.candidatId ? [String(s.candidatId)] : [];
+      const rawIds = s.candidatsIds ?? s.candidats_ids ?? s.candidat_id ?? null;
+      let ids = [];
+
+      if (rawIds !== null && rawIds !== undefined) {
+        const str = String(rawIds).trim();
+        if (str.startsWith("[")) {
+          // Format tableau JSON : "[1,2,3]"
+          try {
+            ids = JSON.parse(str).map(x => String(x).trim()).filter(Boolean);
+          } catch {
+            ids = str.replace(/[\[\]]/g, "").split(",").map(x => x.trim()).filter(Boolean);
+          }
+        } else {
+          // Format CSV ou valeur unique : "1,2,3" ou "42"
+          ids = str.split(",").map(x => x.trim()).filter(Boolean);
+        }
+      }
+
+      // Fallback camelCase / snake_case
+      if (ids.length === 0) {
+        const single = s.candidatId ?? s.candidat_id;
+        if (single != null) ids = [String(single).trim()];
+      }
 
       ids.forEach(cid => {
         if (!seancesParCandidat[cid]) seancesParCandidat[cid] = [];
@@ -159,9 +162,16 @@ export function ExamenProvider({ children }) {
     const nouveauxExamens = [];
 
     candidats.forEach(candidat => {
-      const cid         = String(candidat.idCandidat);
+      // ── BUG 2 FIX : accepte idCandidat OU id_candidat OU id ──────────────
+      const cid         = String(candidat.idCandidat ?? candidat.id_candidat ?? candidat.id ?? "");
+      if (!cid) return;
+
       const seancesCand = seancesParCandidat[cid] || [];
-      const nbSeances   = seancesCand.length;
+
+      // ── BUG 3 FIX : compter les séances par TYPE, pas en total ────────────
+      const nbSeancesCode        = seancesCand.filter(s => normalizeType(s.type) === "code").length;
+      const nbSeancesCreneau     = seancesCand.filter(s => normalizeType(s.type) === "creneau").length;
+      const nbSeancesCirculation = seancesCand.filter(s => normalizeType(s.type) === "circulation").length;
 
       // Bloqué si impayé
       if (examRules.blocageImpaye && candidat.montantRestant > 0) return;
@@ -184,9 +194,13 @@ export function ExamenProvider({ children }) {
 
       const rapportCandidat = currentReportes[cid];
 
+      // ── BUG 2 FIX : champs candidat snake_case OU camelCase ───────────────
+      const dateNaissance   = candidat.date_naissance  ?? candidat.dateNaissance   ?? "";
+      const categoriePermis = candidat.categoriePermis ?? candidat.categorie_permis ?? "";
+
       // ── CODE ────────────────────────────────────────────────────────────────
       if (
-        nbSeances >= EXAM_THRESHOLDS.Code &&
+        nbSeancesCode >= EXAM_THRESHOLDS.Code &&          // BUG 3 FIX
         !aReussiCode && !aExamenCode &&
         echecsCode < examRules.tentativesMax &&
         (!rapportCandidat || rapportCandidat.type !== "Code" || rapportCandidat.nextSuggestedDate <= today)
@@ -203,20 +217,18 @@ export function ExamenProvider({ children }) {
           lieu:         "Centre d'examen",
           status:       "Scheduled",
           autoGenerated: true,
-          nbSeances,
+          nbSeances:    nbSeancesCode,                    // BUG 3 FIX
           suggested:    rapportCandidat?.type === "Code",
-          // Informations de traçabilité pour affichage
           dateBaseCalc: getLastSeanceDate(seancesCand, "code") || today,
           calcSource:   echecsCode > 0 ? "après_échec" : "après_dernière_séance",
-          // Infos candidat nécessaires aux documents officiels (PDF)
-          dateNaissance:   candidat.date_naissance,
-          categoriePermis: candidat.categoriePermis,
+          dateNaissance,
+          categoriePermis,
         });
       }
 
       // ── CRÉNEAU ─────────────────────────────────────────────────────────────
       if (
-        nbSeances >= EXAM_THRESHOLDS.Créneau &&
+        nbSeancesCreneau >= EXAM_THRESHOLDS.Créneau &&    // BUG 3 FIX
         aReussiCode && !aReussiCreneau && !aExamenCreneau &&
         echecsCreneau < examRules.tentativesMax &&
         (!rapportCandidat || rapportCandidat.type !== "Créneau" || rapportCandidat.nextSuggestedDate <= today)
@@ -233,19 +245,18 @@ export function ExamenProvider({ children }) {
           lieu:         "Auto-école",
           status:       "Scheduled",
           autoGenerated: true,
-          nbSeances,
+          nbSeances:    nbSeancesCreneau,                 // BUG 3 FIX
           suggested:    rapportCandidat?.type === "Créneau",
           dateBaseCalc: getLastSeanceDate(seancesCand, "creneau") || today,
           calcSource:   echecsCreneau > 0 ? "après_échec" : "après_dernière_séance",
-          // Infos candidat nécessaires aux documents officiels (PDF)
-          dateNaissance:   candidat.date_naissance,
-          categoriePermis: candidat.categoriePermis,
+          dateNaissance,
+          categoriePermis,
         });
       }
 
       // ── CIRCULATION ─────────────────────────────────────────────────────────
       if (
-        nbSeances >= EXAM_THRESHOLDS.Circulation &&
+        nbSeancesCirculation >= EXAM_THRESHOLDS.Circulation &&  // BUG 3 FIX
         aReussiCode && aReussiCreneau && !aExamenCirculation &&
         echecsCirculation < examRules.tentativesMax &&
         (!rapportCandidat || rapportCandidat.type !== "Circulation" || rapportCandidat.nextSuggestedDate <= today)
@@ -262,13 +273,12 @@ export function ExamenProvider({ children }) {
           lieu:         "Circuit principal",
           status:       "Scheduled",
           autoGenerated: true,
-          nbSeances,
+          nbSeances:    nbSeancesCirculation,             // BUG 3 FIX
           suggested:    rapportCandidat?.type === "Circulation",
           dateBaseCalc: getLastSeanceDate(seancesCand, "circulation") || today,
           calcSource:   echecsCirculation > 0 ? "après_échec" : "après_dernière_séance",
-          // Infos candidat nécessaires aux documents officiels (PDF)
-          dateNaissance:   candidat.date_naissance,
-          categoriePermis: candidat.categoriePermis,
+          dateNaissance,
+          categoriePermis,
         });
       }
     });
@@ -305,43 +315,41 @@ export function ExamenProvider({ children }) {
     }
   };
 
- // Remplace toggleExamenStatus par ceci
-const setExamenResult = (id, newStatus) => {
-  setExamensList(prev => prev.map(e => {
-    if (e.id !== id) return e;
+  const setExamenResult = (id, newStatus) => {
+    setExamensList(prev => prev.map(e => {
+      if (e.id !== id) return e;
 
-    if (newStatus === "Failed") {
-      const today    = new Date().toISOString().split("T")[0];
-      const nextDate = getNextExamDate(today, examRules.joursAutorises, examRules.delaiApresEchec);
-      setCandidatsReportes(prev2 => ({
-        ...prev2,
-        [e.candidatId]: { type: e.type, nextSuggestedDate: nextDate, reason: "echec" },
-      }));
-    } else if (newStatus === "Passed") {
-      // Si on corrige un échec → réussite, on retire le report en attente
-      // pour ce candidat/type, sinon il reste listé comme "reporté" à tort
-      setCandidatsReportes(prev2 => {
-        const entry = prev2[e.candidatId];
-        if (entry && entry.type === e.type && entry.reason === "echec") {
-          const { [e.candidatId]: _omit, ...rest } = prev2;
-          return rest;
-        }
-        return prev2;
-      });
-    }
+      if (newStatus === "Failed") {
+        const today    = new Date().toISOString().split("T")[0];
+        const nextDate = getNextExamDate(today, examRules.joursAutorises, examRules.delaiApresEchec);
+        setCandidatsReportes(prev2 => ({
+          ...prev2,
+          [e.candidatId]: { type: e.type, nextSuggestedDate: nextDate, reason: "echec" },
+        }));
+      } else if (newStatus === "Passed") {
+        setCandidatsReportes(prev2 => {
+          const entry = prev2[e.candidatId];
+          if (entry && entry.type === e.type && entry.reason === "echec") {
+            const { [e.candidatId]: _omit, ...rest } = prev2;
+            return rest;
+          }
+          return prev2;
+        });
+      }
 
-    return { ...e, status: newStatus };
-  }));
-};
+      return { ...e, status: newStatus };
+    }));
+  };
 
-  const retirerCandidat = (id) => {
+  // ── BUG 4 FIX : accepte un paramètre `reason` optionnel ──────────────────
+  const retirerCandidat = (id, reason = "retire") => {
     const examen = examensListRef.current.find(e => e.id === id);
     if (!examen) return;
     const today    = new Date().toISOString().split("T")[0];
     const nextDate = getNextExamDate(today, examRules.joursAutorises, examRules.delaiApresEchec);
     setCandidatsReportes(prev => ({
       ...prev,
-      [examen.candidatId]: { type: examen.type, nextSuggestedDate: nextDate, reason: "retire" },
+      [examen.candidatId]: { type: examen.type, nextSuggestedDate: nextDate, reason },
     }));
     setExamensList(prev => prev.filter(e => e.id !== id));
   };
@@ -351,14 +359,14 @@ const setExamenResult = (id, newStatus) => {
 
   const getCandidatsReportes = () => candidatsReportesRef.current;
 
- return (
-  <ExamenContext.Provider value={{
-    examensList, setExamensList,
-    generateExamens, setExamenResult,
-    retirerCandidat, updateExamen,
-    getCandidatsReportes, candidatsReportes,
-    EXAM_THRESHOLDS,
-  }}>
+  return (
+    <ExamenContext.Provider value={{
+      examensList, setExamensList,
+      generateExamens, setExamenResult,
+      retirerCandidat, updateExamen,
+      getCandidatsReportes, candidatsReportes,
+      EXAM_THRESHOLDS,
+    }}>
       {children}
     </ExamenContext.Provider>
   );

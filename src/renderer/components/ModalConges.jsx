@@ -1,9 +1,3 @@
-
-
-
-
-
-
 // src/renderer/components/ModalConges.jsx
 import React, { useState, useEffect } from "react";
 import { X, Save, Plus, Trash, CalendarOff, Building2, User } from "lucide-react";
@@ -16,15 +10,11 @@ const RAISONS = [
   { value: "autre",    label: "📋 Autre",               color: "#8b5cf6" },
 ];
 
-
-
 const parseDate = (val) => {
   if (!val) return null;
-  // Si c'est déjà une date ISO courte (YYYY-MM-DD), on l'utilise directement
   if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
     return new Date(val + "T12:00:00");
   }
-  // Sinon on convertit en local d'abord
   const d = new Date(val);
   const local = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   return new Date(local + "T12:00:00");
@@ -47,6 +37,23 @@ const nbJours = (d1, d2) => {
 const isActive   = (d, f) => { const now = new Date(); return parseDate(d) <= now && now <= parseDate(f); };
 const isExpired  = (f)    => parseDate(f) < new Date();
 const isUpcoming = (d)    => parseDate(d) > new Date();
+
+// ── Vérifie si deux plages de dates se chevauchent ────────────────────────────
+const datesSeChevachent = (debut1, fin1, debut2, fin2) => {
+  const d1 = new Date(debut1 + "T00:00:00");
+  const f1 = new Date(fin1   + "T23:59:59");
+  const d2 = new Date(debut2 + "T00:00:00");
+  const f2 = new Date(fin2   + "T23:59:59");
+  return d1 <= f2 && d2 <= f1;
+};
+
+// ── Trouve le congé validé qui chevauche une plage donnée ─────────────────────
+const trouverCongeEnConflit = (conges, newDebut, newFin) => {
+  return conges.find(c => {
+    if (c.statut !== "validee") return false;
+    return datesSeChevachent(c.dateDebut, c.dateFin, newDebut, newFin);
+  }) || null;
+};
 
 const inp = {
   width: "100%", boxSizing: "border-box",
@@ -243,12 +250,13 @@ function TabCongeAnnuel() {
 // ── Onglet Congés Moniteurs ───────────────────────────────────────────────────
 function TabCongesMoniteurs() {
   const { congesMoniteurs, addCongeMoniteur, removeCongeMoniteur, refreshMoniteur } = useCongeCtx();
-  const [moniteurs,    setMoniteurs]    = useState([]);
-  const [selectedId,   setSelectedId]   = useState(null);
-  const [showForm,     setShowForm]     = useState(false);
-  const [form,         setForm]         = useState({ dateDebut: "", dateFin: "", raison: "maladie", precision: "" });
-  const [error,        setError]        = useState("");
-  const [loadingMons,  setLoadingMons]  = useState(true);
+  const [moniteurs,   setMoniteurs]   = useState([]);
+  const [selectedId,  setSelectedId]  = useState(null);
+  const [showForm,    setShowForm]    = useState(false);
+  const [form,        setForm]        = useState({ dateDebut: "", dateFin: "", raison: "maladie", precision: "" });
+  const [error,       setError]       = useState("");
+  const [conflit,     setConflit]     = useState(null); // congé en conflit détecté
+  const [loadingMons, setLoadingMons] = useState(true);
 
   useEffect(() => {
     window.electron.getMoniteurs().then(list => {
@@ -262,8 +270,16 @@ function TabCongesMoniteurs() {
     if (selectedId) refreshMoniteur(Number(selectedId));
   }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const conges = selectedId ? (congesMoniteurs[selectedId] || []) : [];
+  const conges      = selectedId ? (congesMoniteurs[selectedId] || []) : [];
   const selectedMon = moniteurs.find(m => String(m.id) === selectedId);
+
+  // ── Vérifie le chevauchement en temps réel quand les dates changent ──────
+  useEffect(() => {
+    if (!form.dateDebut || !form.dateFin) { setConflit(null); return; }
+    if (isDateFinInvalide(form.dateDebut, form.dateFin)) { setConflit(null); return; }
+    const c = trouverCongeEnConflit(conges, form.dateDebut, form.dateFin);
+    setConflit(c || null);
+  }, [form.dateDebut, form.dateFin, conges]);
 
   const handleAdd = async () => {
     if (!form.dateDebut || !form.dateFin) { setError("Renseignez les deux dates."); return; }
@@ -272,9 +288,21 @@ function TabCongesMoniteurs() {
     if (new Date(form.dateFin   + "T12:00:00") < today) { setError("La date de fin ne peut pas être dans le passé."); return; }
     if (new Date(form.dateFin) < new Date(form.dateDebut)) { setError("La fin doit être après le début."); return; }
     if (form.raison === "autre" && !form.precision.trim()) { setError("Précisez la raison."); return; }
+
+    // ── Blocage chevauchement ─────────────────────────────────────────────
+    const congeEnConflit = trouverCongeEnConflit(conges, form.dateDebut, form.dateFin);
+    if (congeEnConflit) {
+      setError(
+        `Ce moniteur a déjà un congé du ${formatDate(congeEnConflit.dateDebut)} au ${formatDate(congeEnConflit.dateFin)}. ` +
+        `Impossible d'ajouter un congé qui chevauche cette période.`
+      );
+      return;
+    }
+
     setError("");
     await addCongeMoniteur(Number(selectedId), { ...form, precision: form.precision.trim() });
     setForm({ dateDebut: "", dateFin: "", raison: "maladie", precision: "" });
+    setConflit(null);
     setShowForm(false);
   };
 
@@ -293,6 +321,13 @@ function TabCongesMoniteurs() {
   const congeActif   = conges.find(c => c.statut === "validee" && isActive(c.dateDebut, c.dateFin));
   const congesAvenir = conges.filter(c => c.statut === "validee" && isUpcoming(c.dateDebut));
 
+  // ── Le bouton Enregistrer est bloqué si conflit ou dates invalides ────────
+  const formBloque =
+    isDatePasse(form.dateDebut) ||
+    isDatePasse(form.dateFin)   ||
+    isDateFinInvalide(form.dateDebut, form.dateFin) ||
+    !!conflit;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* Sélecteur moniteur */}
@@ -302,7 +337,7 @@ function TabCongesMoniteurs() {
         </label>
         <select
           value={selectedId || ""}
-          onChange={e => { setSelectedId(e.target.value); setShowForm(false); setError(""); }}
+          onChange={e => { setSelectedId(e.target.value); setShowForm(false); setError(""); setConflit(null); }}
           style={inp}
         >
           {moniteurs.map(m => (
@@ -484,36 +519,60 @@ function TabCongesMoniteurs() {
                   onChange={e => { setForm(f => ({ ...f, [key]: e.target.value })); setError(""); }}
                 />
                 {key === "dateFin" && isDateFinInvalide(form.dateDebut, form.dateFin) && (
-  <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:"0.72rem", color:"#dc2626", fontWeight:600, marginTop:3 }}>
-    <span>📅</span> Doit être après la date de début
-  </div>
-)}
-{key === "dateDebut" && isDatePasse(form.dateDebut) && (
-  <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:"0.72rem", color:"#dc2626", fontWeight:600, marginTop:3 }}>
-    <span>📅</span> Date dans le passé
-  </div>
-)}
-{key === "dateFin" && isDatePasse(form.dateFin) && (
-  <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:"0.72rem", color:"#dc2626", fontWeight:600, marginTop:3 }}>
-    <span>📅</span> Date dans le passé
-  </div>
-)}
+                  <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:"0.72rem", color:"#dc2626", fontWeight:600, marginTop:3 }}>
+                    <span>📅</span> Doit être après la date de début
+                  </div>
+                )}
+                {key === "dateDebut" && isDatePasse(form.dateDebut) && (
+                  <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:"0.72rem", color:"#dc2626", fontWeight:600, marginTop:3 }}>
+                    <span>📅</span> Date dans le passé
+                  </div>
+                )}
+                {key === "dateFin" && isDatePasse(form.dateFin) && (
+                  <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:"0.72rem", color:"#dc2626", fontWeight:600, marginTop:3 }}>
+                    <span>📅</span> Date dans le passé
+                  </div>
+                )}
               </div>
             ))}
           </div>
 
-          {form.dateDebut && form.dateFin && new Date(form.dateFin) >= new Date(form.dateDebut) && (
+          {/* Résumé durée */}
+          {form.dateDebut && form.dateFin && !isDateFinInvalide(form.dateDebut, form.dateFin) && (
             <div style={{ fontSize: "0.72rem", color: "#6366f1", marginBottom: 8, fontWeight: 600 }}>
               📅 {formatDate(form.dateDebut)} → {formatDate(form.dateFin)} · {nbJours(form.dateDebut, form.dateFin)} jour(s)
             </div>
           )}
 
-          {error && (
+          {/* ── Alerte chevauchement ── */}
+          {conflit && (
+            <div style={{
+              padding: "10px 12px", borderRadius: 8, marginBottom: 8,
+              background: "#fef2f2", border: "1.5px solid #fca5a5",
+              display: "flex", alignItems: "flex-start", gap: 8,
+            }}>
+              <span style={{ fontSize: 16, flexShrink: 0 }}>🚫</span>
+              <div>
+                <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#dc2626" }}>
+                  Congé déjà accordé sur cette période
+                </div>
+                <div style={{ fontSize: "0.7rem", color: "#b91c1c", marginTop: 3 }}>
+                  {selectedMon?.prenom} est déjà en congé du{" "}
+                  <strong>{formatDate(conflit.dateDebut)}</strong> au{" "}
+                  <strong>{formatDate(conflit.dateFin)}</strong>.
+                  Attendez la fin de ce congé avant d'en créer un nouveau.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Erreur générique */}
+          {error && !conflit && (
             <div style={{ fontSize: "0.72rem", color: "#ef4444", marginBottom: 8, fontWeight: 600 }}>⚠️ {error}</div>
           )}
 
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => { setShowForm(false); setError(""); }} style={{
+            <button onClick={() => { setShowForm(false); setError(""); setConflit(null); }} style={{
               flex: 1, padding: "8px", borderRadius: 8,
               border: "1px solid #e2e8f0", background: "white",
               color: "#64748b", fontSize: "0.8rem", cursor: "pointer",
@@ -521,26 +580,21 @@ function TabCongesMoniteurs() {
             }}>
               Annuler
             </button>
-<button
-  onClick={handleAdd}
-  disabled={
-    isDatePasse(form.dateDebut) ||
-    isDatePasse(form.dateFin)   ||
-    isDateFinInvalide(form.dateDebut, form.dateFin)
-  }
-  style={{
-    flex: 2, padding: "8px", borderRadius: 8, border: "none",
-    background: isDatePasse(form.dateDebut) || isDatePasse(form.dateFin) || isDateFinInvalide(form.dateDebut, form.dateFin)
-      ? "#94a3b8"
-      : "#6366f1",
-    color: "white",
-    fontSize: "0.8rem", fontWeight: 700, cursor: "pointer",
-    fontFamily: "'Poppins',sans-serif",
-    display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-  }}
->
-  <Save size={13} /> Enregistrer
-</button>
+            <button
+              onClick={handleAdd}
+              disabled={formBloque}
+              style={{
+                flex: 2, padding: "8px", borderRadius: 8, border: "none",
+                background: formBloque ? "#94a3b8" : "#6366f1",
+                color: "white",
+                fontSize: "0.8rem", fontWeight: 700, cursor: formBloque ? "not-allowed" : "pointer",
+                fontFamily: "'Poppins',sans-serif",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                transition: "background 0.2s",
+              }}
+            >
+              <Save size={13} /> Enregistrer
+            </button>
           </div>
         </div>
       ) : (
