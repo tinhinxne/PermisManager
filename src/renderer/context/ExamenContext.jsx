@@ -305,34 +305,63 @@ export function ExamenProvider({ children }) {
     }
   };
 
- // Remplace toggleExamenStatus par ceci
-const setExamenResult = (id, newStatus) => {
-  setExamensList(prev => prev.map(e => {
-    if (e.id !== id) return e;
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Enregistre le résultat d'un examen (Passed / Failed)
+  //
+  // En plus de mettre à jour examensList :
+  //   - en cas d'échec → planifie un report (re-passage) selon les règles
+  //   - en cas de réussite → nettoie un éventuel report en attente pour ce type
+  //   - en cas de réussite → vérifie si les 3 examens (Code, Créneau, Circulation)
+  //     sont maintenant tous "Passed" pour ce candidat → si oui, on bascule son
+  //     statut côté DB ("obtenu") via window.electron.updateStatutCandidat
+  // ─────────────────────────────────────────────────────────────────────────────
+  const setExamenResult = (id, newStatus) => {
+    const examenAvant = examensListRef.current.find(e => e.id === id);
+
+    setExamensList(prev => {
+      const updated = prev.map(e => (e.id === id ? { ...e, status: newStatus } : e));
+
+      // ── NOUVEAU : vérifie si le permis vient d'être obtenu ──
+      if (newStatus === "Passed") {
+        const examen = updated.find(e => e.id === id);
+        if (examen) {
+          const cid = examen.candidatId;
+          const passe = (type) =>
+            updated.some(e => e.candidatId === cid && e.type === type && e.status === "Passed");
+
+          if (passe("Code") && passe("Créneau") && passe("Circulation")) {
+            window.electron
+              .updateStatutCandidat({ candidatId: cid, statut: "obtenu" })
+              .catch(err => console.error("Erreur update statut candidat:", err));
+          }
+        }
+      }
+
+      return updated;
+    });
+
+    if (!examenAvant) return;
 
     if (newStatus === "Failed") {
       const today    = new Date().toISOString().split("T")[0];
       const nextDate = getNextExamDate(today, examRules.joursAutorises, examRules.delaiApresEchec);
       setCandidatsReportes(prev2 => ({
         ...prev2,
-        [e.candidatId]: { type: e.type, nextSuggestedDate: nextDate, reason: "echec" },
+        [examenAvant.candidatId]: { type: examenAvant.type, nextSuggestedDate: nextDate, reason: "echec" },
       }));
     } else if (newStatus === "Passed") {
       // Si on corrige un échec → réussite, on retire le report en attente
       // pour ce candidat/type, sinon il reste listé comme "reporté" à tort
       setCandidatsReportes(prev2 => {
-        const entry = prev2[e.candidatId];
-        if (entry && entry.type === e.type && entry.reason === "echec") {
-          const { [e.candidatId]: _omit, ...rest } = prev2;
+        const entry = prev2[examenAvant.candidatId];
+        if (entry && entry.type === examenAvant.type && entry.reason === "echec") {
+          const { [examenAvant.candidatId]: _omit, ...rest } = prev2;
           return rest;
         }
         return prev2;
       });
     }
-
-    return { ...e, status: newStatus };
-  }));
-};
+  };
 
   const retirerCandidat = (id) => {
     const examen = examensListRef.current.find(e => e.id === id);
@@ -351,14 +380,14 @@ const setExamenResult = (id, newStatus) => {
 
   const getCandidatsReportes = () => candidatsReportesRef.current;
 
- return (
-  <ExamenContext.Provider value={{
-    examensList, setExamensList,
-    generateExamens, setExamenResult,
-    retirerCandidat, updateExamen,
-    getCandidatsReportes, candidatsReportes,
-    EXAM_THRESHOLDS,
-  }}>
+  return (
+    <ExamenContext.Provider value={{
+      examensList, setExamensList,
+      generateExamens, setExamenResult,
+      retirerCandidat, updateExamen,
+      getCandidatsReportes, candidatsReportes,
+      EXAM_THRESHOLDS,
+    }}>
       {children}
     </ExamenContext.Provider>
   );

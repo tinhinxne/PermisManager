@@ -93,6 +93,34 @@
     </div>
   );
 }
+function PermisObtenuModal({ candidatName, onClose }) {
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 2100, background: "rgba(15,23,42,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{ background: "#fff", borderRadius: 20, width: 420, maxWidth: "92vw", boxShadow: "0 30px 80px rgba(0,0,0,0.22)", overflow: "hidden", animation: "alertPop .22s cubic-bezier(.34,1.56,.64,1)" }}>
+        <div style={{ background: "linear-gradient(135deg,#22c55e,#16a34a)", padding: "26px 24px 20px", textAlign: "center" }}>
+          <div style={{ fontSize: 46, marginBottom: 6 }}>🎓</div>
+          <div style={{ fontSize: "1.15rem", fontWeight: 800, color: "#fff" }}>Permis obtenu !</div>
+        </div>
+        <div style={{ padding: "22px 24px" }}>
+          <p style={{ fontSize: "0.92rem", color: "#1e293b", fontWeight: 600, textAlign: "center", margin: "0 0 8px" }}>
+            🎉 <strong>{candidatName}</strong> a réussi ses 3 examens (Code, Créneau, Circulation).
+          </p>
+          <p style={{ fontSize: "0.8rem", color: "#64748b", textAlign: "center", margin: 0 }}>
+            Son dossier est marqué comme « obtenu ». Il peut désormais bénéficier de séances supplémentaires si besoin.
+          </p>
+        </div>
+        <div style={{ padding: "0 24px 22px", display: "flex", justifyContent: "center" }}>
+          <button onClick={onClose} style={{ padding: "10px 36px", borderRadius: 10, background: "#16a34a", border: "none", color: "#fff", fontSize: "0.88rem", fontWeight: 700, cursor: "pointer" }}>
+            Compris
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const btnBase = { flex: 1, padding: "10px 0", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 13.5 };
 const btnSecondary = { ...btnBase, border: "1px solid #e2e8f0", background: "#fff", color: "#475569" };
@@ -176,6 +204,7 @@ const btnRed       = { ...btnBase, background: "#fee2e2", color: "#991b1b" };
     const [lastGenerated,  setLastGenerated]  = useState(null);
     const [showReportes,   setShowReportes]   = useState(false);
     const [candidatsMap,   setCandidatsMap]   = useState({});
+    const [permisObtenuInfo, setPermisObtenuInfo] = useState(null);
     const [alertInfo, setAlertInfo] = useState(null);
     const [resultModalExamen, setResultModalExamen] = useState(null);
 
@@ -605,14 +634,39 @@ const btnRed       = { ...btnBase, background: "#fee2e2", color: "#991b1b" };
             onClose={() => setAlertInfo(null)}
           />
         )}
+
 <ResultModal
   examen={resultModalExamen}
   onClose={() => setResultModalExamen(null)}
   onConfirm={(id, status) => {
     setExamenResult(id, status);
+
+    if (status === "Passed") {
+      const examen = examensList.find((e) => e.id === id);
+      if (examen) {
+        const cid = examen.candidatId;
+        // type === examen.type : on traite l'examen qu'on vient de valider
+        // comme déjà "Passed", car examensList n'est pas encore mis à jour ici
+        const passe = (type) =>
+          type === examen.type ||
+          examensList.some((e) => e.candidatId === cid && e.type === type && e.status === "Passed");
+
+        if (passe("Code") && passe("Créneau") && passe("Circulation")) {
+          setPermisObtenuInfo({ candidat: examen.candidat });
+        }
+      }
+    }
+
     setResultModalExamen(null);
   }}
 />
+
+{permisObtenuInfo && (
+  <PermisObtenuModal
+    candidatName={permisObtenuInfo.candidat}
+    onClose={() => setPermisObtenuInfo(null)}
+  />
+)}
 
         {/* ══════════════════════════════════════════════
             Modal export قائمة المترشحين

@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 import Sidebar from "../components/Sidebar";
 import Button from "../components/Button";
 import { useCongeCtx } from "../context/CongeContext";
+import { useNavigate } from "react-router-dom";
 import { useExamenCtx } from "../context/ExamenContext";
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -143,67 +144,6 @@ function LoadingOverlay() {
   );
 }
 
-// ── MILESTONE MODAL (20 séances atteintes) ────────────────────────────────────
-function MilestoneModal({ candidatName, onClose }) {
-  return (
-    <div
-      style={{
-        position:"fixed", inset:0, zIndex:600,
-        background:"rgba(15,23,42,0.6)", backdropFilter:"blur(4px)",
-        display:"flex", alignItems:"center", justifyContent:"center",
-        fontFamily:"'Poppins',sans-serif",
-      }}
-      onClick={e => e.target === e.currentTarget && onClose()}
-    >
-      <div style={{
-        background:"#fff", borderRadius:20, width:420, maxWidth:"94vw",
-        boxShadow:"0 30px 80px rgba(0,0,0,0.2)", overflow:"hidden",
-        animation:"milestoneUp .25s cubic-bezier(.34,1.56,.64,1)",
-      }}>
-        <style>{`@keyframes milestoneUp{from{transform:translateY(24px);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>
-
-        {/* Header */}
-        <div style={{
-          background:"linear-gradient(135deg,#22c55e,#16a34a)",
-          padding:"22px 24px 18px", textAlign:"center",
-        }}>
-          <div style={{ fontSize:44, marginBottom:4 }}>🎓</div>
-          <div style={{ fontSize:"1.1rem", fontWeight:800, color:"#fff" }}>
-            Formation complète !
-          </div>
-        </div>
-
-        {/* Body */}
-        <div style={{ padding:"20px 24px" }}>
-          <p style={{ fontSize:"0.9rem", color:"#1e293b", fontWeight:600, margin:"0 0 8px", textAlign:"center" }}>
-            🎉 <strong>{candidatName}</strong> vient d'atteindre ses <strong>20 séances</strong> !
-          </p>
-          <p style={{ fontSize:"0.8rem", color:"#64748b", margin:"0 0 4px", textAlign:"center" }}>
-            Il peut désormais se présenter à l'examen du permis de conduire.
-          </p>
-          <div style={{
-            marginTop:14, padding:"10px 16px", borderRadius:10,
-            background:"#f0fdf4", border:"1px solid #86efac",
-            fontSize:"0.78rem", color:"#166534", fontWeight:600, textAlign:"center",
-          }}>
-            ✅ Formation théorique et pratique terminée
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div style={{ padding:"0 24px 20px", display:"flex", justifyContent:"center" }}>
-          <button onClick={onClose} style={{
-            padding:"10px 36px", borderRadius:10, background:"#16a34a",
-            border:"none", color:"#fff", fontFamily:"'Poppins',sans-serif",
-            fontSize:"0.88rem", fontWeight:700, cursor:"pointer",
-          }}>
-            Compris
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ── SÉANCE SUPPLÉMENTAIRE MODAL (candidat permis obtenu) ──────────────────────
 function SeanceSupplementaireModal({ candidat, onClose, onConfirm }) {
@@ -512,7 +452,10 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
-  // ── Examens du candidat ────────────────────────────────────────────────────
+ // ── Examens du candidat ────────────────────────────────────────────────────
+  // RÈGLE STRICTE : on ne passe au stade suivant QUE quand l'examen précédent
+  // a le statut "Passed" (réussi). Le nombre de séances ou le fait qu'un
+  // examen soit simplement "Scheduled" (programmé) ne donne AUCUN accès.
   const examsCandidat = (examensList || []).filter(
     e => String(e.candidatId) === String(form.candidatId)
   );
@@ -523,15 +466,21 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
   // Permis complètement obtenu → tous les types sont libres
   const permisObtenu = aReussiCode && aReussiCreneau && aReussiCirc;
 
-  // Stade actuel pour les candidats en cours de formation
+  // Stade actuel pour les candidats en cours de formation :
+  // - "code"        : par défaut, ou si Code pas encore réussi
+  // - "creneau"     : accessible UNIQUEMENT si Code est "Passed"
+  // - "circulation" : accessible UNIQUEMENT si Créneau est "Passed" (donc Code aussi)
   const currentStage = !aReussiCode ? "code" : !aReussiCreneau ? "creneau" : "circulation";
 
-  // Force le type au bon stade (sauf si permis obtenu)
+  // Force le type au bon stade (sauf si permis obtenu).
+  // Recalculé aussi quand form.type change pour rattraper le cas où le type
+  // resterait bloqué sur une valeur devenue invalide (ex: chargement async
+  // des examens qui fait reculer currentStage après le premier rendu).
   useEffect(() => {
     if (!form.candidatId) return;
     if (permisObtenu) return;
     if (form.type !== currentStage) set("type", currentStage);
-  }, [form.candidatId, currentStage, permisObtenu]);
+  }, [form.candidatId, currentStage, permisObtenu, form.type]);
 
   // Si prefill candidat, charger le nom dès que la liste est prête
   useEffect(() => {
@@ -645,13 +594,32 @@ if (candidatConflict) {
     if (!form.candidatId) { setAlertInfo({ icon:"🧑", title:"Candidat manquant", message:"Veuillez sélectionner un candidat avant d'enregistrer la séance.", color:"#ef4444" }); return; }
     if (!form.moniteur_id) { setAlertInfo({ icon:"🧑‍🏫", title:"Moniteur manquant", message:"Veuillez sélectionner un moniteur avant d'enregistrer la séance.", color:"#ef4444" }); return; }
 
-    // Progression obligatoire uniquement pour candidats en cours (pas permis obtenu)
-    if (form.candidatId && !permisObtenu && form.type !== currentStage) {
-      setAlertInfo({
-        icon:"🚫", title:"Type de séance non autorisé", color:"#ef4444",
-        message:`${form.candidat || "Ce candidat"} est actuellement au stade "${currentStage}". Seules les séances de ce type peuvent être créées pour lui.`,
-      });
-      return;
+    // Progression obligatoire uniquement pour candidats en cours (pas permis obtenu).
+    // Vérification stricte et redondante : même si le <select> a été contourné
+    // (devtools, état React incohérent, etc.), on rebloque ici sur les mêmes
+    // règles de statut "Passed".
+    if (form.candidatId && !permisObtenu) {
+      if (form.type === "creneau" && !aReussiCode) {
+        setAlertInfo({
+          icon:"🚫", title:"Examen Code non réussi", color:"#ef4444",
+          message:`${form.candidat || "Ce candidat"} doit d'abord réussir l'examen de Code avant qu'une séance de type "Créneau" puisse être planifiée.`,
+        });
+        return;
+      }
+      if (form.type === "circulation" && !aReussiCreneau) {
+        setAlertInfo({
+          icon:"🚫", title:"Examen Créneau non réussi", color:"#ef4444",
+          message:`${form.candidat || "Ce candidat"} doit d'abord réussir l'examen de Créneau avant qu'une séance de type "Circulation" puisse être planifiée.`,
+        });
+        return;
+      }
+      if (form.type !== currentStage) {
+        setAlertInfo({
+          icon:"🚫", title:"Type de séance non autorisé", color:"#ef4444",
+          message:`${form.candidat || "Ce candidat"} est actuellement au stade "${currentStage}". Seules les séances de ce type peuvent être créées pour lui.`,
+        });
+        return;
+      }
     }
 
     const moniteurSel = moniteurs.find(m => String(m.id) === String(form.moniteur_id));
@@ -925,11 +893,383 @@ if (candidatConflict) {
     </div>
   );
 }
+// ── MILESTONE MODAL — Fin de formation (20 séances) ──────────────────────────
+function MilestoneModal({ candidatName, onClose, onPayer }) {
+  return (
+    <div
+      style={{
+        position:"fixed", inset:0, zIndex:800,
+        background:"rgba(15,23,42,0.65)", backdropFilter:"blur(6px)",
+        display:"flex", alignItems:"center", justifyContent:"center",
+        fontFamily:"'Poppins',sans-serif",
+      }}
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{
+        background:"#fff", borderRadius:22, width:460, maxWidth:"94vw",
+        boxShadow:"0 40px 100px rgba(0,0,0,0.25)", overflow:"hidden",
+        animation:"milestoneUp .3s cubic-bezier(.34,1.56,.64,1)",
+      }}>
+        <style>{`
+          @keyframes milestoneUp {
+            from { transform: translateY(24px) scale(.95); opacity:0 }
+            to   { transform: translateY(0)    scale(1);   opacity:1 }
+          }
+          @keyframes confettiFall {
+            0%   { transform: translateY(-10px) rotate(0deg);   opacity:1 }
+            100% { transform: translateY(60px)  rotate(360deg); opacity:0 }
+          }
+        `}</style>
+
+        {/* Header dégradé */}
+        <div style={{
+          background:"linear-gradient(135deg,#1d4ed8,#3b82f6,#06b6d4)",
+          padding:"28px 24px 22px", textAlign:"center", position:"relative", overflow:"hidden",
+        }}>
+          {/* Confettis décoratifs */}
+          {["#fbbf24","#f87171","#34d399","#a78bfa","#fb923c"].map((c,i) => (
+            <div key={i} style={{
+              position:"absolute",
+              top: -8, left: `${15 + i*18}%`,
+              width:8, height:8, borderRadius:2,
+              background:c,
+              animation:`confettiFall ${1.2+i*0.2}s ease-in ${i*0.1}s forwards`,
+            }} />
+          ))}
+          <div style={{ fontSize:52, marginBottom:8 }}>🏁</div>
+          <div style={{ fontSize:"1.15rem", fontWeight:800, color:"#fff", letterSpacing:-0.3 }}>
+            Formation terminée !
+          </div>
+          <div style={{ fontSize:"0.78rem", color:"rgba(255,255,255,0.75)", marginTop:4 }}>
+            20 séances complétées
+          </div>
+        </div>
+
+        {/* Corps */}
+        <div style={{ padding:"22px 24px", display:"flex", flexDirection:"column", gap:14 }}>
+
+          {/* Candidat */}
+          <div style={{
+            display:"flex", alignItems:"center", gap:12,
+            padding:"12px 16px", borderRadius:12,
+            background:"#eff6ff", border:"1px solid #bfdbfe",
+          }}>
+            <div style={{
+              width:42, height:42, borderRadius:"50%",
+              background:"#2563eb", color:"#fff",
+              display:"flex", alignItems:"center", justifyContent:"center",
+              fontSize:"1rem", fontWeight:800, flexShrink:0,
+            }}>
+              {candidatName?.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}
+            </div>
+            <div>
+              <div style={{ fontSize:"0.92rem", fontWeight:700, color:"#1e293b" }}>
+                {candidatName}
+              </div>
+              <div style={{ fontSize:"0.72rem", color:"#2563eb", fontWeight:600, marginTop:2 }}>
+                🎓 20 séances de formation complétées
+              </div>
+            </div>
+          </div>
+
+          {/* Barre de progression complète */}
+          <div>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:"0.72rem", color:"#64748b", marginBottom:6 }}>
+              <span>Progression formation</span>
+              <span style={{ fontWeight:700, color:"#22c55e" }}>20 / 20 ✓</span>
+            </div>
+            <div style={{ height:10, borderRadius:10, background:"#e2e8f0", overflow:"hidden" }}>
+              <div style={{
+                height:"100%", width:"100%", borderRadius:10,
+                background:"linear-gradient(90deg,#22c55e,#16a34a)",
+                boxShadow:"0 0 8px rgba(34,197,94,0.4)",
+              }} />
+            </div>
+          </div>
+
+          {/* Info séances sup */}
+          <div style={{
+            padding:"12px 14px", borderRadius:10,
+            background:"#f8fafc", border:"1px solid #e2e8f0",
+            fontSize:"0.8rem", color:"#475569", lineHeight:1.6,
+          }}>
+            <strong style={{ color:"#1e293b" }}>📋 Séances suivantes = hors forfait</strong><br />
+            Toute nouvelle séance planifiée pour ce candidat sera une{" "}
+            <strong style={{ color:"#6366f1" }}>séance supplémentaire payante</strong>.
+            Le tarif est à définir avec le candidat.
+          </div>
+
+          {/* Badges étapes */}
+          <div style={{ display:"flex", gap:8 }}>
+            {[
+              { label:"Code", icon:"📚", color:"#3b82f6" },
+              { label:"Créneau", icon:"🚗", color:"#f59e0b" },
+              { label:"Circulation", icon:"🛣️", color:"#10b981" },
+            ].map(({ label, icon, color }) => (
+              <div key={label} style={{
+                flex:1, padding:"8px 4px", borderRadius:8,
+                textAlign:"center", border:`1px solid ${color}30`,
+                background:`${color}10`,
+              }}>
+                <div style={{ fontSize:18 }}>{icon}</div>
+                <div style={{ fontSize:"0.68rem", fontWeight:700, color, marginTop:2 }}>{label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          padding:"0 24px 22px",
+          display:"flex", gap:10,
+        }}>
+          <button onClick={onClose} style={{
+            flex:1, padding:"10px 0", borderRadius:10,
+            background:"#f1f5f9", border:"none", color:"#64748b",
+            fontFamily:"'Poppins',sans-serif", fontSize:"0.84rem",
+            fontWeight:600, cursor:"pointer",
+          }}>
+            Fermer
+          </button>
+          <button onClick={onPayer} style={{
+            flex:2, padding:"10px 0", borderRadius:10,
+            background:"linear-gradient(135deg,#6366f1,#4f46e5)",
+            border:"none", color:"#fff",
+            fontFamily:"'Poppins',sans-serif", fontSize:"0.84rem",
+            fontWeight:700, cursor:"pointer",
+            boxShadow:"0 4px 14px rgba(99,102,241,0.35)",
+          }}>
+            💳 Enregistrer paiement séance sup.
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+// ── SÉANCE SUP PAIEMENT MODAL ─────────────────────────────────────────────────
+function SeanceSupPaiementModal({ candidatName, candidatId, allCandidates, onClose, onConfirm }) {
+  const [montant,  setMontant]  = useState("");
+  const [methode,  setMethode]  = useState("especes");
+  const [remarque, setRemarque] = useState("Séance supplémentaire");
+  const [saving,   setSaving]   = useState(false);
+  const [error,    setError]    = useState("");
+
+  const inpS = {
+    width:"100%", boxSizing:"border-box",
+    padding:"10px 12px", borderRadius:8,
+    border:"1.5px solid #e2e8f0",
+    fontFamily:"'Poppins',sans-serif",
+    fontSize:"0.85rem", color:"#1e293b",
+    background:"#fff", outline:"none",
+  };
+
+  const handleSubmit = async () => {
+    const montantNum = parseFloat(montant);
+    if (!montant || isNaN(montantNum) || montantNum <= 0) {
+      setError("Veuillez saisir un montant valide.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await onConfirm({
+        idCandidat:      candidatId,
+        montant:         montantNum,
+        methode,
+        remarque:        remarque || "Séance supplémentaire",
+        dateVersement:   new Date().toISOString().slice(0, 10),
+        estSeanceSup:    true,
+      });
+    } catch (e) {
+      setError("Erreur lors de l'enregistrement.");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position:"fixed", inset:0, zIndex:900,
+        background:"rgba(15,23,42,0.65)", backdropFilter:"blur(4px)",
+        display:"flex", alignItems:"center", justifyContent:"center",
+        fontFamily:"'Poppins',sans-serif",
+      }}
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{
+        background:"#fff", borderRadius:18, width:420, maxWidth:"94vw",
+        boxShadow:"0 30px 80px rgba(0,0,0,0.22)", overflow:"hidden",
+        animation:"milestoneUp .25s cubic-bezier(.34,1.56,.64,1)",
+      }}>
+        {/* Header */}
+        <div style={{
+          background:"linear-gradient(135deg,#6366f1,#4f46e5)",
+          padding:"20px 24px 16px",
+          display:"flex", alignItems:"center", justifyContent:"space-between",
+        }}>
+          <div>
+            <div style={{ fontSize:"1rem", fontWeight:800, color:"#fff" }}>
+              💳 Paiement — Séance supplémentaire
+            </div>
+            <div style={{ fontSize:"0.72rem", color:"#c7d2fe", marginTop:3 }}>
+              {candidatName} · Hors forfait
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background:"rgba(255,255,255,0.15)", border:"none",
+            borderRadius:8, width:30, height:30,
+            color:"#fff", cursor:"pointer", fontSize:14,
+            display:"grid", placeItems:"center",
+          }}>✕</button>
+        </div>
+
+        {/* Corps */}
+        <div style={{ padding:"20px 24px", display:"flex", flexDirection:"column", gap:14 }}>
+
+          {/* Montant */}
+          <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+            <label style={{
+              fontSize:"0.72rem", fontWeight:700, color:"#64748b",
+              textTransform:"uppercase", letterSpacing:0.5,
+            }}>
+              Montant (DA) <span style={{ color:"#ef4444" }}>*</span>
+            </label>
+            <div style={{ position:"relative" }}>
+              <input
+                type="number"
+                min="0"
+                placeholder="Ex : 1500"
+                value={montant}
+                onChange={e => { setMontant(e.target.value); setError(""); }}
+                style={{ ...inpS, paddingRight:40 }}
+                autoFocus
+              />
+              <span style={{
+                position:"absolute", right:12, top:"50%",
+                transform:"translateY(-50%)",
+                fontSize:"0.75rem", color:"#94a3b8", fontWeight:600,
+              }}>DA</span>
+            </div>
+          </div>
+
+          {/* Méthode */}
+          <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+            <label style={{
+              fontSize:"0.72rem", fontWeight:700, color:"#64748b",
+              textTransform:"uppercase", letterSpacing:0.5,
+            }}>
+              Méthode de paiement
+            </label>
+            <div style={{ display:"flex", gap:8 }}>
+              {[
+                { val:"especes", label:"💵 Espèces" },
+                { val:"ccp",     label:"🏦 CCP" },
+                { val:"carte",   label:"💳 Carte" },
+              ].map(({ val, label }) => (
+                <button
+                  key={val}
+                  onClick={() => setMethode(val)}
+                  style={{
+                    flex:1, padding:"8px 4px", borderRadius:8, cursor:"pointer",
+                    fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600,
+                    border:`2px solid ${methode===val ? "#6366f1" : "#e2e8f0"}`,
+                    background: methode===val ? "#eef2ff" : "#f8fafc",
+                    color: methode===val ? "#4338ca" : "#64748b",
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Remarque */}
+          <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+            <label style={{
+              fontSize:"0.72rem", fontWeight:700, color:"#64748b",
+              textTransform:"uppercase", letterSpacing:0.5,
+            }}>
+              Remarque
+            </label>
+            <input
+              type="text"
+              value={remarque}
+              onChange={e => setRemarque(e.target.value)}
+              style={inpS}
+              placeholder="Séance supplémentaire"
+            />
+          </div>
+
+          {/* Résumé */}
+          {montant && !isNaN(parseFloat(montant)) && parseFloat(montant) > 0 && (
+            <div style={{
+              padding:"10px 14px", borderRadius:10,
+              background:"#f0fdf4", border:"1px solid #86efac",
+              fontSize:"0.8rem", color:"#166534",
+              display:"flex", justifyContent:"space-between", alignItems:"center",
+            }}>
+              <span>✅ Versement à enregistrer</span>
+              <strong style={{ fontSize:"1rem" }}>
+                {parseInt(montant).toLocaleString("fr-DZ")} DA
+              </strong>
+            </div>
+          )}
+
+          {error && (
+            <div style={{
+              padding:"8px 12px", borderRadius:8,
+              background:"#fef2f2", border:"1px solid #fca5a5",
+              fontSize:"0.78rem", color:"#dc2626", fontWeight:600,
+            }}>
+              ⚠️ {error}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          padding:"0 24px 22px",
+          display:"flex", gap:10,
+        }}>
+          <button onClick={onClose} disabled={saving} style={{
+            flex:1, padding:"10px 0", borderRadius:10,
+            background:"#f1f5f9", border:"none", color:"#64748b",
+            fontFamily:"'Poppins',sans-serif", fontSize:"0.84rem",
+            fontWeight:600, cursor:"pointer",
+          }}>
+            Annuler
+          </button>
+          <button onClick={handleSubmit} disabled={saving} style={{
+            flex:2, padding:"10px 0", borderRadius:10,
+            background: saving ? "#a5b4fc" : "linear-gradient(135deg,#6366f1,#4f46e5)",
+            border:"none", color:"#fff",
+            fontFamily:"'Poppins',sans-serif", fontSize:"0.84rem",
+            fontWeight:700, cursor: saving ? "not-allowed" : "pointer",
+            boxShadow:"0 4px 14px rgba(99,102,241,0.35)",
+            display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+          }}>
+            {saving && (
+              <div style={{
+                width:13, height:13, borderRadius:"50%",
+                border:"2px solid rgba(255,255,255,0.4)",
+                borderTop:"2px solid #fff",
+                animation:"spin 0.7s linear infinite",
+              }} />
+            )}
+            {saving ? "Enregistrement…" : "💾 Enregistrer"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── CALENDAR GRID ─────────────────────────────────────────────────────────────
 function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupClick, onDrop, isMoniteurEnConge, isCongeAnnuel, onCandidatPermisClick, aObtenuPermis }) {
   const [dragging, setDragging] = React.useState(null);
   const [dragOver, setDragOver] = React.useState(null);
+// AJOUTER dans AgendaPage avec les autres useState :
+
   const dragRef = useRef(null);
 
   const handleDragStart = (e, session) => { dragRef.current = session; setDragging(session.id); e.dataTransfer.effectAllowed = "move"; };
@@ -1117,6 +1457,7 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
 
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────────
 export default function AgendaPage() {
+  const navigate = useNavigate();
   const [sessions,        setSessions]        = useState([]);
   const [loading,         setLoading]         = useState(true);
   const [saving,          setSaving]          = useState(false);
@@ -1130,9 +1471,10 @@ export default function AgendaPage() {
   const [filterType,      setFilterType]      = useState("");
   const [filterMon,       setFilterMon]       = useState("");
   const [filterCat,       setFilterCat]       = useState("");
-  const [milestoneModal,  setMilestoneModal]  = useState(null); // { candidatName }
   const [seanceSupModal,  setSeanceSupModal]  = useState(null); // { candidat }
-  const [prefillCandidatId, setPrefillCandidatId] = useState(null);
+ const [prefillCandidatId,  setPrefillCandidatId]  = useState(null);
+const [milestoneModal,     setMilestoneModal]      = useState(null); // { candidatName, candidatId }
+const [seanceSupPaiement,  setSeanceSupPaiement]   = useState(null); // { candidatId, candidatName }
 
   const { isMoniteurEnConge, isCongeAnnuel, congeAnnuel } = useCongeCtx();
   const { examensList } = useExamenCtx();
@@ -1305,7 +1647,13 @@ if (conflict) {
               }).length;
               const nomCandidat = sessionObj.name || "Ce candidat";
               // Afficher seulement la milestone "20 séances" — plus de modal "extra"
-              if (nbSessions === 20) setMilestoneModal({ candidatName: nomCandidat });
+             if (nbSessions === 20) {
+  // Exactement 20 → fin de formation
+  setMilestoneModal({ candidatName: nomCandidat, candidatId });
+} else if (nbSessions > 20) {
+  // Au-delà de 20 → séance supplémentaire, déclencher paiement
+  setSeanceSupPaiement({ candidatId, candidatName: nomCandidat });
+}
             } catch (milestoneErr) {
               console.error("Erreur vérification milestone :", milestoneErr);
             }
@@ -1328,17 +1676,42 @@ if (conflict) {
       setPrefillCandidatId(null);
     }
   };
+  const handleSeanceSupPaiement = async (paymentData) => {
+  try {
+    if (api?.addPayment) {
+      const result = await api.addPayment(paymentData);
+      if (result?.success) {
+        showToast(`💳 Paiement séance supplémentaire enregistré — ${parseInt(paymentData.montant).toLocaleString("fr-DZ")} DA`, "success");
+      } else {
+        showToast("Erreur lors de l'enregistrement du paiement.", "error");
+      }
+    } else {
+      showToast("Paiement enregistré (mode démo).", "info");
+    }
+  } catch (e) {
+    showToast("Erreur lors de l'enregistrement du paiement.", "error");
+  } finally {
+    setSeanceSupPaiement(null);
+  }
+};
 
   const monitors = [...new Set(sessions.map(s=>s.monitor))].sort();
   const semaineClosed = congeAnnuel?.actif && weekDates.some(d => isCongeAnnuel(d));
 
   // ── Ouverture CreateModal depuis SeanceSupplementaireModal ────────────────
-  const handleConfirmSeanceSup = () => {
+ const handleConfirmSeanceSup = () => {
     const cid = seanceSupModal?.candidat?.id;
+    const candidat = seanceSupModal?.candidat;
     setSeanceSupModal(null);
-    setPrefillCandidatId(cid || null);
-    setEditing(null);
-    setShowModal(true);
+    // S'il n'a pas encore de crédit, on l'envoie payer d'abord plutôt que
+    // de le laisser ouvrir CreateModal sans rien à programmer.
+    navigate("/payments", {
+      state: {
+        openSeanceSup: true,
+        candidatId:   cid,
+        candidatName: `${candidat?.prenom || ""} ${candidat?.nom || ""}`.trim(),
+      },
+    });
   };
 
   return (
@@ -1525,13 +1898,8 @@ if (conflict) {
         />
       )}
 
-      {/* Milestone : 20 séances atteintes */}
-      {milestoneModal && (
-        <MilestoneModal
-          candidatName={milestoneModal.candidatName}
-          onClose={() => setMilestoneModal(null)}
-        />
-      )}
+   
+     
 
       {/* Séance supplémentaire : candidat permis obtenu */}
       {seanceSupModal && (
@@ -1541,6 +1909,22 @@ if (conflict) {
           onConfirm={handleConfirmSeanceSup}
         />
       )}
+{milestoneModal && (
+  <MilestoneModal
+    candidatName={milestoneModal.candidatName}
+    onClose={() => setMilestoneModal(null)}
+    onPayer={() => {
+      navigate("/payments", {
+        state: {
+          openSeanceSup: true,
+          candidatId:   milestoneModal.candidatId,
+          candidatName: milestoneModal.candidatName,
+        },
+      });
+      setMilestoneModal(null);
+    }}
+  />
+)}
 
       {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
     </>

@@ -19,6 +19,7 @@
   updateMoniteur: (data) => ipcRenderer.invoke('update-moniteur', data),
   deleteMoniteur: (id) => ipcRenderer.invoke('delete-moniteur', id),
   getMoniteurStats: (moniteurId) => ipcRenderer.invoke('get-moniteur-stats', moniteurId),
+updateStatutCandidat: (data) => ipcRenderer.invoke('update-statut-candidat', data),
 
   // Ajouter dans contextBridge.exposeInMainWorld('electron', { ... })
   getMoniteurProfile:     (id)    => ipcRenderer.invoke('get-moniteur-profile', id),
@@ -79,4 +80,9 @@ statutChargily:  (checkoutId) => ipcRenderer.invoke("statut-chargily", checkoutI
 getChargilyConfig:  ()     => ipcRenderer.invoke("get-chargily-config"),
 setChargilyConfig:  (data) => ipcRenderer.invoke("set-chargily-config", data),
 testChargilyConfig: (data) => ipcRenderer.invoke("test-chargily-config", data),
+// Paiements
+  getPayments: () => ipcRenderer.invoke('get-payments'),
+  addPayment: (data) => ipcRenderer.invoke('add-payment', data),
+  getCandidatsDebiteurs:  ()     => ipcRenderer.invoke('get-candidats-debiteurs'),
+  getCreditSeancesSup: (candidatId) => ipcRenderer.invoke('get-credit-seances-sup', candidatId),
 });

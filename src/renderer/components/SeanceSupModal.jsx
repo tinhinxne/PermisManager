@@ -12,13 +12,13 @@ const normaliserType = (type) => {
   return "code";
 };
 
-const SeanceSupModal = ({ onClose, onAddPayment }) => {
+const SeanceSupModal = ({ onClose, onAddPayment, prefillCandidat }) => {
   const [candidats,      setCandidats]      = useState([]);
   const [seancesParCand, setSeancesParCand] = useState({});
   const [selected,       setSelected]       = useState(null);
   const [searchQuery,    setSearchQuery]    = useState("");
   const [loading,        setLoading]        = useState(true);
-
+ 
   const [nbSeances,  setNbSeances]  = useState(1);
   const [prixSeance, setPrixSeance] = useState("");
   const [methode,    setMethode]    = useState("especes");
@@ -27,6 +27,8 @@ const SeanceSupModal = ({ onClose, onAddPayment }) => {
   const [errors,     setErrors]     = useState({});
 
   const total = nbSeances * (parseFloat(prixSeance) || 0);
+   const [submitted, setSubmitted] = useState(false);
+
 
   useEffect(() => {
     async function load() {
@@ -65,7 +67,17 @@ const SeanceSupModal = ({ onClose, onAddPayment }) => {
           return aCode && aCreneau && aCirculation;
         });
 
-        setCandidats(eligibles);
+   setCandidats(eligibles);
+
+        // Pré-sélection si on arrive depuis l'agenda (milestone 20 séances)
+        if (prefillCandidat) {
+          const id = prefillCandidat.candidatId || prefillCandidat.id;
+          const match = eligibles.find(c => String(c.idCandidat || c.id) === String(id));
+          if (match) {
+            setSelected(match);
+            setSearchQuery(`${match.prenom} ${match.nom}`);
+          }
+        }
       } catch (err) {
         console.error("SeanceSupModal load error:", err);
       } finally {
@@ -73,7 +85,7 @@ const SeanceSupModal = ({ onClose, onAddPayment }) => {
       }
     }
     load();
-  }, []);
+  }, [prefillCandidat]);
 
   const candidatsFiltres = candidats.filter(c =>
     `${c.prenom} ${c.nom}`.toLowerCase().includes(searchQuery.toLowerCase())
@@ -95,9 +107,9 @@ const SeanceSupModal = ({ onClose, onAddPayment }) => {
     return Object.keys(e).length === 0;
   };
 
-  const handleSubmit = () => {
+const handleSubmit = async () => {
     if (!validate()) return;
-    onAddPayment({
+    await onAddPayment({
       idCandidat:    selected.idCandidat || selected.id,
       montant:       total,
       methode,
@@ -106,6 +118,7 @@ const SeanceSupModal = ({ onClose, onAddPayment }) => {
       typeVersement: "seance_supplementaire",
       _meta: { nbSeances, prixSeance: parseFloat(prixSeance), total },
     });
+    setSubmitted(true);
   };
 
   const seancesCandidat = selected ? (seancesParCand[selected.idCandidat || selected.id] || []) : [];
@@ -325,25 +338,39 @@ const SeanceSupModal = ({ onClose, onAddPayment }) => {
               <div style={{ fontSize: 22, fontWeight: 800, color: "#166534" }}>{fDA(total)}</div>
             </div>
           )}
+          {/* Message post-paiement : redirection vers l'agenda */}
+          {submitted && (
+            <div style={{
+              background: "#eef2ff", border: "1.5px solid #c7d2fe", borderRadius: 10,
+              padding: "12px 16px", display: "flex", alignItems: "center", gap: 10,
+            }}>
+              <span style={{ fontSize: 20 }}>📅</span>
+              <div style={{ fontSize: 13, color: "#4338ca", fontWeight: 600 }}>
+                Vous pouvez maintenant passer à l'agenda pour programmer {nbSeances === 1 ? "votre séance supplémentaire" : `vos ${nbSeances} séances supplémentaires`}.
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Footer */}
+       {/* Footer */}
         <div style={{ padding: "14px 22px", borderTop: "1px solid #e2e8f0", display: "flex", gap: 10, flexShrink: 0, background: "#f8fafc" }}>
           <button onClick={onClose} style={{ flex: 1, padding: 11, borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
-            Annuler
+            {submitted ? "Fermer" : "Annuler"}
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!selected || total <= 0}
-            style={{
-              flex: 2, padding: 11, borderRadius: 10, border: "none",
-              background: !selected || total <= 0 ? "#94a3b8" : "#d97706",
-              color: "#fff", fontWeight: 700, fontSize: 13,
-              cursor: !selected || total <= 0 ? "not-allowed" : "pointer",
-            }}
-          >
-            {total > 0 ? `💰 Enregistrer — ${fDA(total)}` : "Enregistrer le paiement"}
-          </button>
+          {!submitted && (
+            <button
+              onClick={handleSubmit}
+              disabled={!selected || total <= 0}
+              style={{
+                flex: 2, padding: 11, borderRadius: 10, border: "none",
+                background: !selected || total <= 0 ? "#94a3b8" : "#d97706",
+                color: "#fff", fontWeight: 700, fontSize: 13,
+                cursor: !selected || total <= 0 ? "not-allowed" : "pointer",
+              }}
+            >
+              {total > 0 ? `💰 Enregistrer — ${fDA(total)}` : "Enregistrer le paiement"}
+            </button>
+          )}
         </div>
       </div>
     </div>
