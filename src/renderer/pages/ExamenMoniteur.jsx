@@ -4,7 +4,7 @@ import {
   FaCalendarDay, FaCheckCircle, FaTimesCircle,
   FaClock, FaTrashAlt, FaExchangeAlt, FaUser,
   FaInfoCircle, FaCalendarPlus, FaFilePdf, FaTimes,
-  FaLock, FaUserSlash, FaHistory,
+  FaLock, FaUserSlash, FaHistory, FaFilter,
 } from "react-icons/fa";
 
 import SelectFilter from "../components/SelectFilter";
@@ -55,7 +55,12 @@ function getDiffDays(dateStr) {
   if (isNaN(examDate)) return null;
   return Math.ceil((examDate - today) / (1000 * 60 * 60 * 24));
 }
-
+function parseExamDate(dateStr) {
+  if (!dateStr) return null;
+  const normalized = String(dateStr).replace(/\//g, "-").slice(0, 10);
+  const d = new Date(normalized + "T00:00:00");
+  return isNaN(d) ? null : d;
+}
 // ─────────────────────────────────────────────
 // Badge J-X
 // ─────────────────────────────────────────────
@@ -409,9 +414,10 @@ function ExamenTableMoniteur({
                   )}
 
                   {/* Actions */}
-                  {hasActionsCol && (
-                    <td style={td}>
-                      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                 {/* Actions */}
+{hasActionsCol && (
+  <td style={{ ...td, whiteSpace: "nowrap" }}>
+    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap" }}>
 
                         {showEvaluer && CAN_TOGGLE_STATUS && (
                           <button
@@ -508,6 +514,8 @@ const ExamensMoniteur = () => {
   // ── state ──
   const [selectedExamen,      setSelectedExamen]      = useState(null);
   const [typeFilter,          setTypeFilter]          = useState("Tous");
+  const [dateDebut,           setDateDebut]           = useState("");
+const [dateFin,             setDateFin]             = useState("");
   const [loading,             setLoading]             = useState(false);
   const [lastGenerated,       setLastGenerated]       = useState(null);
   const [showReportes,        setShowReportes]        = useState(false);
@@ -521,6 +529,7 @@ const ExamensMoniteur = () => {
 
   const [showExportModal, setShowExportModal] = useState(false);
   const [pdfLoading,      setPdfLoading]      = useState(false);
+  
   const [exportForm, setExportForm] = useState({
     nomEcole: "", wilaya: "", centreExamen: "", morkaba: "", dateDepot: "", dateExamen: "",
   });
@@ -594,14 +603,31 @@ const ExamensMoniteur = () => {
 
   // ── filtrage par type ──
   const byType = (list) => typeFilter === "Tous" ? list : list.filter(e => e.type === typeFilter);
+  const filterByDate = (list) => {
+  if (!dateDebut && !dateFin) return list;
+  return list.filter(e => {
+    const d = parseExamDate(e.date);
+    if (!d) return true;
+    const from = dateDebut ? new Date(dateDebut + "T00:00:00") : null;
+    const to   = dateFin   ? new Date(dateFin   + "T23:59:59") : null;
+    if (from && d < from) return false;
+    if (to   && d > to)   return false;
+    return true;
+  });
+};
 
-  // ── segmentation ──
-  const scheduled    = byType(filteredBase.filter(e => e.status === "Scheduled"));
-  const history      = byType(filteredBase.filter(e => ["Passed", "Failed", "Absent", "Reported"].includes(e.status)));
-  const historyByTab = history.filter(e => e.status === activeHistoryTab);
+const hasDateFilter = !!(dateDebut || dateFin);
+const resetDateFilter = () => { setDateDebut(""); setDateFin(""); };
 
+const applyFilters = (list) => filterByDate(byType(list));
+
+ // ── segmentation ──
+const scheduled    = applyFilters(filteredBase.filter(e => e.status === "Scheduled"));
+const history      = applyFilters(filteredBase.filter(e => ["Passed", "Failed", "Absent", "Reported"].includes(e.status)));
+const historyByTab = history.filter(e => e.status === activeHistoryTab);
   // ── stats ──
-  const allFiltered = byType(filteredBase);
+const allFiltered = applyFilters(filteredBase);
+
   const statsData = [
     { label: CAN_VIEW_ALL_CANDIDATES ? "Total session" : "Mes candidats", val: allFiltered.length,                                           color: "blue",   icon: <FaUser />,        trend: "Session"        },
     { label: "Réussites",  val: allFiltered.filter(e => e.status === "Passed").length, color: "green",  icon: <FaCheckCircle />, trend: "Validés"        },
@@ -804,14 +830,97 @@ const ExamensMoniteur = () => {
           ))}
         </div>
 
-        {/* ── Filtre type ── */}
-        <div className="examens-filters" style={{ marginBottom: 0 }}>
-          <SelectFilter
-            value={typeFilter} onChange={setTypeFilter}
-            options={["Tous", "Code", "Créneau", "Circulation"]}
-            label="Type d'examen"
-          />
-        </div>
+      {/* ══════════════════════════════════════════════
+    FILTRES — Type + Plage de dates
+══════════════════════════════════════════════ */}
+<div style={{
+  display: "flex", alignItems: "flex-end", flexWrap: "wrap", gap: 12,
+  background: "#f8fafc", border: "1px solid #e2e8f0",
+  borderRadius: 12, padding: "14px 16px", marginBottom: 4,
+}}>
+  {/* Filtre type */}
+  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+    <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Type d'examen</label>
+    <SelectFilter
+      value={typeFilter} onChange={setTypeFilter}
+      options={["Tous", "Code", "Créneau", "Circulation"]}
+      label="Type d'examen"
+    />
+  </div>
+
+  <div style={{ width: 1, height: 36, background: "#e2e8f0", alignSelf: "center" }} />
+
+  {/* Filtre date début */}
+  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+    <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Du</label>
+    <input
+      type="date"
+      value={dateDebut}
+      onChange={e => setDateDebut(e.target.value)}
+      max={dateFin || undefined}
+      style={{
+        padding: "8px 12px", borderRadius: 8,
+        border: dateDebut ? "1.5px solid #2b537e" : "1px solid #d1d5db",
+        fontSize: 13, color: "#1f2937", background: "#fff",
+        outline: "none", cursor: "pointer",
+      }}
+    />
+  </div>
+
+  <div style={{ color: "#94a3b8", fontSize: 16, paddingBottom: 4 }}>→</div>
+
+  {/* Filtre date fin */}
+  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+    <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Au</label>
+    <input
+      type="date"
+      value={dateFin}
+      onChange={e => setDateFin(e.target.value)}
+      min={dateDebut || undefined}
+      style={{
+        padding: "8px 12px", borderRadius: 8,
+        border: dateFin ? "1.5px solid #2b537e" : "1px solid #d1d5db",
+        fontSize: 13, color: "#1f2937", background: "#fff",
+        outline: "none", cursor: "pointer",
+      }}
+    />
+  </div>
+
+  {hasDateFilter && (
+    <button
+      onClick={resetDateFilter}
+      title="Effacer le filtre de dates"
+      style={{
+        display: "flex", alignItems: "center", gap: 6,
+        padding: "8px 14px", borderRadius: 8,
+        border: "1px solid #fca5a5", background: "#fef2f2",
+        color: "#b91c1c", cursor: "pointer", fontSize: 12.5,
+        fontWeight: 600, alignSelf: "flex-end",
+      }}
+    >
+      <FaTimes style={{ fontSize: 11 }} /> Effacer dates
+    </button>
+  )}
+
+  {hasDateFilter && (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 6,
+      background: "#eff6ff", border: "1px solid #bfdbfe",
+      borderRadius: 8, padding: "7px 12px", fontSize: 12,
+      color: "#1d4ed8", fontWeight: 600, alignSelf: "flex-end",
+    }}>
+      <FaFilter style={{ fontSize: 10 }} />
+      {dateDebut && dateFin
+        ? `${dateDebut} → ${dateFin}`
+        : dateDebut
+        ? `À partir du ${dateDebut}`
+        : `Jusqu'au ${dateFin}`}
+      <span style={{ background: "#dbeafe", borderRadius: 10, padding: "1px 7px", fontSize: 11 }}>
+        {allFiltered.length} résultat{allFiltered.length > 1 ? "s" : ""}
+      </span>
+    </div>
+  )}
+</div>
 
         {/* ══════════════════════════════════════════════
             TABLE 1 — PROGRAMMÉS
@@ -855,7 +964,7 @@ const ExamensMoniteur = () => {
           {/* Onglets */}
           <div style={{ display: "flex", gap: 8, marginBottom: 0, flexWrap: "wrap" }}>
             {HISTORY_TABS.map(tab => {
-              const count = byType(filteredBase.filter(e => e.status === tab.key)).length;
+            const count = applyFilters(filteredBase.filter(e => e.status === tab.key)).length;
               const isActive = activeHistoryTab === tab.key;
               return (
                 <button

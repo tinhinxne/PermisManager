@@ -45,6 +45,30 @@ function toLocalISO(dateVal) {
   const day   = String(d.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+// ── Crédit de séances supplémentaires (post-permis) ───────────────────────────
+const SEANCE_SUP_CREDIT_KEY = "seance_sup_credit";
+
+function getSeanceSupCredits() {
+  try { return JSON.parse(localStorage.getItem(SEANCE_SUP_CREDIT_KEY) || "{}"); }
+  catch { return {}; }
+}
+
+function getCredit(candidatId) {
+  const credits = getSeanceSupCredits();
+  return Number(credits[String(candidatId)] || 0);
+}
+
+function setCredit(candidatId, value) {
+  const credits = getSeanceSupCredits();
+  credits[String(candidatId)] = Math.max(0, Math.floor(value));
+  localStorage.setItem(SEANCE_SUP_CREDIT_KEY, JSON.stringify(credits));
+}
+
+function consumeCredit(candidatId) {
+  const current = getCredit(candidatId);
+  setCredit(candidatId, current - 1);
+  return current - 1;
+}
 
 function formatDateFr(iso) {
   if (!iso) return "";
@@ -723,15 +747,27 @@ if (candidatConflict) {
 
         <div style={{ padding:"18px 24px", overflowY:"auto", display:"flex", flexDirection:"column", gap:14 }}>
 
-          {/* Bannière permis obtenu */}
+         {/* Bannière permis obtenu */}
           {permisObtenu && (
             <div style={{ padding:"10px 14px", borderRadius:10, background:"#eef2ff", border:"1.5px solid #c7d2fe", fontSize:"0.78rem", color:"#4338ca", fontWeight:600, display:"flex", alignItems:"center", gap:8 }}>
               <span style={{ fontSize:18 }}>🎓</span>
               <div>
                 <div>Permis obtenu — séance hors forfait</div>
                 <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>
-                  Tous les types de séance sont disponibles. Le paiement se gère dans le module Paiements.
+                  Tous les types de séance sont disponibles.
                 </div>
+                {form.candidatId && (() => {
+                  const credit = getCredit(form.candidatId);
+                  return credit > 0 ? (
+                    <div style={{ marginTop:6, fontWeight:700, color:"#16a34a", fontSize:"0.72rem" }}>
+                      ✅ Crédit disponible : {credit} séance(s) déjà payée(s) — aucun paiement requis pour celle-ci.
+                    </div>
+                  ) : (
+                    <div style={{ marginTop:6, fontWeight:700, color:"#ea580c", fontSize:"0.72rem" }}>
+                      ⚠️ Aucun crédit restant — un paiement (par lot) sera demandé après la création.
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -1473,7 +1509,7 @@ export default function AgendaPage() {
   const [filterCat,       setFilterCat]       = useState("");
   const [seanceSupModal,  setSeanceSupModal]  = useState(null); // { candidat }
  const [prefillCandidatId,  setPrefillCandidatId]  = useState(null);
-const [milestoneModal,     setMilestoneModal]      = useState(null); // { candidatName, candidatId }
+
 const [seanceSupPaiement,  setSeanceSupPaiement]   = useState(null); // { candidatId, candidatName }
 
   const { isMoniteurEnConge, isCongeAnnuel, congeAnnuel } = useCongeCtx();
@@ -1635,27 +1671,19 @@ if (conflict) {
           await loadSeances();
           showToast("Séance créée avec succès.");
 
-          const candidatId = _formData.candidatIds?.[0];
+        const candidatId = _formData.candidatIds?.[0];
           if (candidatId) {
-            try {
-              const allRows     = await api.getSeances();
-              const allSessions = Array.isArray(allRows) ? allRows.map(dbRowToSession) : [];
-              const nbSessions  = allSessions.filter(s => {
-                if (!s._raw?.candidatsIds) return false;
-                const ids = String(s._raw.candidatsIds).split(",").map(id => parseInt(id.trim()));
-                return ids.includes(candidatId);
-              }).length;
-              const nomCandidat = sessionObj.name || "Ce candidat";
-              // Afficher seulement la milestone "20 séances" — plus de modal "extra"
-             if (nbSessions === 20) {
-  // Exactement 20 → fin de formation
-  setMilestoneModal({ candidatName: nomCandidat, candidatId });
-} else if (nbSessions > 20) {
-  // Au-delà de 20 → séance supplémentaire, déclencher paiement
-  setSeanceSupPaiement({ candidatId, candidatName: nomCandidat });
-}
-            } catch (milestoneErr) {
-              console.error("Erreur vérification milestone :", milestoneErr);
+            const nomCandidat = sessionObj.name || "Ce candidat";
+            if (aObtenuPermis(candidatId)) {
+              const credit = getCredit(candidatId);
+              if (credit > 0) {
+                // Crédit déjà payé disponible → on consomme une unité, pas de paiement
+                const resteApres = consumeCredit(candidatId);
+                showToast(`🎓 Séance supplémentaire créée — crédit restant : ${resteApres}.`, "info");
+              } else {
+                // Plus de crédit → proposer l'achat d'un nouveau lot de séances
+                setSeanceSupPaiement({ candidatId, candidatName: nomCandidat });
+              }
             }
           }
         } else {
@@ -1909,22 +1937,15 @@ if (conflict) {
           onConfirm={handleConfirmSeanceSup}
         />
       )}
-{milestoneModal && (
-  <MilestoneModal
-    candidatName={milestoneModal.candidatName}
-    onClose={() => setMilestoneModal(null)}
-    onPayer={() => {
-      navigate("/payments", {
-        state: {
-          openSeanceSup: true,
-          candidatId:   milestoneModal.candidatId,
-          candidatName: milestoneModal.candidatName,
-        },
-      });
-      setMilestoneModal(null);
-    }}
+      {seanceSupPaiement && (
+  <SeanceSupPaiementModal
+    candidatName={seanceSupPaiement.candidatName}
+    candidatId={seanceSupPaiement.candidatId}
+    onClose={() => setSeanceSupPaiement(null)}
+    onConfirm={handleSeanceSupPaiement}
   />
 )}
+
 
       {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
     </>

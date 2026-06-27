@@ -29,6 +29,27 @@ function toLocalISO(dateVal) {
   const d = dateVal instanceof Date ? dateVal : new Date(dateVal);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
+function getSeanceSupCredits() {
+  try { return JSON.parse(localStorage.getItem(SEANCE_SUP_CREDIT_KEY) || "{}"); }
+  catch { return {}; }
+}
+
+function getCredit(candidatId) {
+  const credits = getSeanceSupCredits();
+  return Number(credits[String(candidatId)] || 0);
+}
+
+function setCredit(candidatId, value) {
+  const credits = getSeanceSupCredits();
+  credits[String(candidatId)] = Math.max(0, Math.floor(value));
+  localStorage.setItem(SEANCE_SUP_CREDIT_KEY, JSON.stringify(credits));
+}
+
+function consumeCredit(candidatId) {
+  const current = getCredit(candidatId);
+  setCredit(candidatId, current - 1);
+  return current - 1;
+}
 
 function dbRowToSession(row) {
   const rawDate   = toLocalISO(row.date);
@@ -168,6 +189,212 @@ function MilestoneModal({ candidatName, onClose }) {
             border:"none", color:"#fff", fontFamily:"'Poppins',sans-serif",
             fontSize:"0.88rem", fontWeight:700, cursor:"pointer",
           }}>Compris</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+// ── SÉANCE SUP PAIEMENT MODAL ─────────────────────────────────────────────────
+function SeanceSupPaiementModal({ candidatName, candidatId, onClose, onConfirm }) {
+  const [montant,  setMontant]  = useState("");
+  const [methode,  setMethode]  = useState("especes");
+  const [remarque, setRemarque] = useState("Séance supplémentaire");
+  const [saving,   setSaving]   = useState(false);
+  const [error,    setError]    = useState("");
+
+  const inpS = {
+    width:"100%", boxSizing:"border-box",
+    padding:"10px 12px", borderRadius:8,
+    border:"1.5px solid #e2e8f0",
+    fontFamily:"'Poppins',sans-serif",
+    fontSize:"0.85rem", color:"#1e293b",
+    background:"#fff", outline:"none",
+  };
+
+  const handleSubmit = async () => {
+    const montantNum = parseFloat(montant);
+    if (!montant || isNaN(montantNum) || montantNum <= 0) {
+      setError("Veuillez saisir un montant valide.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await onConfirm({
+        idCandidat:    candidatId,
+        montant:       montantNum,
+        methode,
+        remarque:      remarque || "Séance supplémentaire",
+        dateVersement: new Date().toISOString().slice(0, 10),
+        estSeanceSup:  true,
+      });
+    } catch (e) {
+      setError("Erreur lors de l'enregistrement.");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position:"fixed", inset:0, zIndex:900,
+        background:"rgba(15,23,42,0.65)", backdropFilter:"blur(4px)",
+        display:"flex", alignItems:"center", justifyContent:"center",
+        fontFamily:"'Poppins',sans-serif",
+      }}
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{
+        background:"#fff", borderRadius:18, width:420, maxWidth:"94vw",
+        boxShadow:"0 30px 80px rgba(0,0,0,0.22)", overflow:"hidden",
+        animation:"milestoneUp .25s cubic-bezier(.34,1.56,.64,1)",
+      }}>
+        <div style={{
+          background:"linear-gradient(135deg,#6366f1,#4f46e5)",
+          padding:"20px 24px 16px",
+          display:"flex", alignItems:"center", justifyContent:"space-between",
+        }}>
+          <div>
+            <div style={{ fontSize:"1rem", fontWeight:800, color:"#fff" }}>
+              💳 Paiement — Séance supplémentaire
+            </div>
+            <div style={{ fontSize:"0.72rem", color:"#c7d2fe", marginTop:3 }}>
+              {candidatName} · Hors forfait
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background:"rgba(255,255,255,0.15)", border:"none",
+            borderRadius:8, width:30, height:30,
+            color:"#fff", cursor:"pointer", fontSize:14,
+            display:"grid", placeItems:"center",
+          }}>✕</button>
+        </div>
+
+        <div style={{ padding:"20px 24px", display:"flex", flexDirection:"column", gap:14 }}>
+          <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+            <label style={{
+              fontSize:"0.72rem", fontWeight:700, color:"#64748b",
+              textTransform:"uppercase", letterSpacing:0.5,
+            }}>
+              Montant (DA) <span style={{ color:"#ef4444" }}>*</span>
+            </label>
+            <div style={{ position:"relative" }}>
+              <input
+                type="number"
+                min="0"
+                placeholder="Ex : 1500"
+                value={montant}
+                onChange={e => { setMontant(e.target.value); setError(""); }}
+                style={{ ...inpS, paddingRight:40 }}
+                autoFocus
+              />
+              <span style={{
+                position:"absolute", right:12, top:"50%",
+                transform:"translateY(-50%)",
+                fontSize:"0.75rem", color:"#94a3b8", fontWeight:600,
+              }}>DA</span>
+            </div>
+          </div>
+
+          <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+            <label style={{
+              fontSize:"0.72rem", fontWeight:700, color:"#64748b",
+              textTransform:"uppercase", letterSpacing:0.5,
+            }}>
+              Méthode de paiement
+            </label>
+            <div style={{ display:"flex", gap:8 }}>
+              {[
+                { val:"especes", label:"💵 Espèces" },
+                { val:"ccp",     label:"🏦 CCP" },
+                { val:"carte",   label:"💳 Carte" },
+              ].map(({ val, label }) => (
+                <button
+                  key={val}
+                  onClick={() => setMethode(val)}
+                  style={{
+                    flex:1, padding:"8px 4px", borderRadius:8, cursor:"pointer",
+                    fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600,
+                    border:`2px solid ${methode===val ? "#6366f1" : "#e2e8f0"}`,
+                    background: methode===val ? "#eef2ff" : "#f8fafc",
+                    color: methode===val ? "#4338ca" : "#64748b",
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+            <label style={{
+              fontSize:"0.72rem", fontWeight:700, color:"#64748b",
+              textTransform:"uppercase", letterSpacing:0.5,
+            }}>
+              Remarque
+            </label>
+            <input
+              type="text"
+              value={remarque}
+              onChange={e => setRemarque(e.target.value)}
+              style={inpS}
+              placeholder="Séance supplémentaire"
+            />
+          </div>
+
+          {montant && !isNaN(parseFloat(montant)) && parseFloat(montant) > 0 && (
+            <div style={{
+              padding:"10px 14px", borderRadius:10,
+              background:"#f0fdf4", border:"1px solid #86efac",
+              fontSize:"0.8rem", color:"#166534",
+              display:"flex", justifyContent:"space-between", alignItems:"center",
+            }}>
+              <span>✅ Versement à enregistrer</span>
+              <strong style={{ fontSize:"1rem" }}>
+                {parseInt(montant).toLocaleString("fr-DZ")} DA
+              </strong>
+            </div>
+          )}
+
+          {error && (
+            <div style={{
+              padding:"8px 12px", borderRadius:8,
+              background:"#fef2f2", border:"1px solid #fca5a5",
+              fontSize:"0.78rem", color:"#dc2626", fontWeight:600,
+            }}>
+              ⚠️ {error}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding:"0 24px 22px", display:"flex", gap:10 }}>
+          <button onClick={onClose} disabled={saving} style={{
+            flex:1, padding:"10px 0", borderRadius:10,
+            background:"#f1f5f9", border:"none", color:"#64748b",
+            fontFamily:"'Poppins',sans-serif", fontSize:"0.84rem",
+            fontWeight:600, cursor:"pointer",
+          }}>
+            Annuler
+          </button>
+          <button onClick={handleSubmit} disabled={saving} style={{
+            flex:2, padding:"10px 0", borderRadius:10,
+            background: saving ? "#a5b4fc" : "linear-gradient(135deg,#6366f1,#4f46e5)",
+            border:"none", color:"#fff",
+            fontFamily:"'Poppins',sans-serif", fontSize:"0.84rem",
+            fontWeight:700, cursor: saving ? "not-allowed" : "pointer",
+            boxShadow:"0 4px 14px rgba(99,102,241,0.35)",
+            display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+          }}>
+            {saving && (
+              <div style={{
+                width:13, height:13, borderRadius:"50%",
+                border:"2px solid rgba(255,255,255,0.4)",
+                borderTop:"2px solid #fff",
+                animation:"spin 0.7s linear infinite",
+              }} />
+            )}
+            {saving ? "Enregistrement…" : "💾 Enregistrer"}
+          </button>
         </div>
       </div>
     </div>
@@ -846,6 +1073,7 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
   );
 }
 
+
 // ── CALENDAR GRID ─────────────────────────────────────────────────────────────
 function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupClick, currentUserId, onCandidatPermisClick, aObtenuPermis, isCongeAnnuel, isMoniteurEnConge,congesReady }) {
 
@@ -1054,6 +1282,7 @@ export default function AgendaMoniteur() {
 
   const [seanceSupModal,    setSeanceSupModal]    = useState(null);
   const [milestoneModal,    setMilestoneModal]    = useState(null);
+  const [seanceSupPaiement, setSeanceSupPaiement] = useState(null); // { candidatId, candidatName }
   const [prefillCandidatId, setPrefillCandidatId] = useState(null);
 
   // État pour s'assurer que les congés sont chargés
@@ -1213,25 +1442,41 @@ const isDateBloquee = useCallback((dateStr) => {
       if (api?.updateSeance && editing) {
         await api.updateSeance({ id:editing.id, ..._formData, candidatId:_formData.candidatIds?.[0]||null });
         await loadSeances(); showToast("Séance modifiée.");
-      } else if (api?.addSeance && !editing) {
-        const result = await api.addSeance(_formData);
-        if (result?.success) {
-          await loadSeances();
-          showToast("Séance créée.");
+      }  else if (api?.addSeance && !editing) {
+  const result = await api.addSeance(_formData);
+  if (result?.success) {
+    await loadSeances();
+    showToast("Séance créée.");
 
-          const candidatId = _formData.candidatIds?.[0];
-          if (candidatId) {
-            const seancesCandidat = sessions.filter(s => {
-              const ids = s._raw?.candidatsIds ? s._raw.candidatsIds.split(",").map(x => parseInt(x.trim())) : [];
-              return ids.includes(candidatId);
-            });
-            if (seancesCandidat.length + 1 >= 20) {
-              const nom = sessionObj.name || "";
-              setMilestoneModal(nom);
-            }
-          }
-        } else throw new Error(result?.message || "Erreur.");
+    const candidatId = _formData.candidatIds?.[0];
+    if (candidatId) {
+      const nomCandidat = sessionObj.name || "Ce candidat";
+
+      if (aObtenuPermis(candidatId)) {
+        // ── Candidat ayant déjà son permis → gestion du crédit séance sup. ──
+        const credit = getCredit(candidatId);
+        if (credit > 0) {
+          // Crédit déjà payé disponible → on consomme une unité, pas de paiement
+          const resteApres = consumeCredit(candidatId);
+          showToast(`🎓 Séance supplémentaire créée — crédit restant : ${resteApres}.`, "info");
+        } else {
+          // Plus de crédit → proposer l'enregistrement d'un paiement pour cette séance
+          setSeanceSupPaiement({ candidatId, candidatName: nomCandidat });
+        }
+      } else {
+        // Candidat en formation normale → vérifier le palier des 20 séances
+        const seancesCandidat = sessions.filter(s => {
+          const ids = s._raw?.candidatsIds ? s._raw.candidatsIds.split(",").map(x => parseInt(x.trim())) : [];
+          return ids.includes(candidatId);
+        });
+        if (seancesCandidat.length + 1 >= 20) {
+          setMilestoneModal(nomCandidat);
+        }
       }
+    }
+  } else throw new Error(result?.message || "Erreur.");
+}
+      
     } catch(e) { showToast(e.message || "Erreur.", "error"); }
     finally {
       setSaving(false);
@@ -1240,6 +1485,26 @@ const isDateBloquee = useCallback((dateStr) => {
       setPrefillCandidatId(null);
     }
   };
+  const handleSeanceSupPaiement = async (paymentData) => {
+  try {
+    if (api?.addPayment) {
+      const result = await api.addPayment(paymentData);
+      if (result?.success) {
+        showToast(`💳 Paiement séance supplémentaire enregistré — ${parseInt(paymentData.montant).toLocaleString("fr-DZ")} DA`, "success");
+      } else {
+        showToast("Erreur lors de l'enregistrement du paiement.", "error");
+      }
+    } else {
+      showToast("Paiement enregistré (mode démo).", "info");
+    }
+  } catch (e) {
+    showToast("Erreur lors de l'enregistrement du paiement.", "error");
+  } finally {
+    setSeanceSupPaiement(null);
+  }
+};
+
+// ── CALENDAR GRID ─────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -1479,6 +1744,14 @@ const isDateBloquee = useCallback((dateStr) => {
           onClose={() => setMilestoneModal(null)}
         />
       )}
+      {seanceSupPaiement && (
+  <SeanceSupPaiementModal
+    candidatName={seanceSupPaiement.candidatName}
+    candidatId={seanceSupPaiement.candidatId}
+    onClose={() => setSeanceSupPaiement(null)}
+    onConfirm={handleSeanceSupPaiement}
+  />
+)}
 
       {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
     </>

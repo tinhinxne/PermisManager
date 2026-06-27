@@ -567,11 +567,12 @@ const Examens = () => {
 
   // ── stats (basées sur filtres actifs) ──
   const allFiltered = applyFilters(examensList);
-  const statsData = [
+ const statsData = [
     { label: "Total session", val: allFiltered.length,                                        color: "blue",   icon: <FaUser />,        trend: "Candidats"      },
     { label: "Réussites",     val: allFiltered.filter(e => e.status === "Passed").length,    color: "green",  icon: <FaCheckCircle />, trend: "Validés"        },
     { label: "Échecs",        val: allFiltered.filter(e => e.status === "Failed").length,    color: "red",    icon: <FaTimesCircle />, trend: "À reprogrammer" },
     { label: "En attente",    val: scheduled.length,                                          color: "orange", icon: <FaClock />,       trend: "À évaluer"      },
+    { label: "Absents",       val: allFiltered.filter(e => e.status === "Absent").length,    color: "orange", icon: <FaUserSlash />,   trend: "Re-planifiés"   },
   ];
 
   const getCandidatName = (id) => {
