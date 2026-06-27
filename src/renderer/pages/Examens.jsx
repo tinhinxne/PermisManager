@@ -650,7 +650,6 @@ const Examens = () => {
           <span>
             Délai après échec : <strong>{examRules.delaiApresEchec}j</strong> ·
             Max tentatives : <strong>{examRules.tentativesMax}</strong> ·
-            Blocage impayé : <strong>{examRules.blocageImpaye ? "Oui" : "Non"}</strong> ·
             Jours : <strong>{examRules.joursAutorises?.join(", ")}</strong>
           </span>
         </div>

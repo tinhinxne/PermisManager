@@ -55,12 +55,14 @@ function getDiffDays(dateStr) {
   if (isNaN(examDate)) return null;
   return Math.ceil((examDate - today) / (1000 * 60 * 60 * 24));
 }
+
 function parseExamDate(dateStr) {
   if (!dateStr) return null;
   const normalized = String(dateStr).replace(/\//g, "-").slice(0, 10);
   const d = new Date(normalized + "T00:00:00");
   return isNaN(d) ? null : d;
 }
+
 // ─────────────────────────────────────────────
 // Badge J-X
 // ─────────────────────────────────────────────
@@ -414,10 +416,9 @@ function ExamenTableMoniteur({
                   )}
 
                   {/* Actions */}
-                 {/* Actions */}
-{hasActionsCol && (
-  <td style={{ ...td, whiteSpace: "nowrap" }}>
-    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap" }}>
+                  {hasActionsCol && (
+                    <td style={{ ...td, whiteSpace: "nowrap" }}>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap" }}>
 
                         {showEvaluer && CAN_TOGGLE_STATUS && (
                           <button
@@ -515,10 +516,11 @@ const ExamensMoniteur = () => {
   const [selectedExamen,      setSelectedExamen]      = useState(null);
   const [typeFilter,          setTypeFilter]          = useState("Tous");
   const [dateDebut,           setDateDebut]           = useState("");
-const [dateFin,             setDateFin]             = useState("");
+  const [dateFin,             setDateFin]             = useState("");
   const [loading,             setLoading]             = useState(false);
   const [lastGenerated,       setLastGenerated]       = useState(null);
   const [showReportes,        setShowReportes]        = useState(false);
+  const [searchReportes,      setSearchReportes]      = useState("");
   const [candidatsMap,        setCandidatsMap]        = useState({});
   const [mesCandidatIds,      setMesCandidatIds]      = useState([]);
   const [alertInfo,           setAlertInfo]           = useState(null);
@@ -529,7 +531,6 @@ const [dateFin,             setDateFin]             = useState("");
 
   const [showExportModal, setShowExportModal] = useState(false);
   const [pdfLoading,      setPdfLoading]      = useState(false);
-  
   const [exportForm, setExportForm] = useState({
     nomEcole: "", wilaya: "", centreExamen: "", morkaba: "", dateDepot: "", dateExamen: "",
   });
@@ -561,7 +562,6 @@ const [dateFin,             setDateFin]             = useState("");
       });
       setCandidatsMap(map);
 
-      // ← On calcule les IDs du moniteur ICI, avant generateExamens
       if (currentUser?.id) {
         const mesSeances = seances.filter(
           s => String(s.moniteur_id ?? s.moniteurId) === String(currentUser.id)
@@ -593,47 +593,48 @@ const [dateFin,             setDateFin]             = useState("");
 
   useEffect(() => { handleGenerate(); }, [currentUser?.id, CAN_VIEW_ALL_CANDIDATES]);
 
-  // ── FIX PRINCIPAL : useMemo pour que filteredBase se recalcule
-  //    dès que mesCandidatIds ou examensList changent ──
-  const filteredBase = useMemo(() => {
-    return examensList.filter(e =>
+  // ── filteredBase avec useMemo ──
+  const filteredBase = useMemo(() =>
+    examensList.filter(e =>
       CAN_VIEW_ALL_CANDIDATES ? true : mesCandidatIds.includes(String(e.candidatId))
-    );
-  }, [examensList, mesCandidatIds, CAN_VIEW_ALL_CANDIDATES]);
+    ),
+    [examensList, mesCandidatIds, CAN_VIEW_ALL_CANDIDATES]
+  );
 
-  // ── filtrage par type ──
+  // ── filtres : type + plage de dates ──
   const byType = (list) => typeFilter === "Tous" ? list : list.filter(e => e.type === typeFilter);
+
   const filterByDate = (list) => {
-  if (!dateDebut && !dateFin) return list;
-  return list.filter(e => {
-    const d = parseExamDate(e.date);
-    if (!d) return true;
-    const from = dateDebut ? new Date(dateDebut + "T00:00:00") : null;
-    const to   = dateFin   ? new Date(dateFin   + "T23:59:59") : null;
-    if (from && d < from) return false;
-    if (to   && d > to)   return false;
-    return true;
-  });
-};
+    if (!dateDebut && !dateFin) return list;
+    return list.filter(e => {
+      const d = parseExamDate(e.date);
+      if (!d) return true;
+      const from = dateDebut ? new Date(dateDebut + "T00:00:00") : null;
+      const to   = dateFin   ? new Date(dateFin   + "T23:59:59") : null;
+      if (from && d < from) return false;
+      if (to   && d > to)   return false;
+      return true;
+    });
+  };
 
-const hasDateFilter = !!(dateDebut || dateFin);
-const resetDateFilter = () => { setDateDebut(""); setDateFin(""); };
+  const hasDateFilter = !!(dateDebut || dateFin);
+  const resetDateFilter = () => { setDateDebut(""); setDateFin(""); };
 
-const applyFilters = (list) => filterByDate(byType(list));
+  const applyFilters = (list) => filterByDate(byType(list));
 
- // ── segmentation ──
-const scheduled    = applyFilters(filteredBase.filter(e => e.status === "Scheduled"));
-const history      = applyFilters(filteredBase.filter(e => ["Passed", "Failed", "Absent", "Reported"].includes(e.status)));
-const historyByTab = history.filter(e => e.status === activeHistoryTab);
+  // ── segmentation ──
+  const scheduled    = applyFilters(filteredBase.filter(e => e.status === "Scheduled"));
+  const history      = applyFilters(filteredBase.filter(e => ["Passed", "Failed", "Absent", "Reported"].includes(e.status)));
+  const historyByTab = history.filter(e => e.status === activeHistoryTab);
+  const allFiltered  = applyFilters(filteredBase);
+
   // ── stats ──
-const allFiltered = applyFilters(filteredBase);
-
   const statsData = [
-    { label: CAN_VIEW_ALL_CANDIDATES ? "Total session" : "Mes candidats", val: allFiltered.length,                                           color: "blue",   icon: <FaUser />,        trend: "Session"        },
-    { label: "Réussites",  val: allFiltered.filter(e => e.status === "Passed").length, color: "green",  icon: <FaCheckCircle />, trend: "Validés"        },
-    { label: "Échecs",     val: allFiltered.filter(e => e.status === "Failed").length, color: "red",    icon: <FaTimesCircle />, trend: "À reprogrammer" },
-    { label: "En attente", val: scheduled.length,                                       color: "orange", icon: <FaClock />,       trend: "À évaluer"      },
-    { label: "Absents",    val: allFiltered.filter(e => e.status === "Absent").length, color: "orange", icon: <FaUserSlash />,   trend: "Re-planifiés"   },
+    { label: CAN_VIEW_ALL_CANDIDATES ? "Total session" : "Mes candidats", val: allFiltered.length,                                            color: "blue",   icon: <FaUser />,        trend: "Session"        },
+    { label: "Réussites",  val: allFiltered.filter(e => e.status === "Passed").length,  color: "green",  icon: <FaCheckCircle />, trend: "Validés"        },
+    { label: "Échecs",     val: allFiltered.filter(e => e.status === "Failed").length,  color: "red",    icon: <FaTimesCircle />, trend: "À reprogrammer" },
+    { label: "En attente", val: scheduled.length,                                        color: "orange", icon: <FaClock />,       trend: "À évaluer"      },
+    { label: "Absents",    val: allFiltered.filter(e => e.status === "Absent").length,  color: "orange", icon: <FaUserSlash />,   trend: "Re-planifiés"   },
   ];
 
   // ── actions ──
@@ -733,7 +734,6 @@ const allFiltered = applyFilters(filteredBase);
   const th = { padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "13px" };
   const td = { padding: "12px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "13px", color: "#1F2937" };
 
-  // ── props communes pour ExamenTableMoniteur ──
   const tableSharedProps = {
     CAN_REMOVE_CANDIDAT,
     CAN_TOGGLE_STATUS,
@@ -801,7 +801,6 @@ const allFiltered = applyFilters(filteredBase);
           <span>
             Délai après échec : <strong>{examRules.delaiApresEchec}j</strong> ·
             Tentatives max : <strong>{examRules.tentativesMax}</strong> ·
-            Blocage impayé : <strong>{examRules.blocageImpaye ? "Oui" : "Non"}</strong>
           </span>
         </div>
 
@@ -830,97 +829,62 @@ const allFiltered = applyFilters(filteredBase);
           ))}
         </div>
 
-      {/* ══════════════════════════════════════════════
-    FILTRES — Type + Plage de dates
-══════════════════════════════════════════════ */}
-<div style={{
-  display: "flex", alignItems: "flex-end", flexWrap: "wrap", gap: 12,
-  background: "#f8fafc", border: "1px solid #e2e8f0",
-  borderRadius: 12, padding: "14px 16px", marginBottom: 4,
-}}>
-  {/* Filtre type */}
-  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-    <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Type d'examen</label>
-    <SelectFilter
-      value={typeFilter} onChange={setTypeFilter}
-      options={["Tous", "Code", "Créneau", "Circulation"]}
-      label="Type d'examen"
-    />
-  </div>
+        {/* ══════════════════════════════════════════════
+            FILTRES — Type + Plage de dates
+        ══════════════════════════════════════════════ */}
+        <div style={{
+          display: "flex", alignItems: "flex-end", flexWrap: "wrap", gap: 12,
+          background: "#f8fafc", border: "1px solid #e2e8f0",
+          borderRadius: 12, padding: "14px 16px", marginBottom: 4,
+        }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Type d'examen</label>
+            <SelectFilter
+              value={typeFilter} onChange={setTypeFilter}
+              options={["Tous", "Code", "Créneau", "Circulation"]}
+              label="Type d'examen"
+            />
+          </div>
 
-  <div style={{ width: 1, height: 36, background: "#e2e8f0", alignSelf: "center" }} />
+          <div style={{ width: 1, height: 36, background: "#e2e8f0", alignSelf: "center" }} />
 
-  {/* Filtre date début */}
-  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-    <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Du</label>
-    <input
-      type="date"
-      value={dateDebut}
-      onChange={e => setDateDebut(e.target.value)}
-      max={dateFin || undefined}
-      style={{
-        padding: "8px 12px", borderRadius: 8,
-        border: dateDebut ? "1.5px solid #2b537e" : "1px solid #d1d5db",
-        fontSize: 13, color: "#1f2937", background: "#fff",
-        outline: "none", cursor: "pointer",
-      }}
-    />
-  </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Du</label>
+            <input
+              type="date" value={dateDebut} onChange={e => setDateDebut(e.target.value)} max={dateFin || undefined}
+              style={{ padding: "8px 12px", borderRadius: 8, border: dateDebut ? "1.5px solid #2b537e" : "1px solid #d1d5db", fontSize: 13, color: "#1f2937", background: "#fff", outline: "none", cursor: "pointer" }}
+            />
+          </div>
 
-  <div style={{ color: "#94a3b8", fontSize: 16, paddingBottom: 4 }}>→</div>
+          <div style={{ color: "#94a3b8", fontSize: 16, paddingBottom: 4 }}>→</div>
 
-  {/* Filtre date fin */}
-  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-    <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Au</label>
-    <input
-      type="date"
-      value={dateFin}
-      onChange={e => setDateFin(e.target.value)}
-      min={dateDebut || undefined}
-      style={{
-        padding: "8px 12px", borderRadius: 8,
-        border: dateFin ? "1.5px solid #2b537e" : "1px solid #d1d5db",
-        fontSize: 13, color: "#1f2937", background: "#fff",
-        outline: "none", cursor: "pointer",
-      }}
-    />
-  </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Au</label>
+            <input
+              type="date" value={dateFin} onChange={e => setDateFin(e.target.value)} min={dateDebut || undefined}
+              style={{ padding: "8px 12px", borderRadius: 8, border: dateFin ? "1.5px solid #2b537e" : "1px solid #d1d5db", fontSize: 13, color: "#1f2937", background: "#fff", outline: "none", cursor: "pointer" }}
+            />
+          </div>
 
-  {hasDateFilter && (
-    <button
-      onClick={resetDateFilter}
-      title="Effacer le filtre de dates"
-      style={{
-        display: "flex", alignItems: "center", gap: 6,
-        padding: "8px 14px", borderRadius: 8,
-        border: "1px solid #fca5a5", background: "#fef2f2",
-        color: "#b91c1c", cursor: "pointer", fontSize: 12.5,
-        fontWeight: 600, alignSelf: "flex-end",
-      }}
-    >
-      <FaTimes style={{ fontSize: 11 }} /> Effacer dates
-    </button>
-  )}
+          {hasDateFilter && (
+            <button
+              onClick={resetDateFilter}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c", cursor: "pointer", fontSize: 12.5, fontWeight: 600, alignSelf: "flex-end" }}
+            >
+              <FaTimes style={{ fontSize: 11 }} /> Effacer dates
+            </button>
+          )}
 
-  {hasDateFilter && (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 6,
-      background: "#eff6ff", border: "1px solid #bfdbfe",
-      borderRadius: 8, padding: "7px 12px", fontSize: 12,
-      color: "#1d4ed8", fontWeight: 600, alignSelf: "flex-end",
-    }}>
-      <FaFilter style={{ fontSize: 10 }} />
-      {dateDebut && dateFin
-        ? `${dateDebut} → ${dateFin}`
-        : dateDebut
-        ? `À partir du ${dateDebut}`
-        : `Jusqu'au ${dateFin}`}
-      <span style={{ background: "#dbeafe", borderRadius: 10, padding: "1px 7px", fontSize: 11 }}>
-        {allFiltered.length} résultat{allFiltered.length > 1 ? "s" : ""}
-      </span>
-    </div>
-  )}
-</div>
+          {hasDateFilter && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "7px 12px", fontSize: 12, color: "#1d4ed8", fontWeight: 600, alignSelf: "flex-end" }}>
+              <FaFilter style={{ fontSize: 10 }} />
+              {dateDebut && dateFin ? `${dateDebut} → ${dateFin}` : dateDebut ? `À partir du ${dateDebut}` : `Jusqu'au ${dateFin}`}
+              <span style={{ background: "#dbeafe", borderRadius: 10, padding: "1px 7px", fontSize: 11 }}>
+                {allFiltered.length} résultat{allFiltered.length > 1 ? "s" : ""}
+              </span>
+            </div>
+          )}
+        </div>
 
         {/* ══════════════════════════════════════════════
             TABLE 1 — PROGRAMMÉS
@@ -935,15 +899,8 @@ const allFiltered = applyFilters(filteredBase);
               <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>{scheduled.length} candidat(s) en attente d'évaluation</p>
             </div>
           </div>
-
           <div style={{ background: "#fff", borderRadius: 15, overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)" }}>
-            <ExamenTableMoniteur
-              {...tableSharedProps}
-              rows={scheduled}
-              showEvaluer={true}
-              showStatusBadge={false}
-              showRemove={true}
-            />
+            <ExamenTableMoniteur {...tableSharedProps} rows={scheduled} showEvaluer={true} showStatusBadge={false} showRemove={true} />
           </div>
         </div>
 
@@ -961,10 +918,9 @@ const allFiltered = applyFilters(filteredBase);
             </div>
           </div>
 
-          {/* Onglets */}
           <div style={{ display: "flex", gap: 8, marginBottom: 0, flexWrap: "wrap" }}>
             {HISTORY_TABS.map(tab => {
-            const count = applyFilters(filteredBase.filter(e => e.status === tab.key)).length;
+              const count = applyFilters(filteredBase.filter(e => e.status === tab.key)).length;
               const isActive = activeHistoryTab === tab.key;
               return (
                 <button
@@ -978,19 +934,13 @@ const allFiltered = applyFilters(filteredBase);
                     background: isActive ? "#fff" : "#f8fafc",
                     color: isActive ? tab.color : "#94a3b8",
                     fontWeight: isActive ? 700 : 500,
-                    fontSize: 13.5, cursor: "pointer",
-                    transition: "all 0.15s",
-                    position: "relative",
-                    bottom: isActive ? -2 : 0,
+                    fontSize: 13.5, cursor: "pointer", transition: "all 0.15s",
+                    position: "relative", bottom: isActive ? -2 : 0,
                   }}
                 >
                   <span>{tab.icon}</span>
                   <span>{tab.label}</span>
-                  <span style={{
-                    background: isActive ? tab.bg : "#f1f5f9",
-                    color: isActive ? tab.color : "#94a3b8",
-                    padding: "1px 8px", borderRadius: 20, fontSize: 11, fontWeight: 700,
-                  }}>
+                  <span style={{ background: isActive ? tab.bg : "#f1f5f9", color: isActive ? tab.color : "#94a3b8", padding: "1px 8px", borderRadius: 20, fontSize: 11, fontWeight: 700 }}>
                     {count}
                   </span>
                 </button>
@@ -998,23 +948,10 @@ const allFiltered = applyFilters(filteredBase);
             })}
           </div>
 
-          {/* Contenu tab actif */}
           <div style={{ background: "#fff", borderRadius: "0 12px 12px 12px", overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)", border: "2px solid #e2e8f0", borderTop: "none" }}>
             <AnimatePresence mode="wait">
-              <motion.div
-                key={activeHistoryTab}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.18 }}
-              >
-                <ExamenTableMoniteur
-                  {...tableSharedProps}
-                  rows={historyByTab}
-                  showEvaluer={false}
-                  showStatusBadge={true}
-                  showRemove={false}
-                />
+              <motion.div key={activeHistoryTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.18 }}>
+                <ExamenTableMoniteur {...tableSharedProps} rows={historyByTab} showEvaluer={false} showStatusBadge={true} showRemove={false} />
               </motion.div>
             </AnimatePresence>
           </div>
@@ -1030,66 +967,114 @@ const allFiltered = applyFilters(filteredBase);
               <FaCalendarPlus /> {showReportes ? "Masquer" : "Voir"} vos candidats reportés ({reportesEntries.length})
             </button>
 
-            {showReportes && (
-              <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 12, padding: 16 }}>
-                <p style={{ fontSize: 13, color: "#78350f", marginBottom: 12, fontWeight: 600 }}>
-                  Ces candidats seront re-suggérés automatiquement à leur prochaine date d'examen :
-                </p>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr style={{ background: "#fef3c7" }}>
-                      <th style={{ ...th, color: "#78350f", background: "transparent" }}>Candidat</th>
-                      <th style={{ ...th, color: "#78350f", background: "transparent" }}>Type d'examen</th>
-                      <th style={{ ...th, color: "#78350f", background: "transparent" }}>Prochaine suggestion</th>
-                      <th style={{ ...th, color: "#78350f", background: "transparent" }}>Raison</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {reportesEntries.map(([cid, info]) => {
-                      const nomComplet = getCandidatName(cid);
-                      return (
-                        <tr key={cid}>
-                          <td style={{ ...th, color: "#1f2937", fontWeight: 600, padding: "12px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "13px" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#fde68a", color: "#78350f", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-                                {nomComplet.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
+            {showReportes && (() => {
+              const q = searchReportes.trim().toLowerCase();
+              const filtered = reportesEntries.filter(([cid, info]) => {
+                const nom = getCandidatName(cid).toLowerCase();
+                return (
+                  nom.includes(q) ||
+                  String(cid).includes(q) ||
+                  (info.type || "").toLowerCase().includes(q) ||
+                  (info.reason || "").toLowerCase().includes(q)
+                );
+              });
+
+              return (
+                <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 12, padding: 16 }}>
+
+                  {/* En-tête : texte + champ de recherche */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+                    <p style={{ fontSize: 13, color: "#78350f", fontWeight: 600, margin: 0 }}>
+                      Ces candidats seront re-suggérés automatiquement à leur prochaine date d'examen :
+                    </p>
+                    <div style={{ position: "relative", minWidth: 220 }}>
+                      <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#a16207", fontSize: 13, pointerEvents: "none" }}>🔍</span>
+                      <input
+                        type="text"
+                        value={searchReportes}
+                        onChange={e => setSearchReportes(e.target.value)}
+                        placeholder="Rechercher un candidat..."
+                        style={{
+                          paddingLeft: 32, paddingRight: searchReportes ? 30 : 12,
+                          paddingTop: 7, paddingBottom: 7,
+                          borderRadius: 8, border: "1px solid #fde68a",
+                          background: "#fff", fontSize: 13, color: "#1f2937",
+                          outline: "none", width: "100%", boxSizing: "border-box",
+                        }}
+                      />
+                      {searchReportes && (
+                        <button
+                          onClick={() => setSearchReportes("")}
+                          style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#a16207", fontSize: 14, padding: 0, lineHeight: 1 }}
+                        >✕</button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Compteur résultats */}
+                  {q && (
+                    <p style={{ fontSize: 12, color: "#92400e", marginBottom: 10 }}>
+                      {filtered.length} résultat(s) pour <strong>« {searchReportes} »</strong>
+                    </p>
+                  )}
+
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "#fef3c7" }}>
+                        <th style={{ ...th, color: "#78350f", background: "transparent" }}>Candidat</th>
+                        <th style={{ ...th, color: "#78350f", background: "transparent" }}>Type d'examen</th>
+                        <th style={{ ...th, color: "#78350f", background: "transparent" }}>Prochaine suggestion</th>
+                        <th style={{ ...th, color: "#78350f", background: "transparent" }}>Raison</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.length > 0 ? filtered.map(([cid, info]) => {
+                        const nomComplet = getCandidatName(cid);
+                        return (
+                          <tr key={cid}>
+                            <td style={{ ...td, fontWeight: 600 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#fde68a", color: "#78350f", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                                  {nomComplet.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div style={{ fontWeight: 700, color: "#1f2937" }}>{nomComplet}</div>
+                                  <div style={{ fontSize: 11, color: "#9ca3af" }}>ID #{cid}</div>
+                                </div>
                               </div>
-                              <div>
-                                <div style={{ fontWeight: 700, color: "#1f2937" }}>{nomComplet}</div>
-                                <div style={{ fontSize: 11, color: "#9ca3af" }}>ID #{cid}</div>
+                            </td>
+                            <td style={td}>{info.type}</td>
+                            <td style={td}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <FaCalendarDay style={{ color: "#f59e0b", fontSize: 12 }} />
+                                {info.nextSuggestedDate}
                               </div>
-                            </div>
-                          </td>
-                          <td style={{ ...td }}>{info.type}</td>
-                          <td style={{ ...td }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <FaCalendarDay style={{ color: "#f59e0b", fontSize: 12 }} />
-                              {info.nextSuggestedDate}
-                            </div>
-                          </td>
-                          <td style={{ ...td }}>
-                            <span style={{
-                              background:
-                                info.reason === "echec"   ? "#fee2e2" :
-                                info.reason === "absence" ? "#fff7ed" : "#f1f5f9",
-                              color:
-                                info.reason === "echec"   ? "#991b1b" :
-                                info.reason === "absence" ? "#c2410c" : "#475569",
-                              padding: "2px 8px", borderRadius: 10, fontSize: 12,
-                              display: "inline-flex", alignItems: "center", gap: 5,
-                            }}>
-                              {info.reason === "absence" && <FaUserSlash style={{ fontSize: 10 }} />}
-                              {info.reason === "echec"   ? "Échec" :
-                               info.reason === "absence" ? "Absence déclarée" : "Retiré"}
-                            </span>
+                            </td>
+                            <td style={td}>
+                              <span style={{
+                                background: info.reason === "echec" ? "#fee2e2" : info.reason === "absence" ? "#fff7ed" : "#f1f5f9",
+                                color:      info.reason === "echec" ? "#991b1b" : info.reason === "absence" ? "#c2410c" : "#475569",
+                                padding: "2px 8px", borderRadius: 10, fontSize: 12,
+                                display: "inline-flex", alignItems: "center", gap: 5,
+                              }}>
+                                {info.reason === "absence" && <FaUserSlash style={{ fontSize: 10 }} />}
+                                {info.reason === "echec" ? "Échec" : info.reason === "absence" ? "Absence déclarée" : "Retiré"}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      }) : (
+                        <tr>
+                          <td colSpan={4} style={{ textAlign: "center", padding: 30, color: "#a16207", fontSize: 13 }}>
+                            Aucun résultat pour « {searchReportes} »
                           </td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>
@@ -1098,18 +1083,10 @@ const allFiltered = applyFilters(filteredBase);
       <ExamenModal examen={selectedExamen} onClose={() => setSelectedExamen(null)} />
 
       {alertInfo && (
-        <AlertModal
-          icon={alertInfo.icon} title={alertInfo.title}
-          message={alertInfo.message} color={alertInfo.color}
-          onClose={() => setAlertInfo(null)}
-        />
+        <AlertModal icon={alertInfo.icon} title={alertInfo.title} message={alertInfo.message} color={alertInfo.color} onClose={() => setAlertInfo(null)} />
       )}
 
-      <AbsenceModal
-        examen={absenceModalExamen}
-        onClose={() => setAbsenceModalExamen(null)}
-        onConfirm={handleConfirmAbsence}
-      />
+      <AbsenceModal examen={absenceModalExamen} onClose={() => setAbsenceModalExamen(null)} onConfirm={handleConfirmAbsence} />
 
       <ResultModal
         examen={resultModalExamen}
@@ -1136,10 +1113,7 @@ const allFiltered = applyFilters(filteredBase);
       />
 
       {permisObtenuInfo && (
-        <PermisObtenuModal
-          candidatName={permisObtenuInfo.candidat}
-          onClose={() => setPermisObtenuInfo(null)}
-        />
+        <PermisObtenuModal candidatName={permisObtenuInfo.candidat} onClose={() => setPermisObtenuInfo(null)} />
       )}
 
       {/* ── Modal export PDF ── */}
@@ -1148,15 +1122,10 @@ const allFiltered = applyFilters(filteredBase);
           style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
           onClick={() => !pdfLoading && setShowExportModal(false)}
         >
-          <div
-            style={{ background: "#fff", borderRadius: 14, padding: 24, width: 440, maxWidth: "90vw", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }}
-            onClick={e => e.stopPropagation()}
-          >
+          <div style={{ background: "#fff", borderRadius: 14, padding: 24, width: 440, maxWidth: "90vw", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }} onClick={e => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <h3 style={{ margin: 0, fontSize: 17, color: "#1F2937" }}>قائمة المترشحين — Informations</h3>
-              <button onClick={() => !pdfLoading && setShowExportModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16 }}>
-                <FaTimes />
-              </button>
+              <button onClick={() => !pdfLoading && setShowExportModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16 }}><FaTimes /></button>
             </div>
             <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>
               L'école, la wilaya et la morkaba sont mémorisés. Le centre et les dates sont à vérifier à chaque session.
@@ -1174,9 +1143,7 @@ const allFiltered = applyFilters(filteredBase);
               {typeFilter !== "Tous" && <> · Type : <strong>{typeFilter}</strong></>}
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-              <button onClick={() => setShowExportModal(false)} disabled={pdfLoading} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>
-                Annuler
-              </button>
+              <button onClick={() => setShowExportModal(false)} disabled={pdfLoading} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>Annuler</button>
               <button onClick={handleConfirmExport} disabled={pdfLoading} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#2b537e", color: "#fff", cursor: "pointer", fontWeight: 600, fontSize: 13.5, opacity: pdfLoading ? 0.7 : 1 }}>
                 {pdfLoading ? "Génération..." : "Générer le PDF"}
               </button>
