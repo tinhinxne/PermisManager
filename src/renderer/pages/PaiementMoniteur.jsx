@@ -861,7 +861,19 @@ const PaymentsMoniteur = () => {
           >
             + Versement
           </button>
-          <button onClick={() => setShowSeanceSup(true)} style={{ padding: "10px 18px", borderRadius: 10, background: "#d97706", color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>➕ Séance Sup.</button>
+          <button
+  onClick={() => setShowSeanceSup(true)}
+  disabled={!canAddPayment}
+  title={!canAddPayment ? "Permission non accordée par l'administrateur" : ""}
+  style={{
+    padding: "10px 18px", borderRadius: 10,
+    background: canAddPayment ? "#d97706" : "#94a3b8",
+    color: "#fff", border: "none", fontWeight: 700, fontSize: 13,
+    cursor: canAddPayment ? "pointer" : "not-allowed"
+  }}
+>
+  ➕ Séance Sup.
+</button>
         </div>
 
         {/* Compteur */}
