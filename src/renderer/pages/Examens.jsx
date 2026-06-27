@@ -4,7 +4,7 @@ import {
   FaCalendarDay, FaCheckCircle, FaTimesCircle,
   FaClock, FaTrashAlt, FaExchangeAlt, FaUser,
   FaSync, FaInfoCircle, FaCalendarPlus, FaFilePdf, FaTimes,
-  FaUserSlash, FaHistory,
+  FaUserSlash, FaHistory, FaLock, FaFilter,
 } from "react-icons/fa";
 
 import SelectFilter from "../components/SelectFilter";
@@ -21,29 +21,20 @@ import { useAuth } from "../context/AuthContext";
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
-const STATUS_LABELS = {
-  Tous:      "Tous",
-  Scheduled: "Programmé",
-  Passed:    "Réussi",
-  Failed:    "Échoué",
-  Absent:    "Absent",
-  Reported:  "Reporté",
-};
-
 const STATUS_CONFIG = {
   Scheduled: { bg: "#e3f2fd", color: "#1565c0", label: "Programmé"  },
   Passed:    { bg: "#e8f5e9", color: "#2e7d32", label: "Réussi"     },
   Failed:    { bg: "#ffebee", color: "#c62828", label: "Échoué"     },
-  Absent:    { bg: "#fef3c7", color: "#92400e", label: "Absent"     },
-  Reported:  { bg: "#f3e8ff", color: "#6b21a8", label: "Reporté"    },
+  Absent:    { bg: "#fff7ed", color: "#c2410c", label: "Absent"     },
 };
 
 const HISTORY_TABS = [
-  { key: "Passed",   label: "Réussi",   icon: "✅", color: "#2e7d32", bg: "#e8f5e9"  },
-  { key: "Failed",   label: "Échoué",   icon: "❌", color: "#c62828", bg: "#ffebee"  },
-  { key: "Absent",   label: "Absent",   icon: "🚫", color: "#92400e", bg: "#fef3c7"  },
-  { key: "Reported", label: "Reporté",  icon: "🔄", color: "#6b21a8", bg: "#f3e8ff"  },
+  { key: "Passed", label: "Réussi", icon: "✅", color: "#2e7d32", bg: "#e8f5e9" },
+  { key: "Failed", label: "Échoué", icon: "❌", color: "#c62828", bg: "#ffebee" },
+  { key: "Absent", label: "Absent", icon: "🚫", color: "#c2410c", bg: "#fff7ed" },
 ];
+
+const ABSENCE_CUTOFF_DAYS = 1;
 
 function formatDateAr(isoDate) {
   if (!isoDate) return "";
@@ -56,8 +47,104 @@ function formatDateAr(isoDate) {
   return `${y}/${m}/${j}`;
 }
 
+function getDiffDays(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const normalized = String(dateStr).replace(/\//g, "-").slice(0, 10);
+  const examDate = new Date(normalized + "T00:00:00");
+  if (isNaN(examDate)) return null;
+  return Math.ceil((examDate - today) / (1000 * 60 * 60 * 24));
+}
+
+// Parse une date examen (format YYYY-MM-DD ou YYYY/MM/DD) en timestamp
+function parseExamDate(dateStr) {
+  if (!dateStr) return null;
+  const normalized = String(dateStr).replace(/\//g, "-").slice(0, 10);
+  const d = new Date(normalized + "T00:00:00");
+  return isNaN(d) ? null : d;
+}
+
 // ─────────────────────────────────────────────
-// ResultModal — avec Absent en plus
+// AbsenceModal
+// ─────────────────────────────────────────────
+function AbsenceModal({ examen, onClose, onConfirm }) {
+  if (!examen) return null;
+  const diff = getDiffDays(examen.date);
+  const canDeclare = diff !== null && diff > ABSENCE_CUTOFF_DAYS;
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 2000, background: "rgba(15,23,42,0.55)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{ background: "#fff", borderRadius: 18, width: 420, maxWidth: "90vw", padding: 26, boxShadow: "0 30px 70px rgba(0,0,0,0.22)", animation: "absencePop .22s cubic-bezier(.34,1.56,.64,1)" }}>
+        <style>{`@keyframes absencePop{from{transform:translateY(18px) scale(.96);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}`}</style>
+
+        <div style={{ textAlign: "center", marginBottom: 18 }}>
+          <div style={{ width: 58, height: 58, borderRadius: "50%", background: "#fff7ed", margin: "0 auto 12px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, border: "2px solid #fed7aa" }}>
+            <FaUserSlash style={{ color: "#ea580c" }} />
+          </div>
+          <h3 style={{ margin: 0, fontSize: 16, color: "#1e293b" }}>Absence anticipée</h3>
+          <p style={{ margin: "5px 0 0", fontSize: 12.5, color: "#64748b" }}>
+            {examen.candidat} · {examen.type} · {examen.date}
+          </p>
+        </div>
+
+        {diff !== null && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10,
+            background: diff > ABSENCE_CUTOFF_DAYS ? "#f0fdf4" : "#fef2f2",
+            border: `1px solid ${diff > ABSENCE_CUTOFF_DAYS ? "#bbf7d0" : "#fecaca"}`,
+            borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 13,
+          }}>
+            <span style={{ fontSize: 18 }}>{diff > ABSENCE_CUTOFF_DAYS ? "✅" : "🔒"}</span>
+            <div>
+              {diff > ABSENCE_CUTOFF_DAYS ? (
+                <>
+                  <strong style={{ color: "#166534" }}>Déclaration possible</strong>
+                  <div style={{ color: "#15803d", fontSize: 12 }}>Il reste <strong>{diff} jour(s)</strong> avant l'examen — délai suffisant.</div>
+                </>
+              ) : diff === 1 ? (
+                <>
+                  <strong style={{ color: "#b91c1c" }}>Délai dépassé — veille de l'examen</strong>
+                  <div style={{ color: "#dc2626", fontSize: 12 }}>Il n'est plus possible de déclarer une absence anticipée la veille.</div>
+                </>
+              ) : (
+                <>
+                  <strong style={{ color: "#b91c1c" }}>Délai dépassé</strong>
+                  <div style={{ color: "#dc2626", fontSize: 12 }}>L'examen est aujourd'hui ou déjà passé.</div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {canDeclare && (
+          <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 10, padding: "11px 14px", marginBottom: 18, fontSize: 13, color: "#92400e", lineHeight: 1.55 }}>
+            ⚠️ Ce candidat sera <strong>retiré de cette session</strong> et automatiquement re-planifié pour la <strong>prochaine date d'examen disponible</strong>. La raison sera enregistrée comme <em>absence déclarée</em>.
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>
+            Annuler
+          </button>
+          {canDeclare && (
+            <button
+              onClick={() => onConfirm(examen.id)}
+              style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#ea580c", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+            >
+              <FaUserSlash /> Confirmer l'absence
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// ResultModal
 // ─────────────────────────────────────────────
 function ResultModal({ examen, onClose, onConfirm }) {
   const [correctMode, setCorrectMode] = useState(false);
@@ -187,7 +274,7 @@ const btnRed       = { ...btnBase, background: "#fee2e2", color: "#991b1b" };
 const btnOrange    = { ...btnBase, background: "#fef3c7", color: "#92400e" };
 
 // ─────────────────────────────────────────────
-// Table partagée (programmés ou historique)
+// Table partagée
 // ─────────────────────────────────────────────
 function ExamenTable({ rows, isAdmin, perms, onRowClick, onResultClick, onRemove, onAbsent, showEvaluer = false, showStatusBadge = true, showRemove = true }) {
   const th = { padding: "13px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "13px" };
@@ -213,11 +300,12 @@ function ExamenTable({ rows, isAdmin, perms, onRowClick, onResultClick, onRemove
           <AnimatePresence mode="popLayout">
             {rows.length > 0 ? rows.map((examen, i) => {
               const st = STATUS_CONFIG[examen.status];
-
-              // Vérifie si la date d'examen est passée ou aujourd'hui
               const today = new Date(); today.setHours(0, 0, 0, 0);
               const examDate = new Date((examen.date || "") + "T00:00:00");
               const isPast = !isNaN(examDate) && examDate <= today;
+              const diff = getDiffDays(examen.date);
+              const canDeclareAbsence = examen.status === "Scheduled" && diff !== null && diff > ABSENCE_CUTOFF_DAYS;
+              const absenceTooLate    = examen.status === "Scheduled" && diff !== null && diff <= ABSENCE_CUTOFF_DAYS && diff >= 0;
 
               return (
                 <motion.tr
@@ -229,15 +317,7 @@ function ExamenTable({ rows, isAdmin, perms, onRowClick, onResultClick, onRemove
                   style={{ background: i % 2 === 0 ? "#fff" : "#F8FAFC", cursor: "pointer" }}
                   onClick={() => onRowClick(examen)}
                 >
-                  <td style={{ ...td, fontWeight: 600 }}>
-                    {examen.candidat}
-                    {examen.autoGenerated && (
-                      <span style={{ marginLeft: 8, fontSize: 10, background: "#e0f2fe", color: "#0369a1", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>auto</span>
-                    )}
-                    {examen.suggested && (
-                      <span style={{ marginLeft: 4, fontSize: 10, background: "#fef3c7", color: "#92400e", padding: "2px 6px", borderRadius: 10, fontWeight: 500 }}>re-suggéré</span>
-                    )}
-                  </td>
+                  <td style={{ ...td, fontWeight: 600 }}>{examen.candidat}</td>
                   <td style={td}>{examen.type}</td>
                   <td style={td}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -272,8 +352,8 @@ function ExamenTable({ rows, isAdmin, perms, onRowClick, onResultClick, onRemove
                   )}
                   {hasActionsCol && (
                     <td style={td}>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        {/* Bouton Évaluer — visible uniquement si date passée et permission OK */}
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+
                         {showEvaluer && (isAdmin || perms.CAN_TOGGLE_STATUS) && (
                           <button
                             onClick={e => { e.stopPropagation(); onResultClick(examen.id, e); }}
@@ -285,23 +365,22 @@ function ExamenTable({ rows, isAdmin, perms, onRowClick, onResultClick, onRemove
                               border: `1px solid ${isPast ? "#93c5fd" : "#e2e8f0"}`,
                               padding: "6px 12px", borderRadius: 6,
                               cursor: isPast ? "pointer" : "not-allowed",
-                              fontSize: 12, fontWeight: 600,
-                              transition: "all 0.15s",
+                              fontSize: 12, fontWeight: 600, transition: "all 0.15s",
                             }}
                           >
                             <FaExchangeAlt style={{ fontSize: 11 }} />
                             Évaluer
                           </button>
                         )}
-                        {/* Bouton Absent anticipé */}
-                        {showEvaluer && (isAdmin || perms.CAN_TOGGLE_STATUS) && (
+
+                        {showEvaluer && (isAdmin || perms.CAN_TOGGLE_STATUS) && canDeclareAbsence && (
                           <button
                             onClick={e => { e.stopPropagation(); onAbsent(examen.id, e); }}
-                            title="Marquer absent (avant l'examen)"
+                            title={`Déclarer une absence anticipée — J-${diff} jours`}
                             style={{
                               display: "flex", alignItems: "center", gap: 6,
-                              background: "#fef3c7", color: "#92400e",
-                              border: "1px solid #fde68a",
+                              background: "#fff7ed", color: "#ea580c",
+                              border: "1px solid #fed7aa",
                               padding: "6px 12px", borderRadius: 6,
                               cursor: "pointer", fontSize: 12, fontWeight: 600,
                               transition: "all 0.15s",
@@ -312,7 +391,22 @@ function ExamenTable({ rows, isAdmin, perms, onRowClick, onResultClick, onRemove
                           </button>
                         )}
 
-                        {/* Bouton Retirer */}
+                        {showEvaluer && (isAdmin || perms.CAN_TOGGLE_STATUS) && absenceTooLate && (
+                          <span
+                            title={diff === 1 ? "Trop tard — veille de l'examen" : "Trop tard — examen aujourd'hui"}
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: 6,
+                              background: "#f8fafc", color: "#94a3b8",
+                              border: "1px solid #e2e8f0",
+                              padding: "6px 11px", borderRadius: 6,
+                              fontSize: 12, cursor: "not-allowed", fontWeight: 600,
+                            }}
+                          >
+                            <FaLock style={{ fontSize: 10 }} />
+                            {diff === 1 ? "Veille 🔒" : "Aujourd'hui 🔒"}
+                          </span>
+                        )}
+
                         {showRemove && (isAdmin || perms.CAN_REMOVE_CANDIDAT) && (
                           <button
                             onClick={e => { e.stopPropagation(); onRemove(examen.id, e); }}
@@ -349,8 +443,8 @@ const Examens = () => {
     examensList, generateExamens, setExamenResult,
     retirerCandidat, candidatsReportes, EXAM_THRESHOLDS,
   } = useExamenCtx();
-  const { examRules }    = useExamenRulesCtx();
-  const { currentUser }  = useAuth();
+  const { examRules }      = useExamenRulesCtx();
+  const { currentUser }    = useAuth();
   const { getPermissions } = usePermissionsCtx();
 
   const isAdmin = currentUser?.type_utilisateur === "administrateur";
@@ -361,6 +455,8 @@ const Examens = () => {
   // ── state ──
   const [selectedExamen,    setSelectedExamen]    = useState(null);
   const [typeFilter,        setTypeFilter]        = useState("Tous");
+  const [dateDebut,         setDateDebut]         = useState("");
+  const [dateFin,           setDateFin]           = useState("");
   const [loading,           setLoading]           = useState(false);
   const [lastGenerated,     setLastGenerated]     = useState(null);
   const [showReportes,      setShowReportes]      = useState(false);
@@ -368,7 +464,9 @@ const Examens = () => {
   const [permisObtenuInfo,  setPermisObtenuInfo]  = useState(null);
   const [alertInfo,         setAlertInfo]         = useState(null);
   const [resultModalExamen, setResultModalExamen] = useState(null);
+  const [absenceModalExamen,setAbsenceModalExamen]= useState(null);
   const [activeHistoryTab,  setActiveHistoryTab]  = useState("Passed");
+  const [searchReportes,    setSearchReportes]    = useState("");
 
   const [showExportModal, setShowExportModal] = useState(false);
   const [pdfLoading,      setPdfLoading]      = useState(false);
@@ -409,14 +507,31 @@ const Examens = () => {
 
   useEffect(() => { handleGenerate(); }, []);
 
+  // ── filtre par plage de dates ──
+  const filterByDate = (list) => {
+    if (!dateDebut && !dateFin) return list;
+    return list.filter(e => {
+      const d = parseExamDate(e.date);
+      if (!d) return true;
+      const from = dateDebut ? new Date(dateDebut + "T00:00:00") : null;
+      const to   = dateFin   ? new Date(dateFin   + "T23:59:59") : null;
+      if (from && d < from) return false;
+      if (to   && d > to)   return false;
+      return true;
+    });
+  };
+
+  const hasDateFilter = !!(dateDebut || dateFin);
+
+  const resetDateFilter = () => { setDateDebut(""); setDateFin(""); };
+
   // ── actions ──
   const handleAbsent = (id, e) => {
     e.stopPropagation();
     if (!perms.CAN_TOGGLE_STATUS) return;
-    if (window.confirm("Marquer ce candidat comme absent anticipé ? Il sera déplacé dans l'historique.")) {
-      setExamenResult(id, "Absent");
-      setActiveHistoryTab("Absent");
-    }
+    const examen = examensList.find((x) => x.id === id);
+    if (!examen) return;
+    setAbsenceModalExamen(examen);
   };
 
   const handleRemove = (id, e) => {
@@ -441,19 +556,22 @@ const Examens = () => {
     setResultModalExamen(examen);
   };
 
-  // ── segmentation de la liste ──
+  // ── segmentation de la liste (type + date) ──
   const byType = (list) => typeFilter === "Tous" ? list : list.filter(e => e.type === typeFilter);
+  const byDate = (list) => filterByDate(list);
+  const applyFilters = (list) => byDate(byType(list));
 
-  const scheduled = byType(examensList.filter(e => e.status === "Scheduled"));
-  const history   = byType(examensList.filter(e => ["Passed", "Failed", "Absent", "Reported"].includes(e.status)));
+  const scheduled    = applyFilters(examensList.filter(e => e.status === "Scheduled"));
+  const history      = applyFilters(examensList.filter(e => ["Passed", "Failed", "Absent", "Reported"].includes(e.status)));
   const historyByTab = history.filter(e => e.status === activeHistoryTab);
 
-  // ── stats ──
+  // ── stats (basées sur filtres actifs) ──
+  const allFiltered = applyFilters(examensList);
   const statsData = [
-    { label: "Total session", val: examensList.length,                                       color: "blue",   icon: <FaUser />,        trend: "Candidats"      },
-    { label: "Réussites",     val: examensList.filter(e => e.status === "Passed").length,    color: "green",  icon: <FaCheckCircle />, trend: "Validés"        },
-    { label: "Échecs",        val: examensList.filter(e => e.status === "Failed").length,    color: "red",    icon: <FaTimesCircle />, trend: "À reprogrammer" },
-    { label: "En attente",    val: examensList.filter(e => e.status === "Scheduled").length, color: "orange", icon: <FaClock />,       trend: "À évaluer"      },
+    { label: "Total session", val: allFiltered.length,                                        color: "blue",   icon: <FaUser />,        trend: "Candidats"      },
+    { label: "Réussites",     val: allFiltered.filter(e => e.status === "Passed").length,    color: "green",  icon: <FaCheckCircle />, trend: "Validés"        },
+    { label: "Échecs",        val: allFiltered.filter(e => e.status === "Failed").length,    color: "red",    icon: <FaTimesCircle />, trend: "À reprogrammer" },
+    { label: "En attente",    val: scheduled.length,                                          color: "orange", icon: <FaClock />,       trend: "À évaluer"      },
   ];
 
   const getCandidatName = (id) => {
@@ -469,7 +587,6 @@ const Examens = () => {
 
   // ── export ──
   const openExportModal = () => {
-    const allFiltered = byType(examensList);
     if (allFiltered.length === 0) { alert("Aucun candidat à exporter."); return; }
     setExportForm(f => ({ ...f, dateExamen: formatDateAr(allFiltered[0]?.date) || f.dateExamen }));
     setShowExportModal(true);
@@ -480,7 +597,6 @@ const Examens = () => {
     if (!exportForm.wilaya.trim() || !exportForm.centreExamen.trim()) { alert("Merci de renseigner la wilaya et le centre d'examen."); return; }
     setPdfLoading(true);
     try {
-      const allFiltered = byType(examensList);
       const candidatsPourPDF = allFiltered.map((examen, i) => {
         const info = candidatsMap[String(examen.candidatId)] || {};
         return { rang: i + 1, numDossier: examen.candidatId, nomPrenom: examen.candidat, nomPrenomAr: [info.nom_ar, info.prenom_ar].filter(Boolean).join(" "), dateNaissance: formatDateAr(examen.dateNaissance), categorie: examen.categoriePermis || "", typeExamen: examen.type || "", dateDepot: formatDateAr(exportForm.dateDepot), dateExamenRapport: formatDateAr(examen.date), observations: "" };
@@ -552,17 +668,104 @@ const Examens = () => {
           ))}
         </div>
 
-        {/* ── Filtre type (commun aux deux tables) ── */}
-        <div className="examens-filters" style={{ marginBottom: 0 }}>
-          <SelectFilter
-            value={typeFilter} onChange={setTypeFilter}
-            options={["Tous", "Code", "Créneau", "Circulation"]}
-            label="Type d'examen"
-          />
+        {/* ══════════════════════════════════════════════
+            FILTRES — Type + Plage de dates
+        ══════════════════════════════════════════════ */}
+        <div style={{
+          display: "flex", alignItems: "flex-end", flexWrap: "wrap", gap: 12,
+          background: "#f8fafc", border: "1px solid #e2e8f0",
+          borderRadius: 12, padding: "14px 16px", marginBottom: 4,
+        }}>
+          {/* Filtre type */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Type d'examen</label>
+            <SelectFilter
+              value={typeFilter} onChange={setTypeFilter}
+              options={["Tous", "Code", "Créneau", "Circulation"]}
+              label="Type d'examen"
+            />
+          </div>
+
+          {/* Séparateur */}
+          <div style={{ width: 1, height: 36, background: "#e2e8f0", alignSelf: "center" }} />
+
+          {/* Filtre date début */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Du</label>
+            <input
+              type="date"
+              value={dateDebut}
+              onChange={e => setDateDebut(e.target.value)}
+              max={dateFin || undefined}
+              style={{
+                padding: "8px 12px", borderRadius: 8,
+                border: dateDebut ? "1.5px solid #2b537e" : "1px solid #d1d5db",
+                fontSize: 13, color: "#1f2937", background: "#fff",
+                outline: "none", cursor: "pointer",
+              }}
+            />
+          </div>
+
+          {/* Flèche */}
+          <div style={{ color: "#94a3b8", fontSize: 16, paddingBottom: 4 }}>→</div>
+
+          {/* Filtre date fin */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Au</label>
+            <input
+              type="date"
+              value={dateFin}
+              onChange={e => setDateFin(e.target.value)}
+              min={dateDebut || undefined}
+              style={{
+                padding: "8px 12px", borderRadius: 8,
+                border: dateFin ? "1.5px solid #2b537e" : "1px solid #d1d5db",
+                fontSize: 13, color: "#1f2937", background: "#fff",
+                outline: "none", cursor: "pointer",
+              }}
+            />
+          </div>
+
+          {/* Bouton reset dates */}
+          {hasDateFilter && (
+            <button
+              onClick={resetDateFilter}
+              title="Effacer le filtre de dates"
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "8px 14px", borderRadius: 8,
+                border: "1px solid #fca5a5", background: "#fef2f2",
+                color: "#b91c1c", cursor: "pointer", fontSize: 12.5,
+                fontWeight: 600, alignSelf: "flex-end",
+              }}
+            >
+              <FaTimes style={{ fontSize: 11 }} /> Effacer dates
+            </button>
+          )}
+
+          {/* Badge résumé filtre actif */}
+          {hasDateFilter && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 6,
+              background: "#eff6ff", border: "1px solid #bfdbfe",
+              borderRadius: 8, padding: "7px 12px", fontSize: 12,
+              color: "#1d4ed8", fontWeight: 600, alignSelf: "flex-end",
+            }}>
+              <FaFilter style={{ fontSize: 10 }} />
+              {dateDebut && dateFin
+                ? `${dateDebut} → ${dateFin}`
+                : dateDebut
+                ? `À partir du ${dateDebut}`
+                : `Jusqu'au ${dateFin}`}
+              <span style={{ background: "#dbeafe", borderRadius: 10, padding: "1px 7px", fontSize: 11 }}>
+                {allFiltered.length} résultat{allFiltered.length > 1 ? "s" : ""}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* ══════════════════════════════════════════════
-            TABLE 1 — PROGRAMMÉS (Scheduled)
+            TABLE 1 — PROGRAMMÉS
         ══════════════════════════════════════════════ */}
         <div style={{ marginTop: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
@@ -595,7 +798,6 @@ const Examens = () => {
             TABLE 2 — HISTORIQUE avec TABS
         ══════════════════════════════════════════════ */}
         <div style={{ marginTop: 32 }}>
-          {/* Titre */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
             <div style={{ background: "#f3e8ff", color: "#6b21a8", width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <FaHistory />
@@ -609,7 +811,7 @@ const Examens = () => {
           {/* Tabs */}
           <div style={{ display: "flex", gap: 8, marginBottom: 0, flexWrap: "wrap" }}>
             {HISTORY_TABS.map(tab => {
-              const count = byType(examensList.filter(e => e.status === tab.key)).length;
+              const count = applyFilters(examensList.filter(e => e.status === tab.key)).length;
               const isActive = activeHistoryTab === tab.key;
               return (
                 <button
@@ -643,7 +845,6 @@ const Examens = () => {
             })}
           </div>
 
-          {/* Contenu du tab actif */}
           <div style={{ background: "#fff", borderRadius: "0 12px 12px 12px", overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)", border: "2px solid #e2e8f0", borderTop: "none" }}>
             <AnimatePresence mode="wait">
               <motion.div
@@ -660,6 +861,7 @@ const Examens = () => {
                   onRowClick={setSelectedExamen}
                   onResultClick={handleOpenResultModal}
                   onRemove={handleRemove}
+                  onAbsent={handleAbsent}
                   showEvaluer={false}
                   showStatusBadge={true}
                   showRemove={false}
@@ -673,66 +875,115 @@ const Examens = () => {
         {reportesEntries.length > 0 && (
           <div style={{ marginTop: 28 }}>
             <button
-              onClick={() => setShowReportes(v => !v)}
+              onClick={() => { setShowReportes(v => !v); setSearchReportes(""); }}
               style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "1px solid #e2e8f0", padding: "8px 14px", borderRadius: 8, cursor: "pointer", fontSize: 13, color: "#475569", marginBottom: 12 }}
             >
               <FaCalendarPlus /> {showReportes ? "Masquer" : "Voir"} les candidats reportés ({reportesEntries.length})
             </button>
 
-            {showReportes && (
-              <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 12, padding: 16 }}>
-                <p style={{ fontSize: 13, color: "#78350f", marginBottom: 12, fontWeight: 600 }}>
-                  Ces candidats seront re-suggérés automatiquement à leur prochaine date d'examen :
-                </p>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr style={{ background: "#fef3c7" }}>
-                      <th style={{ ...th, color: "#78350f", background: "transparent" }}>Candidat</th>
-                      <th style={{ ...th, color: "#78350f", background: "transparent" }}>Type d'examen</th>
-                      <th style={{ ...th, color: "#78350f", background: "transparent" }}>Prochaine suggestion</th>
-                      <th style={{ ...th, color: "#78350f", background: "transparent" }}>Raison</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {reportesEntries.map(([cid, info]) => {
-                      const nomComplet = getCandidatName(cid);
-                      return (
-                        <tr key={cid}>
-                          <td style={{ ...td, fontWeight: 600 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#fde68a", color: "#78350f", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-                                {nomComplet.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
+            {showReportes && (() => {
+              const q = searchReportes.trim().toLowerCase();
+              const filtered = reportesEntries.filter(([cid, info]) => {
+                const nom = getCandidatName(cid).toLowerCase();
+                return (
+                  nom.includes(q) ||
+                  String(cid).includes(q) ||
+                  (info.type || "").toLowerCase().includes(q) ||
+                  (info.reason || "").toLowerCase().includes(q)
+                );
+              });
+
+              return (
+                <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 12, padding: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+                    <p style={{ fontSize: 13, color: "#78350f", fontWeight: 600, margin: 0 }}>
+                      Ces candidats seront re-suggérés automatiquement à leur prochaine date d'examen :
+                    </p>
+                    <div style={{ position: "relative", minWidth: 220 }}>
+                      <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#a16207", fontSize: 13, pointerEvents: "none" }}>🔍</span>
+                      <input
+                        type="text"
+                        value={searchReportes}
+                        onChange={e => setSearchReportes(e.target.value)}
+                        placeholder="Rechercher un candidat..."
+                        style={{ paddingLeft: 32, paddingRight: searchReportes ? 30 : 12, paddingTop: 7, paddingBottom: 7, borderRadius: 8, border: "1px solid #fde68a", background: "#fff", fontSize: 13, color: "#1f2937", outline: "none", width: "100%", boxSizing: "border-box" }}
+                      />
+                      {searchReportes && (
+                        <button onClick={() => setSearchReportes("")} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#a16207", fontSize: 14, padding: 0, lineHeight: 1 }}>✕</button>
+                      )}
+                    </div>
+                  </div>
+
+                  {q && (
+                    <p style={{ fontSize: 12, color: "#92400e", marginBottom: 10 }}>
+                      {filtered.length} résultat(s) pour <strong>« {searchReportes} »</strong>
+                    </p>
+                  )}
+
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "#fef3c7" }}>
+                        <th style={{ ...th, color: "#78350f", background: "transparent" }}>Candidat</th>
+                        <th style={{ ...th, color: "#78350f", background: "transparent" }}>Type d'examen</th>
+                        <th style={{ ...th, color: "#78350f", background: "transparent" }}>Prochaine suggestion</th>
+                        <th style={{ ...th, color: "#78350f", background: "transparent" }}>Raison</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.length > 0 ? filtered.map(([cid, info]) => {
+                        const nomComplet = getCandidatName(cid);
+                        return (
+                          <tr key={cid}>
+                            <td style={{ ...td, fontWeight: 600 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#fde68a", color: "#78350f", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                                  {nomComplet.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div style={{ fontWeight: 700, color: "#1f2937" }}>{nomComplet}</div>
+                                  <div style={{ fontSize: 11, color: "#9ca3af" }}>ID #{cid}</div>
+                                </div>
                               </div>
-                              <div>
-                                <div style={{ fontWeight: 700, color: "#1f2937" }}>{nomComplet}</div>
-                                <div style={{ fontSize: 11, color: "#9ca3af" }}>ID #{cid}</div>
+                            </td>
+                            <td style={td}>{info.type}</td>
+                            <td style={td}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <FaCalendarDay style={{ color: "#f59e0b", fontSize: 12 }} />
+                                {info.nextSuggestedDate}
                               </div>
-                            </div>
-                          </td>
-                          <td style={td}>{info.type}</td>
-                          <td style={td}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <FaCalendarDay style={{ color: "#f59e0b", fontSize: 12 }} />
-                              {info.nextSuggestedDate}
-                            </div>
-                          </td>
-                          <td style={td}>
-                            <span style={{ background: info.reason === "echec" ? "#fee2e2" : "#f1f5f9", color: info.reason === "echec" ? "#991b1b" : "#475569", padding: "2px 8px", borderRadius: 10, fontSize: 12 }}>
-                              {info.reason === "echec" ? "Échec" : "Retiré par admin"}
-                            </span>
+                            </td>
+                            <td style={td}>
+                              <span style={{
+                                background: info.reason === "echec" ? "#fee2e2" : info.reason === "absence" ? "#fff7ed" : "#f1f5f9",
+                                color:      info.reason === "echec" ? "#991b1b" : info.reason === "absence" ? "#c2410c" : "#475569",
+                                padding: "2px 8px", borderRadius: 10, fontSize: 12,
+                                display: "inline-flex", alignItems: "center", gap: 5,
+                              }}>
+                                {info.reason === "absence" && <FaUserSlash style={{ fontSize: 10 }} />}
+                                {info.reason === "echec" ? "Échec" : info.reason === "absence" ? "Absence déclarée" : "Retiré par admin"}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      }) : (
+                        <tr>
+                          <td colSpan={4} style={{ textAlign: "center", padding: 30, color: "#a16207", fontSize: 13 }}>
+                            Aucun résultat pour « {searchReportes} »
                           </td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>
 
-      {/* ── Modals ── */}
+      {/* ══════════════════════════════════════════════
+          MODALES
+      ══════════════════════════════════════════════ */}
       <ExamenModal examen={selectedExamen} onClose={() => setSelectedExamen(null)} />
 
       {alertInfo && (
@@ -756,11 +1007,18 @@ const Examens = () => {
               }
             }
           }
-          // Basculer l'onglet historique vers le statut qu'on vient de choisir
-          if (["Passed", "Failed", "Absent"].includes(status)) {
-            setActiveHistoryTab(status);
-          }
+          if (["Passed", "Failed", "Absent"].includes(status)) setActiveHistoryTab(status);
           setResultModalExamen(null);
+        }}
+      />
+
+      <AbsenceModal
+        examen={absenceModalExamen}
+        onClose={() => setAbsenceModalExamen(null)}
+        onConfirm={(id) => {
+          setExamenResult(id, "Absent");
+          setAbsenceModalExamen(null);
+          setActiveHistoryTab("Absent");
         }}
       />
 
@@ -791,8 +1049,9 @@ const Examens = () => {
               <FormField label="Date de l'examen"            value={exportForm.dateExamen}   onChange={v => handleExportFormChange("dateExamen", v)}   placeholder="YYYY/MM/DD" />
             </div>
             <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#475569" }}>
-              <strong style={{ color: "#1f2937" }}>Aperçu :</strong> {byType(examensList).length} candidat(s) exporté(s)
+              <strong style={{ color: "#1f2937" }}>Aperçu :</strong> {allFiltered.length} candidat(s) exporté(s)
               {typeFilter !== "Tous" && <> · Type : <strong>{typeFilter}</strong></>}
+              {hasDateFilter && <> · Période filtrée</>}
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
               <button onClick={() => setShowExportModal(false)} disabled={pdfLoading} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>

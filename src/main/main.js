@@ -752,21 +752,21 @@ ipcMain.handle("delete-moniteur", async (event, id) => {
 // ── 4. DASHBOARD ──────────────────────────────────────────────────────────────
 ipcMain.handle("get-dashboard-stats", async () => {
   return new Promise((resolve) => {
-    db.query('SELECT COUNT(*) as total FROM Candidat', (err1, res1) => {
-      if (err1) return resolve({ totalCandidats: 0, sessionsToday: 0, revenuMois: 0 });
+    db.query('SELECT COUNT() as total FROM Candidat WHERE deleted_at IS NULL', (err1, res1) => {
+        if (err1) return resolve({ totalCandidats: 0, sessionsToday: 0, revenuMois: 0 });
 
       const totalCandidats = res1[0].total;
 
-      db.query('SELECT COUNT(*) as total FROM Seance WHERE date = CURDATE()', (err2, res2) => {
+      db.query('SELECT COUNT() as total FROM Seance WHERE date = CURDATE()', (err2, res2) => {
         if (err2) return resolve({ totalCandidats, sessionsToday: 0, revenuMois: 0 });
 
         const sessionsToday = res2[0].total;
 
         db.query(
-          `SELECT COALESCE(SUM(montant), 0) as total 
+          SELECT COALESCE(SUM(montant), 0) as total 
            FROM Versement 
            WHERE MONTH(dateVersement) = MONTH(CURDATE()) 
-           AND YEAR(dateVersement) = YEAR(CURDATE())`,
+           AND YEAR(dateVersement) = YEAR(CURDATE()),
           (err3, res3) => {
             const revenuMois = err3 ? 0 : res3[0].total;
             resolve({ totalCandidats, sessionsToday, revenuMois });
@@ -776,7 +776,6 @@ ipcMain.handle("get-dashboard-stats", async () => {
     });
   });
 });
-
 // ── 5. PAIEMENTS ──────────────────────────────────────────────────────────────
 ipcMain.handle('add-payment', async (event, data) => {
   const { idCandidat, montant, methode, dateVersement, remarque, typeVersement } = data;

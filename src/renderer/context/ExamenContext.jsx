@@ -12,29 +12,12 @@ export const EXAM_THRESHOLDS = {
 
 const LS_KEY         = "examens_list";
 const LS_REPORTS_KEY = "examens_reports";
-
-const TYPE_MAP = {
-  CODE:        "Code",
-  CRENEAU:     "Créneau",
-  CIRCULATION: "Circulation",
-};
-
-const STATUS_MAP = {
-  reussi:     "Passed",
-  echoue:     "Failed",
-  admis:      "Passed",
-  refuse:     "Failed",
-  en_attente: "Scheduled",
-  planifie:   "Scheduled",
-  scheduled:  "Scheduled",
-  passed:     "Passed",
-  failed:     "Failed",
-};
+const LS_CANDIDATS   = "examens_candidats_map";
 
 export function ExamenProvider({ children }) {
   const { examRules } = useExamenRulesCtx();
 
-  // ── Init depuis localStorage (fallback immédiat) ────────────────────────
+  // ── Init depuis localStorage ─────────────────────────────────────────────
   const [examensList, setExamensList] = useState(() => {
     try { const s = localStorage.getItem(LS_KEY); return s ? JSON.parse(s) : []; }
     catch { return []; }
@@ -45,8 +28,15 @@ export function ExamenProvider({ children }) {
     catch { return {}; }
   });
 
+  // Cache des noms — utilisé UNIQUEMENT pour afficher les noms dans la section reportés
+  const [candidatsNomMap, setCandidatsNomMap] = useState(() => {
+    try { const s = localStorage.getItem(LS_CANDIDATS); return s ? JSON.parse(s) : {}; }
+    catch { return {}; }
+  });
+
   const examensListRef       = useRef(examensList);
   const candidatsReportesRef = useRef(candidatsReportes);
+  const candidatsNomMapRef   = useRef(candidatsNomMap);
 
   useEffect(() => {
     examensListRef.current = examensList;
@@ -58,7 +48,12 @@ export function ExamenProvider({ children }) {
     localStorage.setItem(LS_REPORTS_KEY, JSON.stringify(candidatsReportes));
   }, [candidatsReportes]);
 
-  // ── Chargement depuis la DB au montage ─────────────────────────────────
+  useEffect(() => {
+    candidatsNomMapRef.current = candidatsNomMap;
+    localStorage.setItem(LS_CANDIDATS, JSON.stringify(candidatsNomMap));
+  }, [candidatsNomMap]);
+
+  // ── Chargement depuis la DB au montage ──────────────────────────────────
   useEffect(() => {
     async function loadFromDB() {
       try {
@@ -66,6 +61,20 @@ export function ExamenProvider({ children }) {
 
         const candidats = await window.electron.getCandidats();
         if (!candidats?.length) return;
+
+        // Construire le cache noms
+        const nomMap = {};
+        candidats.forEach(c => {
+          const key = String(c.idCandidat ?? c.id ?? c.id_candidat ?? "");
+          if (!key) return;
+          nomMap[key] = {
+            nom:       c.nom       ?? "",
+            prenom:    c.prenom    ?? "",
+            nom_ar:    c.nom_ar    ?? "",
+            prenom_ar: c.prenom_ar ?? "",
+          };
+        });
+        setCandidatsNomMap(nomMap);
 
         const allExamens = await Promise.all(
           candidats.map(c =>
@@ -77,8 +86,6 @@ export function ExamenProvider({ children }) {
         if (flat.length === 0) return;
 
         setExamensList(prev => {
-          // Garde les entrées auto-générées localStorage (Scheduled "auto-xxx")
-          // qui n'ont pas d'équivalent en DB
           const dbIds = new Set(flat.map(e => String(e.id)));
           const localOnly = prev.filter(
             e => e.id && String(e.id).startsWith("auto-") && !dbIds.has(String(e.id))
@@ -94,7 +101,7 @@ export function ExamenProvider({ children }) {
   }, []);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Trouve le prochain jour autorisé à partir d'une date + délai
+  // Prochain jour autorisé à partir d'une date + délai
   // ─────────────────────────────────────────────────────────────────────────
   const getNextExamDate = (fromDate, joursAutorises, delaiJours = 0) => {
     const DAY_MAP     = { Dim: 0, Lun: 1, Mar: 2, Mer: 3, Jeu: 4, Ven: 5, Sam: 6 };
@@ -113,7 +120,7 @@ export function ExamenProvider({ children }) {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Retourne la date de la dernière séance d'un type donné pour un candidat
+  // Date de la dernière séance d'un type pour un candidat
   // ─────────────────────────────────────────────────────────────────────────
   const getLastSeanceDate = (seancesCand, type) => {
     const typeNorm = type.toLowerCase().replace(/é/g, "e").replace(/è/g, "e").replace(/ê/g, "e");
@@ -134,7 +141,7 @@ export function ExamenProvider({ children }) {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Calcule la date d'examen optimale pour un candidat et un type d'examen
+  // Date d'examen optimale
   // ─────────────────────────────────────────────────────────────────────────
   const computeExamDate = (type, seancesCand, examsCand) => {
     const today = new Date().toISOString().split("T")[0];
@@ -162,22 +169,20 @@ export function ExamenProvider({ children }) {
     return getNextExamDate(today, examRules.joursAutorises, 1);
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Normalise un type de séance pour la comparaison
-  // ─────────────────────────────────────────────────────────────────────────
   const normalizeType = (str) =>
     (str || "").toLowerCase()
       .replace(/é/g, "e").replace(/è/g, "e").replace(/ê/g, "e");
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Génération principale des examens
+  // Génération principale
   // ─────────────────────────────────────────────────────────────────────────
   const generateExamens = async (seances, candidats) => {
     const today           = new Date().toISOString().split("T")[0];
+    // ⚠️ On lit les refs SYNCHRONIQUEMENT — pas de setCandidatsNomMap ici
     const currentExamens  = examensListRef.current;
     const currentReportes = candidatsReportesRef.current;
 
-    // ── Parsing robuste de candidatsIds (JSON array ou CSV) ──────────────
+    // ── Parsing robuste de candidatsIds ──────────────────────────────────
     const seancesParCandidat = {};
     seances.forEach(s => {
       const rawIds = s.candidatsIds ?? s.candidats_ids ?? s.candidat_id ?? null;
@@ -208,10 +213,20 @@ export function ExamenProvider({ children }) {
     });
 
     const nouveauxExamens = [];
+    // On construit le nomMap localement sans appeler setCandidatsNomMap
+    const nomMapLocal = {};
 
     candidats.forEach(candidat => {
       const cid = String(candidat.idCandidat ?? candidat.id_candidat ?? candidat.id ?? "");
       if (!cid) return;
+
+      // Remplir le cache local
+      nomMapLocal[cid] = {
+        nom:       candidat.nom       ?? "",
+        prenom:    candidat.prenom    ?? "",
+        nom_ar:    candidat.nom_ar    ?? "",
+        prenom_ar: candidat.prenom_ar ?? "",
+      };
 
       const seancesCand = seancesParCandidat[cid] || [];
 
@@ -223,8 +238,8 @@ export function ExamenProvider({ children }) {
 
       const examsCand = currentExamens.filter(e => String(e.candidatId) === cid);
 
-      const aReussiCode    = examsCand.some(e => e.type === "Code"        && e.status === "Passed");
-      const aReussiCreneau = examsCand.some(e => e.type === "Créneau"     && e.status === "Passed");
+      const aReussiCode    = examsCand.some(e => e.type === "Code"    && e.status === "Passed");
+      const aReussiCreneau = examsCand.some(e => e.type === "Créneau" && e.status === "Passed");
 
       const echecsCode        = examsCand.filter(e => e.type === "Code"        && e.status === "Failed").length;
       const echecsCreneau     = examsCand.filter(e => e.type === "Créneau"     && e.status === "Failed").length;
@@ -238,6 +253,7 @@ export function ExamenProvider({ children }) {
 
       const dateNaissance   = candidat.date_naissance  ?? candidat.dateNaissance   ?? "";
       const categoriePermis = candidat.categoriePermis ?? candidat.categorie_permis ?? "";
+      const nomComplet      = [candidat.prenom, candidat.nom].filter(Boolean).join(" ") || `Candidat #${cid}`;
 
       // ── CODE ──────────────────────────────────────────────────────────────
       if (
@@ -250,7 +266,7 @@ export function ExamenProvider({ children }) {
         nouveauxExamens.push({
           id:            `auto-${cid}-Code-${Date.now()}-${Math.random()}`,
           candidatId:    cid,
-          candidat:      `${candidat.prenom} ${candidat.nom}`,
+          candidat:      nomComplet,
           email:         candidat.email,
           type:          "Code",
           date:          nextDate,
@@ -278,7 +294,7 @@ export function ExamenProvider({ children }) {
         nouveauxExamens.push({
           id:            `auto-${cid}-Créneau-${Date.now()}-${Math.random()}`,
           candidatId:    cid,
-          candidat:      `${candidat.prenom} ${candidat.nom}`,
+          candidat:      nomComplet,
           email:         candidat.email,
           type:          "Créneau",
           date:          nextDate,
@@ -306,7 +322,7 @@ export function ExamenProvider({ children }) {
         nouveauxExamens.push({
           id:            `auto-${cid}-Circulation-${Date.now()}-${Math.random()}`,
           candidatId:    cid,
-          candidat:      `${candidat.prenom} ${candidat.nom}`,
+          candidat:      nomComplet,
           email:         candidat.email,
           type:          "Circulation",
           date:          nextDate,
@@ -324,7 +340,7 @@ export function ExamenProvider({ children }) {
       }
     });
 
-    // Fusionne sans écraser les Passed/Failed existants
+    // ── Fusion sans écraser Passed/Failed/Absent ─────────────────────────
     setExamensList(prev => {
       const existing = prev.filter(e =>
         !nouveauxExamens.some(
@@ -334,7 +350,11 @@ export function ExamenProvider({ children }) {
       return [...existing, ...nouveauxExamens];
     });
 
-    // Envoi emails uniquement pour les vrais nouveaux
+    // ── Mise à jour du cache noms APRÈS setExamensList ───────────────────
+    // (pour ne pas perturber examensListRef pendant la génération)
+    setCandidatsNomMap(nomMapLocal);
+
+    // ── Envoi emails pour les vrais nouveaux ─────────────────────────────
     const vraiNouveaux = nouveauxExamens.filter(n =>
       !currentExamens.some(e => e.candidatId === n.candidatId && e.type === n.type)
     );
@@ -356,21 +376,30 @@ export function ExamenProvider({ children }) {
     }
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // setExamenResult — base = date de l'examen
+  // ─────────────────────────────────────────────────────────────────────────
   const setExamenResult = (id, newStatus) => {
     setExamensList(prev => prev.map(e => {
       if (e.id !== id) return e;
 
-      if (newStatus === "Failed") {
-        const today    = new Date().toISOString().split("T")[0];
-        const nextDate = getNextExamDate(today, examRules.joursAutorises, examRules.delaiApresEchec);
+      if (newStatus === "Failed" || newStatus === "Absent") {
+        const baseDate = e.date || new Date().toISOString().split("T")[0];
+        const nextDate = getNextExamDate(baseDate, examRules.joursAutorises, examRules.delaiApresEchec);
         setCandidatsReportes(prev2 => ({
           ...prev2,
-          [e.candidatId]: { type: e.type, nextSuggestedDate: nextDate, reason: "echec" },
+          [e.candidatId]: {
+            type:              e.type,
+            nextSuggestedDate: nextDate,
+            reason:            newStatus === "Absent" ? "absence" : "echec",
+            nomCandidat:       e.candidat,
+          },
         }));
+
       } else if (newStatus === "Passed") {
         setCandidatsReportes(prev2 => {
           const entry = prev2[e.candidatId];
-          if (entry && entry.type === e.type && entry.reason === "echec") {
+          if (entry && entry.type === e.type) {
             const { [e.candidatId]: _omit, ...rest } = prev2;
             return rest;
           }
@@ -382,14 +411,22 @@ export function ExamenProvider({ children }) {
     }));
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // retirerCandidat — base = date de l'examen
+  // ─────────────────────────────────────────────────────────────────────────
   const retirerCandidat = (id, reason = "retire") => {
     const examen = examensListRef.current.find(e => e.id === id);
     if (!examen) return;
-    const today    = new Date().toISOString().split("T")[0];
-    const nextDate = getNextExamDate(today, examRules.joursAutorises, examRules.delaiApresEchec);
+    const baseDate = examen.date || new Date().toISOString().split("T")[0];
+    const nextDate = getNextExamDate(baseDate, examRules.joursAutorises, examRules.delaiApresEchec);
     setCandidatsReportes(prev => ({
       ...prev,
-      [examen.candidatId]: { type: examen.type, nextSuggestedDate: nextDate, reason },
+      [examen.candidatId]: {
+        type:              examen.type,
+        nextSuggestedDate: nextDate,
+        reason,
+        nomCandidat:       examen.candidat,
+      },
     }));
     setExamensList(prev => prev.filter(e => e.id !== id));
   };
@@ -399,12 +436,25 @@ export function ExamenProvider({ children }) {
 
   const getCandidatsReportes = () => candidatsReportesRef.current;
 
+  // Résout le nom d'un candidat reporté (3 niveaux de fallback)
+  const getNomCandidatReporte = (cid, info) => {
+    if (info?.nomCandidat) return info.nomCandidat;
+    const c = candidatsNomMapRef.current[String(cid)];
+    if (c) {
+      const full = [c.prenom, c.nom].filter(Boolean).join(" ");
+      if (full.trim()) return full;
+    }
+    return `Candidat #${cid}`;
+  };
+
   return (
     <ExamenContext.Provider value={{
       examensList, setExamensList,
       generateExamens, setExamenResult,
       retirerCandidat, updateExamen,
       getCandidatsReportes, candidatsReportes,
+      candidatsNomMap,
+      getNomCandidatReporte,
       EXAM_THRESHOLDS,
     }}>
       {children}
