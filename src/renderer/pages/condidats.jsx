@@ -1135,7 +1135,7 @@ dob: c.date_naissance
             <div style={{ maxHeight: "500px", overflowY: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
-                  <tr style={{ background: "#4338ca" }}>
+                  <tr style={{ background: "#2b537e" }}>
                     <th style={th}>Candidat</th>
                     <th style={th}>Catégorie</th>
                     <th style={th}>Date d'obtention</th>
@@ -1156,7 +1156,7 @@ dob: c.date_naissance
                           <div style={{ fontWeight: 600 }}>{c.nom} {c.prenom}</div>
                         </td>
                         <td style={td}>
-                          <span style={{ fontSize: "11px", background: "#eef2ff", color: "#4338ca", padding: "2px 8px", borderRadius: "4px", fontWeight: "bold" }}>
+                          <span style={{ fontSize: "11px", background: "#e0f2fe", color: "#0369a1", padding: "2px 8px", borderRadius: "4px", fontWeight: "bold" }}>
                             {c.categoriePermis}
                           </span>
                         </td>
