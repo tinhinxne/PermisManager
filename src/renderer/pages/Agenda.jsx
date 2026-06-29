@@ -1561,7 +1561,7 @@ const [seanceSupPaiement,  setSeanceSupPaiement]   = useState(null); // { candid
     return inWeek &&
       (!search     || s.name.toLowerCase().includes(search.toLowerCase()) || s.monitor.toLowerCase().includes(search.toLowerCase())) &&
       (!filterType || s.type    === filterType) &&
-      (!filterMon  || s.monitor === filterMon) &&
+      (!filterMon  || String(s.moniteur_id) === String(filterMon)) &&
       (!filterCat  || s.categoriePermis === filterCat);
   });
 
@@ -1723,7 +1723,11 @@ if (conflict) {
   }
 };
 
-  const monitors = [...new Set(sessions.map(s=>s.monitor))].sort();
+ const monitors = [...new Map(
+  sessions
+    .filter(s => s.moniteur_id)
+    .map(s => [s.moniteur_id, s.monitor])
+).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const semaineClosed = congeAnnuel?.actif && weekDates.some(d => isCongeAnnuel(d));
 
   // ── Ouverture CreateModal depuis SeanceSupplementaireModal ────────────────
@@ -1832,7 +1836,7 @@ if (conflict) {
           <select style={{ padding:"7px 10px", borderRadius:8, background:"#f8fafc", border:"1px solid #e2e8f0", color:"#334155", fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", outline:"none", cursor:"pointer" }}
             value={filterMon} onChange={e=>setFilterMon(e.target.value)}>
             <option value="">Tous</option>
-            {monitors.map(m=><option key={m}>{m}</option>)}
+           {monitors.map(([id, nom]) => <option key={id} value={id}>{nom}</option>)}
           </select>
           <span style={{ fontSize:"0.75rem", color:"#94a3b8", fontWeight:500 }}>Catégorie :</span>
           <select style={{ padding:"7px 10px", borderRadius:8, background:"#f8fafc", border:"1px solid #e2e8f0", color:"#334155", fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", outline:"none", cursor:"pointer" }}

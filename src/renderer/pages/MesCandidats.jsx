@@ -14,6 +14,9 @@ const ENVOI_DEFAULTS_KEY  = "export_pdf_defaults";
 const ENVOI_IDS_KEY       = "liste_envoi_ids_envoyes";
 const ENVOI_TIMESTAMP_KEY = "liste_envoi_derniere_generation";
 
+// Nombre de séances "normales" avant de basculer en séances supplémentaires
+const SESSIONS_NORMALES_MAX = 20;
+
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
@@ -298,7 +301,7 @@ const MesCandidats = () => {
           .forEach((id) => mesCandidatIdSet.add(parseInt(id.trim())));
       });
 
-      // ── NOUVEAU : Candidats créés directement par ce moniteur (sans séance encore) ──
+      // ── Candidats créés directement par ce moniteur (sans séance encore) ──
       const mesCreationSet = new Set(
         rawCandidats
           .filter((c) => c.created_by_moniteur_id != null && c.created_by_moniteur_id === moniteurId)
@@ -312,7 +315,7 @@ const MesCandidats = () => {
       todayMidnight.setHours(0, 0, 0, 0);
 
       const formatted = rawCandidats
-        // ── FILTRE MODIFIÉ : séance OU créateur ──
+        // ── FILTRE : séance OU créateur ──
         .filter((c) =>
           CAN_VIEW_ALL_CANDIDATES ||
           mesCandidatIdSet.has(c.idCandidat) ||
@@ -326,7 +329,13 @@ const MesCandidats = () => {
               .includes(c.idCandidat);
           });
 
-          const nbSessions = seancesDuCandidat.length;
+          const nbSessionsTotal = seancesDuCandidat.length;
+
+          // ✅ On plafonne l'affichage "normal" à 20 sessions. Le surplus
+          //    (séances supplémentaires) est compté séparément pour ne
+          //    jamais afficher un ratio illogique type "25/20".
+          const nbSessions      = Math.min(nbSessionsTotal, SESSIONS_NORMALES_MAX);
+          const nbSessionsSuppl = Math.max(nbSessionsTotal - SESSIONS_NORMALES_MAX, 0);
 
           const nextSeance = seancesDuCandidat
             .map((s) => {
@@ -354,9 +363,9 @@ const MesCandidats = () => {
             c.categoriePermis || c.categorie || c.categorie_permis || "B"
           ).toString().trim().toUpperCase();
 
-          // ── NOUVEAU : isMien = séance OU créateur ──
+          // ── isMien = séance OU créateur ──
           const isMien = mesCandidatIdSet.has(c.idCandidat) || mesCreationSet.has(c.idCandidat);
-          // ── NOUVEAU : pas encore de séance mais créé par moi ──
+          // ── pas encore de séance mais créé par moi ──
           const isNouveauInscrit = mesCreationSet.has(c.idCandidat) && !mesCandidatIdSet.has(c.idCandidat);
 
           return {
@@ -366,7 +375,8 @@ const MesCandidats = () => {
             tel:             c.telephone,
             categoriePermis: currentCat,
             sessions:        nbSessions,
-            total:           20,
+            sessionsSuppl:   nbSessionsSuppl,
+            total:           SESSIONS_NORMALES_MAX,
             nextSession,
             status:          c.statut,
             isMien,
@@ -399,7 +409,7 @@ const MesCandidats = () => {
     if (data.idCandidat) {
       await window.electron.updateCandidat(data);
     } else {
-      // ── NOUVEAU : on passe l'id du moniteur connecté comme créateur ──
+      // ── On passe l'id du moniteur connecté comme créateur ──
       await window.electron.addCandidat({
         ...data,
         created_by_moniteur_id: currentUser?.id ?? null,
@@ -432,12 +442,142 @@ const MesCandidats = () => {
   };
 
   // ── Stats + filtre ────────────────────────────────────────────────────────────
- 
+
   const filtered = candidats.filter(
     (c) =>
       c.nom.toLowerCase().includes(search.toLowerCase()) ||
       c.tel?.toLowerCase().includes(search.toLowerCase())
   );
+
+  // ── Split : candidats en cours vs permis obtenus ──────────────────────────────
+  const filteredEnCours = filtered.filter((c) => c.status !== "obtenu");
+  const filteredObtenus = filtered.filter((c) => c.status === "obtenu");
+
+  // ── Rendu d'une card (factorisé : utilisé pour les deux sections) ────────────
+  const renderCard = (c) => {
+    const pct = Math.min(Math.round((c.sessions / c.total) * 100), 100);
+    return (
+      <div
+        key={c.id}
+        style={{
+          ...candidateCard,
+          ...(CAN_VIEW_ALL_CANDIDATES && c.isMien ? candidateCardMien : {}),
+          ...(c.isNouveauInscrit ? candidateCardNouveau : {}),
+        }}
+      >
+
+        {/* Avatar + nom */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: "50%",
+            background: c.color, color: c.textColor,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 13, fontWeight: 700, flexShrink: 0,
+          }}>
+            {getInitials(c.nom)}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>{c.nom}</div>
+            <div style={{ fontSize: 12, color: "#64748B" }}>{c.tel}</div>
+          </div>
+        </div>
+
+        {/* Badges */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+          <span style={{
+            fontSize: "11px", background: "#e0f2fe", color: "#0369a1",
+            padding: "2px 8px", borderRadius: "4px", fontWeight: "bold",
+            display: "inline-block",
+          }}>
+            Catégorie {c.categoriePermis}
+          </span>
+
+          {/* ── Badge "Mon candidat" / "Autre moniteur" en vue complète ── */}
+          {CAN_VIEW_ALL_CANDIDATES && (
+            c.isMien ? (
+              <span style={{
+                fontSize: 10.5, background: "#dcfce7", color: "#166534",
+                padding: "2px 8px", borderRadius: 10, fontWeight: 600,
+                display: "inline-flex", alignItems: "center",
+              }}>
+                Mon candidat
+              </span>
+            ) : (
+              <span style={{
+                fontSize: 10.5, background: "#f1f5f9", color: "#64748b",
+                padding: "2px 8px", borderRadius: 10, fontWeight: 500,
+                display: "inline-flex", alignItems: "center",
+              }}>
+                Autre moniteur
+              </span>
+            )
+          )}
+
+          {/* ── Badge "Nouvel inscrit" si pas encore de séance ── */}
+          {c.isNouveauInscrit && (
+            <span style={{
+              fontSize: 10, background: "#fef9c3", color: "#854d0e",
+              padding: "2px 8px", borderRadius: 10, fontWeight: 700,
+              display: "inline-flex", alignItems: "center", gap: 3,
+              border: "1px solid #fde68a",
+            }}>
+              🆕 Nouvel inscrit
+            </span>
+          )}
+        </div>
+
+        {/* Progress */}
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+          <span className="progress-text">Progression</span>
+          <span className="progress-text">
+            {c.sessions}/{c.total} sessions
+            {c.sessionsSuppl > 0 && (
+              <span style={{ color: "#7c3aed", fontWeight: 700, marginLeft: 4 }}>
+                (+{c.sessionsSuppl} suppl.)
+              </span>
+            )}
+          </span>
+        </div>
+        <div className="progress-container">
+          <div className="progress-bar" style={{ width: `${pct}%` }} />
+        </div>
+
+        {/* Status */}
+        <div style={{ marginTop: 8 }}>
+          <span className={`status ${c.status}`}>{c.status}</span>
+        </div>
+
+        {/* Prochaine session */}
+        <div style={{ fontSize: 12, color: "#64748B", marginTop: 8 }}>
+          Prochaine session :{" "}
+          <span style={{ color: "#1e293b", fontWeight: 600 }}>
+            {c.isNouveauInscrit ? "Aucune séance planifiée" : c.nextSession}
+          </span>
+        </div>
+
+        {/* Bouton Supprimer */}
+        {CAN_REMOVE_CANDIDAT && (
+          <button
+            onClick={() => handleDelete(c.id)}
+            style={{
+              marginTop: 12,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              width: "100%", padding: "7px 0", borderRadius: 8,
+              background: "rgba(239,68,68,0.07)",
+              border: "1px solid rgba(239,68,68,0.22)",
+              color: "#dc2626", fontSize: 12, fontWeight: 600,
+              cursor: "pointer", transition: "background 0.18s",
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(239,68,68,0.15)"}
+            onMouseLeave={(e) => e.currentTarget.style.background = "rgba(239,68,68,0.07)"}
+          >
+            <Trash2 size={13} /> Supprimer
+          </button>
+        )}
+
+      </div>
+    );
+  };
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
@@ -487,7 +627,7 @@ const MesCandidats = () => {
             </div>
           </div>
 
-         
+
 
           {/* Stat bonus : nombre de "mes candidats" — visible seulement en vue complète */}
           {CAN_VIEW_ALL_CANDIDATES && (
@@ -570,130 +710,42 @@ const MesCandidats = () => {
           ) : filtered.length === 0 ? (
             <p style={{ textAlign: "center", color: "#888", padding: "20px" }}>Aucun candidat trouvé</p>
           ) : (
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-              gap: 12,
-            }}>
-              {filtered.map((c) => {
-                const pct = Math.min(Math.round((c.sessions / c.total) * 100), 100);
-                return (
-                  <div
-                    key={c.id}
-                    style={{
-                      ...candidateCard,
-                      ...(CAN_VIEW_ALL_CANDIDATES && c.isMien ? candidateCardMien : {}),
-                      // ── Bordure dorée pour les nouveaux inscrits sans séance ──
-                      ...(c.isNouveauInscrit ? candidateCardNouveau : {}),
-                    }}
-                  >
+            <>
+              {/* ── Section : candidats en cours ── */}
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e293b", margin: "4px 0 10px" }}>
+                En cours ({filteredEnCours.length})
+              </h3>
+              {filteredEnCours.length === 0 ? (
+                <p style={{ color: "#94a3b8", fontSize: 13, marginBottom: 20 }}>
+                  Aucun candidat en cours.
+                </p>
+              ) : (
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+                  gap: 12,
+                  marginBottom: 24,
+                }}>
+                  {filteredEnCours.map(renderCard)}
+                </div>
+              )}
 
-                    {/* Avatar + nom */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                      <div style={{
-                        width: 40, height: 40, borderRadius: "50%",
-                        background: c.color, color: c.textColor,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 13, fontWeight: 700, flexShrink: 0,
-                      }}>
-                        {getInitials(c.nom)}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>{c.nom}</div>
-                        <div style={{ fontSize: 12, color: "#64748B" }}>{c.tel}</div>
-                      </div>
-                    </div>
-
-                    {/* Badges */}
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-                      <span style={{
-                        fontSize: "11px", background: "#e0f2fe", color: "#0369a1",
-                        padding: "2px 8px", borderRadius: "4px", fontWeight: "bold",
-                        display: "inline-block",
-                      }}>
-                        Catégorie {c.categoriePermis}
-                      </span>
-
-                      {/* ── Badge "Mon candidat" / "Autre moniteur" en vue complète ── */}
-                      {CAN_VIEW_ALL_CANDIDATES && (
-                        c.isMien ? (
-                          <span style={{
-                            fontSize: 10.5, background: "#dcfce7", color: "#166534",
-                            padding: "2px 8px", borderRadius: 10, fontWeight: 600,
-                            display: "inline-flex", alignItems: "center",
-                          }}>
-                            Mon candidat
-                          </span>
-                        ) : (
-                          <span style={{
-                            fontSize: 10.5, background: "#f1f5f9", color: "#64748b",
-                            padding: "2px 8px", borderRadius: 10, fontWeight: 500,
-                            display: "inline-flex", alignItems: "center",
-                          }}>
-                            Autre moniteur
-                          </span>
-                        )
-                      )}
-
-                      {/* ── NOUVEAU : badge "Nouvel inscrit" si pas encore de séance ── */}
-                      {c.isNouveauInscrit && (
-                        <span style={{
-                          fontSize: 10, background: "#fef9c3", color: "#854d0e",
-                          padding: "2px 8px", borderRadius: 10, fontWeight: 700,
-                          display: "inline-flex", alignItems: "center", gap: 3,
-                          border: "1px solid #fde68a",
-                        }}>
-                          🆕 Nouvel inscrit
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Progress */}
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                      <span className="progress-text">Progression</span>
-                      <span className="progress-text">{c.sessions}/{c.total} sessions</span>
-                    </div>
-                    <div className="progress-container">
-                      <div className="progress-bar" style={{ width: `${pct}%` }} />
-                    </div>
-
-                    {/* Status */}
-                    <div style={{ marginTop: 8 }}>
-                      <span className={`status ${c.status}`}>{c.status}</span>
-                    </div>
-
-                    {/* Prochaine session */}
-                    <div style={{ fontSize: 12, color: "#64748B", marginTop: 8 }}>
-                      Prochaine session :{" "}
-                      <span style={{ color: "#1e293b", fontWeight: 600 }}>
-                        {c.isNouveauInscrit ? "Aucune séance planifiée" : c.nextSession}
-                      </span>
-                    </div>
-
-                    {/* Bouton Supprimer */}
-                    {CAN_REMOVE_CANDIDAT && (
-                      <button
-                        onClick={() => handleDelete(c.id)}
-                        style={{
-                          marginTop: 12,
-                          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                          width: "100%", padding: "7px 0", borderRadius: 8,
-                          background: "rgba(239,68,68,0.07)",
-                          border: "1px solid rgba(239,68,68,0.22)",
-                          color: "#dc2626", fontSize: 12, fontWeight: 600,
-                          cursor: "pointer", transition: "background 0.18s",
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = "rgba(239,68,68,0.15)"}
-                        onMouseLeave={(e) => e.currentTarget.style.background = "rgba(239,68,68,0.07)"}
-                      >
-                        <Trash2 size={13} /> Supprimer
-                      </button>
-                    )}
-
+              {/* ── Section : permis obtenus ── */}
+              {filteredObtenus.length > 0 && (
+                <>
+                  <h3 style={{ fontSize: 14, fontWeight: 700, color: "#4338ca", margin: "4px 0 10px" }}>
+                    🎓 Permis obtenus ({filteredObtenus.length})
+                  </h3>
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+                    gap: 12,
+                  }}>
+                    {filteredObtenus.map(renderCard)}
                   </div>
-                );
-              })}
-            </div>
+                </>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -731,7 +783,7 @@ const candidateCardMien = {
   boxShadow: "0 0 0 1px rgba(22,163,74,0.12)",
 };
 
-// ── NOUVEAU : style carte pour candidat inscrit sans séance encore ──
+// ── Style carte pour candidat inscrit sans séance encore ──
 const candidateCardNouveau = {
   border: "1px solid #fde68a",
   boxShadow: "0 0 0 1px rgba(234,179,8,0.15)",

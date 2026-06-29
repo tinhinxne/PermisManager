@@ -1281,7 +1281,7 @@ export default function AgendaMoniteur() {
   const [showLocked,    setShowLocked]   = useState(false);
 
   const [seanceSupModal,    setSeanceSupModal]    = useState(null);
-  const [milestoneModal,    setMilestoneModal]    = useState(null);
+
   const [seanceSupPaiement, setSeanceSupPaiement] = useState(null); // { candidatId, candidatName }
   const [prefillCandidatId, setPrefillCandidatId] = useState(null);
 
@@ -1463,16 +1463,7 @@ const isDateBloquee = useCallback((dateStr) => {
           // Plus de crédit → proposer l'enregistrement d'un paiement pour cette séance
           setSeanceSupPaiement({ candidatId, candidatName: nomCandidat });
         }
-      } else {
-        // Candidat en formation normale → vérifier le palier des 20 séances
-        const seancesCandidat = sessions.filter(s => {
-          const ids = s._raw?.candidatsIds ? s._raw.candidatsIds.split(",").map(x => parseInt(x.trim())) : [];
-          return ids.includes(candidatId);
-        });
-        if (seancesCandidat.length + 1 >= 20) {
-          setMilestoneModal(nomCandidat);
-        }
-      }
+      } 
     }
   } else throw new Error(result?.message || "Erreur.");
 }
@@ -1737,13 +1728,7 @@ const isDateBloquee = useCallback((dateStr) => {
         />
       )}
 
-      {/* Modal milestone 20 séances */}
-      {milestoneModal && (
-        <MilestoneModal
-          candidatName={milestoneModal}
-          onClose={() => setMilestoneModal(null)}
-        />
-      )}
+      
       {seanceSupPaiement && (
   <SeanceSupPaiementModal
     candidatName={seanceSupPaiement.candidatName}

@@ -1701,19 +1701,38 @@ ipcMain.handle("send-rappel-paiement", async (event, data) => {
 // ── Revenus mensuels (pour le graphique du dashboard) ──────────────────────
 ipcMain.handle("get-revenus-mensuels", async () => {
   return new Promise((resolve) => {
+    // 1. Générer les 6 derniers mois (du plus ancien au plus récent), à 0 par défaut
+    const moisLabels = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+    const mois = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      mois.push({ ym, n: moisLabels[d.getMonth()], v: 0 });
+    }
+
+    // 2. Récupérer les totaux réels en DB
     const sql = `
       SELECT 
         DATE_FORMAT(dateVersement, '%Y-%m') AS ym,
-        DATE_FORMAT(dateVersement, '%b')    AS n,
         SUM(montant) AS v
       FROM Versement
       WHERE dateVersement >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-      GROUP BY DATE_FORMAT(dateVersement, '%Y-%m'), DATE_FORMAT(dateVersement, '%b')
-      ORDER BY ym ASC
+      GROUP BY DATE_FORMAT(dateVersement, '%Y-%m')
     `;
     db.query(sql, (err, res) => {
-      if (err) { console.error("get-revenus-mensuels:", err); resolve([]); }
-      else resolve(res.map(r => ({ n: r.n, v: Number(r.v) })));
+      if (err) { console.error("get-revenus-mensuels:", err); return resolve(mois.map(m => ({ n: m.n, v: 0 }))); }
+
+      // 3. Fusionner : injecter les vrais totaux dans les mois correspondants
+      const totauxParMois = {};
+      res.forEach(r => { totauxParMois[r.ym] = Number(r.v); });
+
+      const resultat = mois.map(m => ({
+        n: m.n,
+        v: totauxParMois[m.ym] ?? 0,
+      }));
+
+      resolve(resultat);
     });
   });
 });
