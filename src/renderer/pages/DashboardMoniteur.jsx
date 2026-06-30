@@ -36,6 +36,7 @@ const DashboardMoniteur = () => {
 
   useEffect(() => {
     if (!currentUser?.id) return;
+    console.log("ID utilisé pour les stats:", currentUser.id); // ← ajoute ça
     setLoading(true);
     window.electron.getMoniteurStats(currentUser.id)
       .then((result) => {

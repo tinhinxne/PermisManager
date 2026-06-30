@@ -23,6 +23,9 @@ const TOUTES_CATEGORIES = [
 const ENVOI_REF_KEY = "liste_envoi_derniere_date";
 const ENVOI_DEFAULTS_KEY = "export_pdf_defaults"; // réutilise les mêmes infos wilaya/école que la page Examens
 
+// Nombre de séances "normales" avant de basculer en séances supplémentaires
+const SESSIONS_NORMALES_MAX = 20;
+
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
@@ -59,6 +62,16 @@ function toComparableDate(rawDate) {
   if (!rawDate) return "";
   const str = rawDate instanceof Date ? rawDate.toISOString() : String(rawDate);
   return str.slice(0, 10); // garde juste "YYYY-MM-DD"
+}
+
+// Déduit la date d'obtention du permis = date du dernier examen "Passed"
+// (normalement le 3e examen, étape Circulation) pour un candidat donné.
+function getDateObtention(candidatId, examensList) {
+  if (!Array.isArray(examensList)) return null;
+  const reussis = examensList
+    .filter((e) => String(e.candidatId) === String(candidatId) && e.status === "Passed")
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  return reussis[0]?.date || null;
 }
 
 // ─────────────────────────────────────────────
@@ -691,34 +704,49 @@ const Condidats = () => {
   const [selectedCategorie, setSelectedCategorie] = useState("Tous"); 
   const [contactCandidat,  setContactCandidat]  = useState(null);
   const [showEnvoiModal,   setShowEnvoiModal]   = useState(false);
-  const [historiqueCandidat, setHistoriqueCandidat]  = useState(null); // ← nouveau
+  const [historiqueCandidat, setHistoriqueCandidat]  = useState(null);
 
-  const { examensList } = useExamenCtx(); // ← nouveau
+  // ── Filtres dédiés au bloc "Historique — Permis obtenus" ──
+  const [selectedCategorieObtenu, setSelectedCategorieObtenu] = useState("Tous");
+  const [dateObtentionDebut, setDateObtentionDebut] = useState("");
+  const [dateObtentionFin,   setDateObtentionFin]   = useState("");
+
+  const { examensList } = useExamenCtx();
 
   const th = { padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" };
   const td = { padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" };
 
-  // ── LOGIQUE DE FILTRAGE ULTRA PRÉCISE ──────────────────────────────────────
-  const candidatsFiltres = candidats.filter((c) => {
+  // ── FILTRE COMMUN : recherche texte (nom/prénom/tel/statut) ──────────────
+  const candidatsBase = candidats.filter((c) => {
     const q = searchQuery.toLowerCase().trim();
-    const matchesSearch = !q || (
+    return !q || (
       c.nom.toLowerCase().includes(q) ||
       c.prenom.toLowerCase().includes(q) ||
       c.tel.toLowerCase().includes(q) ||
       (c.status && c.status.toLowerCase().includes(q))
     );
-
-    const dbCategorie = (
-      c._raw?.categoriePermis || 
-      c._raw?.categorie || 
-      c._raw?.categorie_permis || 
-      "B"
-    ).toString().trim().toUpperCase();
-
-    const matchesCategorie = selectedCategorie === "Tous" || dbCategorie === selectedCategorie.toUpperCase();
-
-    return matchesSearch && matchesCategorie;
   });
+
+  // ── BLOC 1 : Candidats en cours (tout sauf "obtenu") ─────────────────────
+  const candidatsEnCours = candidatsBase.filter((c) => {
+    if (c.status === "obtenu") return false;
+    const matchesCategorie = selectedCategorie === "Tous" || c.categoriePermis === selectedCategorie.toUpperCase();
+    return matchesCategorie;
+  });
+
+  // ── BLOC 2 : Historique — Permis obtenus, avec filtre catégorie + date ───
+  const candidatsObtenus = candidatsBase
+    .filter((c) => c.status === "obtenu")
+    .map((c) => ({ ...c, dateObtention: getDateObtention(c.id, examensList) }))
+    .filter((c) => {
+      const matchesCategorie = selectedCategorieObtenu === "Tous" || c.categoriePermis === selectedCategorieObtenu.toUpperCase();
+      const d = toComparableDate(c.dateObtention);
+      const matchesDate =
+        (!dateObtentionDebut || (d && d >= dateObtentionDebut)) &&
+        (!dateObtentionFin   || (d && d <= dateObtentionFin));
+      return matchesCategorie && matchesDate;
+    })
+    .sort((a, b) => new Date(b.dateObtention || 0) - new Date(a.dateObtention || 0));
 
   const loadCandidats = async () => {
     try {
@@ -728,7 +756,7 @@ const Condidats = () => {
       const formatted = data.map((c) => {
         const currentCat = (c.categoriePermis || c.categorie || c.categorie_permis || "B").toString().trim().toUpperCase();
 
-        const nbSessions = seances.filter((s) => {
+        const nbSessionsTotal = seances.filter((s) => {
           if (!s.candidatsIds) return false;
           const ids = String(s.candidatsIds).split(",").map((id) => parseInt(id.trim()));
           const matchCandidat = ids.includes(c.idCandidat);
@@ -738,19 +766,27 @@ const Condidats = () => {
           return matchCandidat && matchCategorie;
         }).length;
 
+        // ✅ On plafonne l'affichage "normal" à 20 sessions. Le surplus
+        //    (séances supplémentaires, créditées via le système d'examens)
+        //    est compté séparément pour ne jamais afficher un ratio illogique
+        //    type "25/20".
+        const nbSessions      = Math.min(nbSessionsTotal, SESSIONS_NORMALES_MAX);
+        const nbSessionsSuppl = Math.max(nbSessionsTotal - SESSIONS_NORMALES_MAX, 0);
+
         return {
           id:              c.idCandidat,
           nom:             c.nom,
           prenom:          c.prenom,
           tel:             c.telephone,
           categoriePermis: currentCat, 
-          inscription: c.date_inscription
-            ? new Date(c.date_inscription).toISOString().split("T")[0]
-            : "",
-          dob: c.date_naissance
-            ? new Date(c.date_naissance).toISOString().split("T")[0]
-            : "",
-          sessions: nbSessions,
+         inscription: c.date_inscription
+  ? new Date(c.date_inscription).toLocaleDateString("en-CA")
+  : "",
+dob: c.date_naissance
+  ? new Date(c.date_naissance).toLocaleDateString("en-CA")
+  : "",
+          sessions:      nbSessions,
+          sessionsSuppl: nbSessionsSuppl,
           status:   c.statut, 
           sexe:     c.sexe,
           photo:    c.photo || null,
@@ -840,11 +876,14 @@ const Condidats = () => {
           <p>Gérer les étudiants, les leçons et les examens</p>
         </div>
 
+        {/* ════════════════════════════════════════════════════════════
+            BLOC 1 — CANDIDATS EN COURS
+        ════════════════════════════════════════════════════════════ */}
         <div className="card">
           <div className="card-header">
             <div>
-              <h2>Candidats</h2>
-              <p>Gérer et suivre tous les candidats</p>
+              <h2>Candidats en cours</h2>
+              <p>{candidatsEnCours.length} candidat(s) en formation</p>
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <button
@@ -924,7 +963,7 @@ const Condidats = () => {
             </div>
           </div>
 
-          {/* TABLEAU */}
+          {/* TABLEAU — CANDIDATS EN COURS */}
           <div style={{ background: "#fff", borderRadius: "15px", overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)" }}>
             <div style={{ maxHeight: "500px", overflowY: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -939,14 +978,14 @@ const Condidats = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {candidatsFiltres.length === 0 ? (
+                  {candidatsEnCours.length === 0 ? (
                     <tr>
                       <td colSpan={6} style={{ textAlign: "center", padding: "40px", color: "#A0AEC0" }}>
                         Aucun candidat trouvé pour cette sélection.
                       </td>
                     </tr>
                   ) : (
-                    candidatsFiltres.map((c, index) => (
+                    candidatsEnCours.map((c, index) => (
                       <tr key={c.id} style={{ background: index % 2 === 0 ? "#fff" : "#F8FAFC" }}>
 
                        
@@ -956,11 +995,6 @@ const Condidats = () => {
     <span style={{ fontSize: "11px", background: "#e0f2fe", color: "#0369a1", padding: "2px 6px", borderRadius: "4px", fontWeight: "bold", display: "inline-block" }}>
       Catégorie {c.categoriePermis}
     </span>
-    {c.status === "obtenu" && (
-      <span style={{ fontSize: "11px", background: "#eef2ff", color: "#4338ca", padding: "2px 6px", borderRadius: "4px", fontWeight: "bold", display: "inline-block" }}>
-        🎓 Permis obtenu
-      </span>
-    )}
   </div>
 </td>
 
@@ -974,9 +1008,16 @@ const Condidats = () => {
 
                         <td style={td}>
                           <div className="progress-container">
-                            <div className="progress-bar" style={{ width: `${Math.min((c.sessions / 20) * 100, 100)}%` }} />
+                            <div className="progress-bar" style={{ width: `${(c.sessions / SESSIONS_NORMALES_MAX) * 100}%` }} />
                           </div>
-                          <span className="progress-text">{c.sessions}/20 sessions</span>
+                          <span className="progress-text">
+                            {c.sessions}/{SESSIONS_NORMALES_MAX} sessions
+                            {c.sessionsSuppl > 0 && (
+                              <span style={{ color: "#7c3aed", fontWeight: 700, marginLeft: 4 }}>
+                                (+{c.sessionsSuppl} suppl.)
+                              </span>
+                            )}
+                          </span>
                         </td>
 
                         <td style={td}>
@@ -991,15 +1032,6 @@ const Condidats = () => {
                               title="Modifier la fiche"
                               onClick={() => handleEdit(c)}
                             />
-
-                            {c.status === "obtenu" && (
-                              <PlusCircle
-                                size={17} color="green"
-                                style={{ cursor: "pointer" }}
-                                title="Inscrire à une nouvelle catégorie"
-                                onClick={() => handleReinscrire(c)}
-                              />
-                            )}
 
                             <Mail
                               size={17}
@@ -1032,6 +1064,145 @@ const Condidats = () => {
             </div>
           </div>
         </div>
+
+        {/* ════════════════════════════════════════════════════════════
+            BLOC 2 — HISTORIQUE : PERMIS OBTENUS
+        ════════════════════════════════════════════════════════════ */}
+        <div className="card" style={{ marginTop: 24 }}>
+          <div className="card-header">
+            <div>
+              <h2>🎓 Historique — Permis obtenus</h2>
+              <p>{candidatsObtenus.length} candidat(s) ayant obtenu leur permis</p>
+            </div>
+          </div>
+
+          <div style={{
+            display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap",
+            background: "#fff", padding: "10px 14px", borderRadius: 12,
+            border: "1px solid #E2E8F0", alignItems: "center",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Filter size={16} color="#64748b" />
+              <select
+                value={selectedCategorieObtenu}
+                onChange={(e) => setSelectedCategorieObtenu(e.target.value)}
+                style={{
+                  padding: "10px 32px 10px 14px",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  color: "#1e293b",
+                  background: "#F1F5F9",
+                  border: "1px solid #E2E8F0",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  outline: "none",
+                  minWidth: "160px",
+                  appearance: "none",
+                  backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                  backgroundRepeat: "no-repeat",
+                  backgroundPosition: "right 12px center",
+                  backgroundSize: "14px",
+                }}
+              >
+                {TOUTES_CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat === "Tous" ? "Toutes catégories" : `Permis ${cat}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 13, color: "#64748b", fontWeight: 600 }}>Du</span>
+              <input
+                type="date"
+                value={dateObtentionDebut}
+                onChange={(e) => setDateObtentionDebut(e.target.value)}
+                style={{ padding: "9px 12px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 13.5, color: "#1e293b" }}
+              />
+              <span style={{ fontSize: 13, color: "#64748b", fontWeight: 600 }}>au</span>
+              <input
+                type="date"
+                value={dateObtentionFin}
+                onChange={(e) => setDateObtentionFin(e.target.value)}
+                style={{ padding: "9px 12px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 13.5, color: "#1e293b" }}
+              />
+            </div>
+          </div>
+
+          {/* TABLEAU — HISTORIQUE PERMIS OBTENUS */}
+          <div style={{ background: "#fff", borderRadius: "15px", overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)" }}>
+            <div style={{ maxHeight: "500px", overflowY: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
+                  <tr style={{ background: "#2b537e" }}>
+                    <th style={th}>Candidat</th>
+                    <th style={th}>Catégorie</th>
+                    <th style={th}>Date d'obtention</th>
+                    <th style={th}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {candidatsObtenus.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} style={{ textAlign: "center", padding: "40px", color: "#A0AEC0" }}>
+                        Aucun candidat trouvé pour cette sélection.
+                      </td>
+                    </tr>
+                  ) : (
+                    candidatsObtenus.map((c, index) => (
+                      <tr key={c.id} style={{ background: index % 2 === 0 ? "#fff" : "#F8FAFC" }}>
+                        <td style={td}>
+                          <div style={{ fontWeight: 600 }}>{c.nom} {c.prenom}</div>
+                        </td>
+                        <td style={td}>
+                          <span style={{ fontSize: "11px", background: "#e0f2fe", color: "#0369a1", padding: "2px 8px", borderRadius: "4px", fontWeight: "bold" }}>
+                            {c.categoriePermis}
+                          </span>
+                        </td>
+                        <td style={td}>
+                          {c.dateObtention ? new Date(c.dateObtention).toLocaleDateString("fr-FR") : "—"}
+                        </td>
+                        <td style={td}>
+                          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                            <History
+                              size={17}
+                              color="#7c3aed"
+                              style={{ cursor: "pointer" }}
+                              title="Historique des examens"
+                              onClick={() => setHistoriqueCandidat(c)}
+                            />
+                            <PlusCircle
+                              size={17}
+                              color="green"
+                              style={{ cursor: "pointer" }}
+                              title="Inscrire à une nouvelle catégorie"
+                              onClick={() => handleReinscrire(c)}
+                            />
+                            <Mail
+                              size={17}
+                              color={c._raw?.email ? "#2b537e" : "#cbd5e1"}
+                              style={{ cursor: c._raw?.email ? "pointer" : "default" }}
+                              title={c._raw?.email ? `Envoyer un email à ${c.prenom} ${c.nom}` : "Pas d'email enregistré"}
+                              onClick={() => { if (c._raw?.email) setContactCandidat(c); }}
+                            />
+                            <Trash
+                              size={17}
+                              color="red"
+                              style={{ cursor: "pointer" }}
+                              onClick={() => handleDelete(c.id)}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
       </div>
 
       <AddCandidatModal

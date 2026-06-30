@@ -2,17 +2,16 @@ const express = require("express");
 const axios   = require("axios");
 const cors    = require("cors");
 const crypto  = require("crypto");
+const mysql   = require("mysql2/promise");
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// ─── CONFIG CHARGILY ──────────────────────────────────────────────────────────
+// ─── CONFIG CHARGILY ─────────────────────────────────────────────────────────
 const CHARGILY_SECRET_KEY = process.env.CHARGILY_SECRET_KEY || "test_sk_VUBUlBXWwpNYUOtySb4WDBuJgPAogzXfGJsp4R";
 const APP_URL             = process.env.APP_URL             || "http://localhost:3000";
 
-// Mode test → pay.chargily.net/test/api/v2
-// Mode live → pay.chargily.net/api/v2
 const CHARGILY_BASE_URL = process.env.CHARGILY_MODE === "live"
   ? "https://pay.chargily.net/api/v2"
   : "https://pay.chargily.net/test/api/v2";
@@ -22,32 +21,43 @@ const chargilyHeaders = {
   "Content-Type":  "application/json",
 };
 
-// ─── Commandes confirmées (polling) ───────────────────────────────────────────
-const confirmedCheckouts = new Map(); // checkoutId → { success, orderInfo }
+// ─── CONNEXION MYSQL ──────────────────────────────────────────────────────────
+// ⚠️ La Map est supprimée, remplacée par MySQL
+let db;
+async function connectDB() {
+  db = await mysql.createConnection({
+    host:     process.env.DB_HOST     || "localhost",
+    user:     process.env.DB_USER     || "root",
+    password: process.env.DB_PASSWORD || "",
+    database: process.env.DB_NAME     || "autoecole",
+  });
+  console.log("✅ Connecté à MySQL");
+}
+connectDB();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ROUTE 1 — Electron appelle cette route pour créer un checkout Chargily
+// ROUTE 1 — Créer un checkout Chargily + INSERT en BDD
 // POST /chargily/payer
-// Body : { idCandidat, montant, nomCandidat }
 // ─────────────────────────────────────────────────────────────────────────────
 app.post("/chargily/payer", async (req, res) => {
-  const { idCandidat, montant, nomCandidat } = req.body;
+  const { idCandidat, montant, nomCandidat, typePaiement } = req.body;
 
   if (!idCandidat || !montant) {
     return res.status(400).json({ success: false, message: "Paramètres manquants" });
   }
 
   try {
+    // 1. Créer le checkout sur Chargily
     const response = await axios.post(
       `${CHARGILY_BASE_URL}/checkouts`,
       {
-        amount:       montant,        // en DA directement (pas de centimes !)
-        currency:     "dzd",
-        success_url:  `${APP_URL}/chargily/retour?status=success`,
-        failure_url:  `${APP_URL}/chargily/retour?status=failed`,
+        amount:           montant,
+        currency:         "dzd",
+        success_url:      `${APP_URL}/chargily/retour?status=success`,
+        failure_url:      `${APP_URL}/chargily/retour?status=failed`,
         webhook_endpoint: `${APP_URL}/chargily/webhook`,
-        locale:       "fr",
-        description:  `Formation permis — Candidat ${nomCandidat || idCandidat}`,
+        locale:           "fr",
+        description:      `Formation permis — Candidat ${nomCandidat || idCandidat}`,
         metadata: {
           idCandidat: String(idCandidat),
           montant:    String(montant),
@@ -58,21 +68,35 @@ app.post("/chargily/payer", async (req, res) => {
 
     const checkout = response.data;
 
+    // 2. ✅ INSERT dans ta table PAIEMENT
+    await db.query(
+      `INSERT INTO PAIEMENT 
+       (idCandidat, montantTotal, montantRestant, typePaiement, statutPaiement, checkoutId, dateCreation)
+       VALUES (?, ?, ?, ?, 'en_attente', ?, NOW())`,
+      [
+        idCandidat,
+        montant,
+        montant,                          // au départ restant = total
+        typePaiement || "complet",
+        checkout.id,
+      ]
+    );
+
     return res.json({
       success:     true,
       checkoutId:  checkout.id,
-      checkoutUrl: checkout.checkout_url, // ← URL vers laquelle rediriger le candidat
+      checkoutUrl: checkout.checkout_url,
     });
 
   } catch (err) {
-    console.error("Erreur Chargily /checkouts:", err.response?.data || err.message);
-    return res.status(500).json({ success: false, message: "Erreur serveur Chargily" });
+    console.error("Erreur /chargily/payer:", err.response?.data || err.message);
+    return res.status(500).json({ success: false, message: "Erreur serveur" });
   }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ROUTE 2 — Page affichée au candidat après paiement (success_url / failure_url)
-// GET /chargily/retour?status=success|failed&checkout_id=xxx
+// ROUTE 2 — Page retour candidat après paiement
+// GET /chargily/retour?status=success|failed
 // ─────────────────────────────────────────────────────────────────────────────
 app.get("/chargily/retour", (req, res) => {
   const { status } = req.query;
@@ -99,21 +123,21 @@ app.get("/chargily/retour", (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ROUTE 3 — Webhook Chargily (confirmation automatique serveur → serveur)
+// ROUTE 3 — Webhook Chargily → UPDATE BDD
 // POST /chargily/webhook
 // ─────────────────────────────────────────────────────────────────────────────
-app.post("/chargily/webhook", express.raw({ type: "application/json" }), (req, res) => {
-  // Vérification signature Chargily
+app.post("/chargily/webhook", express.raw({ type: "application/json" }), async (req, res) => {
   const signature = req.headers["signature"];
   const payload   = req.body;
 
+  // Vérification signature
   const computedSig = crypto
     .createHmac("sha256", CHARGILY_SECRET_KEY)
     .update(payload)
     .digest("hex");
 
   if (computedSig !== signature) {
-    console.error("Signature webhook invalide !");
+    console.error("❌ Signature webhook invalide !");
     return res.status(401).send("Unauthorized");
   }
 
@@ -121,48 +145,67 @@ app.post("/chargily/webhook", express.raw({ type: "application/json" }), (req, r
 
   if (event.type === "checkout.paid") {
     const checkout = event.data;
-    confirmedCheckouts.set(checkout.id, {
-      success:   true,
-      orderInfo: checkout.metadata || {},
-    });
-    console.log(`✅ Paiement confirmé : ${checkout.id}`);
+
+    // ✅ UPDATE dans ta table PAIEMENT (plus de Map !)
+    await db.query(
+      `UPDATE PAIEMENT 
+       SET statutPaiement = 'payé',
+           datePaiement   = NOW(),
+           montantRestant = 0
+       WHERE checkoutId = ?`,
+      [checkout.id]
+    );
+
+    console.log(`✅ Paiement confirmé en BDD : ${checkout.id}`);
+
+  } else if (event.type === "checkout.failed") {
+    const checkout = event.data;
+
+    await db.query(
+      `UPDATE PAIEMENT 
+       SET statutPaiement = 'échoué'
+       WHERE checkoutId = ?`,
+      [checkout.id]
+    );
+
+    console.log(`❌ Paiement échoué en BDD : ${checkout.id}`);
   }
 
   return res.status(200).send("OK");
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ROUTE 4 — Electron interroge cette route (polling) pour savoir si c'est payé
+// ROUTE 4 — Polling statut paiement → depuis BDD directement
 // GET /chargily/statut/:checkoutId
 // ─────────────────────────────────────────────────────────────────────────────
 app.get("/chargily/statut/:checkoutId", async (req, res) => {
   const { checkoutId } = req.params;
 
-  // 1. Vérifier d'abord dans les confirmations webhook reçues
-  const webhookResult = confirmedCheckouts.get(checkoutId);
-  if (webhookResult) {
-    confirmedCheckouts.delete(checkoutId);
-    return res.json({ status: "success", orderInfo: webhookResult.orderInfo });
-  }
-
-  // 2. Sinon interroger l'API Chargily directement
   try {
-    const response = await axios.get(
-      `${CHARGILY_BASE_URL}/checkouts/${checkoutId}`,
-      { headers: chargilyHeaders }
+    // ✅ On lit directement depuis la BDD, plus depuis la Map
+    const [rows] = await db.query(
+      `SELECT statutPaiement, idCandidat, montantTotal 
+       FROM PAIEMENT 
+       WHERE checkoutId = ?`,
+      [checkoutId]
     );
-    const checkout = response.data;
 
-    if (checkout.status === "paid") {
-      return res.json({ status: "success", orderInfo: checkout.metadata || {} });
-    } else if (checkout.status === "failed" || checkout.status === "canceled") {
+    if (rows.length === 0) {
+      return res.json({ status: "pending" });
+    }
+
+    const paiement = rows[0];
+
+    if (paiement.statutPaiement === "payé") {
+      return res.json({ status: "success", orderInfo: paiement });
+    } else if (paiement.statutPaiement === "échoué") {
       return res.json({ status: "failed" });
     } else {
-      return res.json({ status: "pending" }); // encore en cours
+      return res.json({ status: "pending" });
     }
 
   } catch (err) {
-    console.error("Erreur vérification statut:", err.message);
+    console.error("Erreur /statut:", err.message);
     return res.json({ status: "pending" });
   }
 });

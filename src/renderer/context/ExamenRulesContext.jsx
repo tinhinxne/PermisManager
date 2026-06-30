@@ -6,7 +6,6 @@ const ExamenRulesContext = createContext(null);
 const DEFAULT_EXAM_RULES = {
   delaiApresEchec: 14,
   tentativesMax: 3,
-  blocageImpaye: true,
   joursAutorises: ["Lun", "Mer", "Ven"],
   // ── Congé annuel ──────────────────────────────────────────────
   congeActif: true,        // Le blocage est-il activé ?

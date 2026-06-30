@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-
+import { useExamenCtx } from "../context/ExamenContext";
 // const fDA = (n) => `${Number(n || 0).toLocaleString("fr-DZ")} DA`;
 const fDA = (n) => {
   const num = Number(n || 0);
@@ -11,9 +11,30 @@ const normaliserType = (type) => {
   if (raw.includes("cr"))   return "creneau";
   return "code";
 };
+// ── Crédit de séances supplémentaires (partagé avec AgendaPage) ───────────────
+const SEANCE_SUP_CREDIT_KEY = "seance_sup_credit";
+
+function getSeanceSupCredits() {
+  try { return JSON.parse(localStorage.getItem(SEANCE_SUP_CREDIT_KEY) || "{}"); }
+  catch { return {}; }
+}
+
+function getCredit(candidatId) {
+  const credits = getSeanceSupCredits();
+  return Number(credits[String(candidatId)] || 0);
+}
+
+function addCredit(candidatId, quantite) {
+  const credits = getSeanceSupCredits();
+  const current = Number(credits[String(candidatId)] || 0);
+  credits[String(candidatId)] = current + quantite;
+  localStorage.setItem(SEANCE_SUP_CREDIT_KEY, JSON.stringify(credits));
+  return credits[String(candidatId)];
+}
 
 const SeanceSupModal = ({ onClose, onAddPayment, prefillCandidat }) => {
   const [candidats,      setCandidats]      = useState([]);
+  const { examensList } = useExamenCtx();
   const [seancesParCand, setSeancesParCand] = useState({});
   const [selected,       setSelected]       = useState(null);
   const [searchQuery,    setSearchQuery]    = useState("");
@@ -52,23 +73,23 @@ const SeanceSupModal = ({ onClose, onAddPayment, prefillCandidat }) => {
         });
         setSeancesParCand(compteur);
 
-        // Éligibles : > 20 séances ET a au moins une séance de chaque type
+       // Éligibles : candidat ayant réussi les 3 examens (Code + Créneau + Circulation)
+        // Le nombre de séances effectuées n'entre plus en compte.
+        const aObtenuPermis = (candidatId) => {
+          const exams = (examensList || []).filter(e => String(e.candidatId) === String(candidatId));
+          return (
+            exams.some(e => e.type === "Code"        && e.status === "Passed") &&
+            exams.some(e => e.type === "Créneau"     && e.status === "Passed") &&
+            exams.some(e => e.type === "Circulation" && e.status === "Passed")
+          );
+        };
+
         const eligibles = (allCandidats || []).filter(c => {
           const id = c.idCandidat || c.id;
-          const seancesDuCandidat = compteur[id] || [];
-          const nb = seancesDuCandidat.length;
-          if (nb <= 20) return false;
-
-          const types = seancesDuCandidat.map(s => normaliserType(s.type));
-          const aCode        = types.includes("code");
-          const aCreneau     = types.includes("creneau");
-          const aCirculation = types.includes("circulation");
-
-          return aCode && aCreneau && aCirculation;
+          return aObtenuPermis(id);
         });
 
    setCandidats(eligibles);
-
         // Pré-sélection si on arrive depuis l'agenda (milestone 20 séances)
         if (prefillCandidat) {
           const id = prefillCandidat.candidatId || prefillCandidat.id;
@@ -85,7 +106,7 @@ const SeanceSupModal = ({ onClose, onAddPayment, prefillCandidat }) => {
       }
     }
     load();
-  }, [prefillCandidat]);
+ }, [prefillCandidat, examensList]);
 
   const candidatsFiltres = candidats.filter(c =>
     `${c.prenom} ${c.nom}`.toLowerCase().includes(searchQuery.toLowerCase())
@@ -109,8 +130,9 @@ const SeanceSupModal = ({ onClose, onAddPayment, prefillCandidat }) => {
 
 const handleSubmit = async () => {
     if (!validate()) return;
+    const candidatId = selected.idCandidat || selected.id;
     await onAddPayment({
-      idCandidat:    selected.idCandidat || selected.id,
+      idCandidat:    candidatId,
       montant:       total,
       methode,
       dateVersement: date,
@@ -118,12 +140,14 @@ const handleSubmit = async () => {
       typeVersement: "seance_supplementaire",
       _meta: { nbSeances, prixSeance: parseFloat(prixSeance), total },
     });
+    // Crédite le candidat : ces séances pourront être créées dans l'agenda
+    // sans repasser par un paiement, jusqu'à épuisement du crédit.
+    addCredit(candidatId, nbSeances);
     setSubmitted(true);
   };
 
-  const seancesCandidat = selected ? (seancesParCand[selected.idCandidat || selected.id] || []) : [];
+ const seancesCandidat = selected ? (seancesParCand[selected.idCandidat || selected.id] || []) : [];
   const nbTotal = seancesCandidat.length;
-  const nbSup   = Math.max(0, nbTotal - 20);
 
   // Stats types pour le badge candidat sélectionné
   const typesCandidat = seancesCandidat.map(s => normaliserType(s.type));
@@ -164,8 +188,8 @@ const handleSubmit = async () => {
             <div style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>
               ➕ Paiement séance supplémentaire
             </div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", marginTop: 2 }}>
-              Candidats ayant terminé leur permis (code + créneau + circulation) et dépassé 20 séances
+           <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", marginTop: 2 }}>
+              Candidats ayant réussi leurs 3 examens (Code + Créneau + Circulation)
             </div>
           </div>
           <button onClick={onClose} style={{
@@ -206,14 +230,14 @@ const handleSubmit = async () => {
                 ) : candidatsFiltres.length === 0 ? (
                   <div style={{ padding: 16, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
                     {candidats.length === 0
-                      ? "Aucun candidat éligible — il faut avoir terminé le permis (code + créneau + circulation) et dépasser 20 séances"
+                      ? "Aucun candidat éligible — il faut avoir terminé le permis (code + créneau + circulation) "
                       : "Aucun résultat"}
                   </div>
                 ) : (
-                  candidatsFiltres.map((c, i) => {
+                 candidatsFiltres.map((c, i) => {
                     const id  = c.idCandidat || c.id;
                     const nb  = (seancesParCand[id] || []).length;
-                    const nbS = Math.max(0, nb - 20);
+                    const credit = getCredit(id);
                     const types = (seancesParCand[id] || []).map(s => normaliserType(s.type));
                     return (
                       <div
@@ -230,14 +254,20 @@ const handleSubmit = async () => {
                         <div>
                           <div style={{ fontWeight: 600, fontSize: 13, color: "#1e293b" }}>{c.prenom} {c.nom}</div>
                           <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2, display: "flex", gap: 8 }}>
-                            <span>{nb} séances</span>
+                            <span>{nb} séances effectuées</span>
                             <span>· 🚦 {types.filter(t => t === "code").length} code</span>
                             <span>· 🅿️ {types.filter(t => t === "creneau").length} créneau</span>
                             <span>· 🚗 {types.filter(t => t === "circulation").length} circ.</span>
                           </div>
                         </div>
-                        <span style={{ padding: "2px 10px", borderRadius: 20, fontSize: 10, fontWeight: 700, background: "#fff7ed", color: "#d97706", border: "1px solid #fcd34d", flexShrink: 0 }}>
-                          +{nbS} hors forfait
+                        <span style={{
+                          padding: "2px 10px", borderRadius: 20, fontSize: 10, fontWeight: 700,
+                          background: credit > 0 ? "#dcfce7" : "#fff7ed",
+                          color: credit > 0 ? "#166534" : "#d97706",
+                          border: `1px solid ${credit > 0 ? "#86efac" : "#fcd34d"}`,
+                          flexShrink: 0,
+                        }}>
+                          {credit > 0 ? `🎓 crédit : ${credit}` : "🎓 permis obtenu"}
                         </span>
                       </div>
                     );
@@ -248,14 +278,14 @@ const handleSubmit = async () => {
             {errors.candidate && <p style={errStyle}>{errors.candidate}</p>}
 
             {/* Badge candidat sélectionné */}
-            {selected && (
+          {selected && (
               <div style={{ padding: "12px 16px", background: "#fffbeb", border: "1.5px solid #fcd34d", borderRadius: 10, marginTop: 4 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 15, color: "#92400e" }}>{selected.prenom} {selected.nom}</div>
                     <div style={{ fontSize: 12, color: "#a16207", marginTop: 6, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      <span>📋 {nbTotal} séances au total</span>
-                      <span style={{ fontWeight: 700 }}>⚡ {nbSup} hors forfait</span>
+                      <span>📋 {nbTotal} séances effectuées</span>
+                      <span style={{ fontWeight: 700 }}>🎓 crédit actuel : {getCredit(selected.idCandidat || selected.id)}</span>
                     </div>
                     <div style={{ fontSize: 11, color: "#a16207", marginTop: 4, display: "flex", gap: 8 }}>
                       <span style={{ background: "#dbeafe", color: "#1d4ed8", padding: "1px 8px", borderRadius: 10, fontWeight: 600 }}>🚦 {nbCode} code</span>
@@ -345,8 +375,8 @@ const handleSubmit = async () => {
               padding: "12px 16px", display: "flex", alignItems: "center", gap: 10,
             }}>
               <span style={{ fontSize: 20 }}>📅</span>
-              <div style={{ fontSize: 13, color: "#4338ca", fontWeight: 600 }}>
-                Vous pouvez maintenant passer à l'agenda pour programmer {nbSeances === 1 ? "votre séance supplémentaire" : `vos ${nbSeances} séances supplémentaires`}.
+           <div style={{ fontSize: 13, color: "#4338ca", fontWeight: 600 }}>
+                Crédit ajouté : {nbSeances} séance{nbSeances > 1 ? "s" : ""}. Vous pouvez maintenant les créer dans l'agenda sans repasser par un paiement, jusqu'à épuisement du crédit.
               </div>
             </div>
           )}

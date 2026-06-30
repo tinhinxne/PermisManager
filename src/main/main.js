@@ -749,34 +749,39 @@ ipcMain.handle("delete-moniteur", async (event, id) => {
   });
 });
 
-// ── 4. DASHBOARD ──────────────────────────────────────────────────────────────
+// dashboard
 ipcMain.handle("get-dashboard-stats", async () => {
   return new Promise((resolve) => {
-    db.query('SELECT COUNT(*) as total FROM Candidat WHERE deleted_at IS NULL', (err1, res1) => {
+    db.query(
+      "SELECT COUNT(*) AS total FROM Candidat WHERE deleted_at IS NULL",
+      (err1, res1) => {
         if (err1) return resolve({ totalCandidats: 0, sessionsToday: 0, revenuMois: 0 });
 
-      const totalCandidats = res1[0].total;
-
-      db.query('SELECT COUNT(*) as total FROM Seance WHERE date = CURDATE()', (err2, res2) => {
-        if (err2) return resolve({ totalCandidats, sessionsToday: 0, revenuMois: 0 });
-
-        const sessionsToday = res2[0].total;
+        const totalCandidats = res1[0].total;
 
         db.query(
-          `SELECT COALESCE(SUM(montant), 0) as total 
-           FROM Versement 
-           WHERE MONTH(dateVersement) = MONTH(CURDATE()) 
-           AND YEAR(dateVersement) = YEAR(CURDATE())`,
-          (err3, res3) => {
-            const revenuMois = err3 ? 0 : res3[0].total;
-            resolve({ totalCandidats, sessionsToday, revenuMois });
+          "SELECT COUNT(*) AS total FROM Seance WHERE DATE(date) = CURDATE()",
+          (err2, res2) => {
+            if (err2) return resolve({ totalCandidats, sessionsToday: 0, revenuMois: 0 });
+
+            const sessionsToday = res2[0].total;
+
+            db.query(
+              `SELECT COALESCE(SUM(montant), 0) AS total
+               FROM Versement
+               WHERE MONTH(dateVersement) = MONTH(CURDATE())
+                 AND YEAR(dateVersement) = YEAR(CURDATE())`,
+              (err3, res3) => {
+                const revenuMois = err3 ? 0 : res3[0].total;
+                resolve({ totalCandidats, sessionsToday, revenuMois });
+              }
+            );
           }
         );
-      });
-    });
+      }
+    );
   });
 });
-
 // ── 5. PAIEMENTS ──────────────────────────────────────────────────────────────
 ipcMain.handle('add-payment', async (event, data) => {
   const { idCandidat, montant, methode, dateVersement, remarque, typeVersement } = data;
@@ -1696,19 +1701,38 @@ ipcMain.handle("send-rappel-paiement", async (event, data) => {
 // ── Revenus mensuels (pour le graphique du dashboard) ──────────────────────
 ipcMain.handle("get-revenus-mensuels", async () => {
   return new Promise((resolve) => {
+    // 1. Générer les 6 derniers mois (du plus ancien au plus récent), à 0 par défaut
+    const moisLabels = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+    const mois = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      mois.push({ ym, n: moisLabels[d.getMonth()], v: 0 });
+    }
+
+    // 2. Récupérer les totaux réels en DB
     const sql = `
       SELECT 
         DATE_FORMAT(dateVersement, '%Y-%m') AS ym,
-        DATE_FORMAT(dateVersement, '%b')    AS n,
         SUM(montant) AS v
       FROM Versement
       WHERE dateVersement >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-      GROUP BY DATE_FORMAT(dateVersement, '%Y-%m'), DATE_FORMAT(dateVersement, '%b')
-      ORDER BY ym ASC
+      GROUP BY DATE_FORMAT(dateVersement, '%Y-%m')
     `;
     db.query(sql, (err, res) => {
-      if (err) { console.error("get-revenus-mensuels:", err); resolve([]); }
-      else resolve(res.map(r => ({ n: r.n, v: Number(r.v) })));
+      if (err) { console.error("get-revenus-mensuels:", err); return resolve(mois.map(m => ({ n: m.n, v: 0 }))); }
+
+      // 3. Fusionner : injecter les vrais totaux dans les mois correspondants
+      const totauxParMois = {};
+      res.forEach(r => { totauxParMois[r.ym] = Number(r.v); });
+
+      const resultat = mois.map(m => ({
+        n: m.n,
+        v: totauxParMois[m.ym] ?? 0,
+      }));
+
+      resolve(resultat);
     });
   });
 });
