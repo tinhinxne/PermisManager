@@ -1,9 +1,10 @@
-  import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
   import { motion, AnimatePresence } from "framer-motion";
   import {
     FaCalendarDay, FaCheckCircle, FaTimesCircle,
     FaClock, FaTrashAlt, FaExchangeAlt, FaUser,
     FaSync, FaInfoCircle, FaCalendarPlus, FaFilePdf, FaTimes,
+    FaSortAlphaDown, FaSortAlphaUp, FaListUl,
   } from "react-icons/fa";
 
   import SelectFilter from "../components/SelectFilter";
@@ -32,6 +33,14 @@
     Passed:    { bg: "#e8f5e9", color: "#2e7d32", label: "Réussi"    },
     Failed:    { bg: "#ffebee", color: "#c62828", label: "Échoué"    },
   };
+
+  // ── Config des onglets de la table récap (id technique → libellé + couleurs) ──
+  const RECAP_TABS = [
+    { id: "Tous",     label: "Tous",      bg: "#f1f5f9", color: "#475569", border: "#cbd5e1" },
+    { id: "Reporté",  label: "Reportés",  bg: "#fef3c7", color: "#92400e", border: "#fde68a" },
+    { id: "Échoué",   label: "Échoués",   bg: "#ffebee", color: "#c62828", border: "#fca5a5" },
+    { id: "Réussi",   label: "Réussis",   bg: "#e8f5e9", color: "#2e7d32", border: "#86efac" },
+  ];
 
   // Formate une date ISO → YYYY/MM/DD
   function formatDateAr(isoDate) {
@@ -217,6 +226,10 @@ const perms   = isAdmin
     const [alertInfo, setAlertInfo] = useState(null);
     const [resultModalExamen, setResultModalExamen] = useState(null);
 
+    // ── NOUVEAU : state de la table récapitulative en bas de page ──
+    const [recapTab,     setRecapTab]     = useState("Tous");
+    const [recapSortAsc, setRecapSortAsc] = useState(true);
+
     const [showExportModal, setShowExportModal] = useState(false);
     const [pdfLoading,      setPdfLoading]      = useState(false);
     const [exportForm, setExportForm] = useState({
@@ -324,6 +337,58 @@ const perms   = isAdmin
     // ── styles inline réutilisables ──
     const th = { padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "13px" };
     const td = { padding: "12px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "13px", color: "#1F2937" };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // NOUVEAU : construction des lignes de la table récapitulative
+    // Catégories : "Reporté" (présent dans candidatsReportes), "Réussi", "Échoué"
+    // (les "Scheduled" non reportés ne concernent pas cette table récap)
+    // ─────────────────────────────────────────────────────────────────────────
+    const recapRows = [];
+
+    // 1) Candidats reportés (retirés ou en échec, en attente de re-suggestion)
+    reportesEntries.forEach(([cid, info]) => {
+      recapRows.push({
+        key:        `report-${cid}`,
+        candidatId: cid,
+        nom:        getCandidatName(cid),
+        type:       info.type,
+        categorie:  "Reporté",
+        detail:     info.nextSuggestedDate ? `Prochaine date suggérée : ${info.nextSuggestedDate}` : "—",
+        raisonTag:  info.reason === "echec" ? "Échec" : "Retiré par admin",
+      });
+    });
+
+    // 2) Examens déjà évalués (Réussi / Échoué)
+    examensList
+      .filter(e => e.status === "Passed" || e.status === "Failed")
+      .forEach(e => {
+        recapRows.push({
+          key:        `exam-${e.id}`,
+          candidatId: e.candidatId,
+          nom:        e.candidat || getCandidatName(e.candidatId),
+          type:       e.type,
+          categorie:  e.status === "Passed" ? "Réussi" : "Échoué",
+          detail:     e.date ? `Examen du ${e.date}` : "—",
+          raisonTag:  null,
+        });
+      });
+
+    // Filtre par onglet actif
+    const recapFiltered = recapTab === "Tous"
+      ? recapRows
+      : recapRows.filter(r => r.categorie === recapTab);
+
+    // Tri alphabétique par nom (asc/desc togglable)
+    const recapSorted = [...recapFiltered].sort((a, b) => {
+      const cmp = a.nom.localeCompare(b.nom, "fr", { sensitivity: "base" });
+      return recapSortAsc ? cmp : -cmp;
+    });
+
+    const recapCatConfig = {
+      "Reporté": { bg: "#fef3c7", color: "#92400e" },
+      "Échoué":  { bg: "#ffebee", color: "#c62828" },
+      "Réussi":  { bg: "#e8f5e9", color: "#2e7d32" },
+    };
 
     // ── export PDF (قائمة المترشحين) ──
     const openExportModal = () => {
@@ -569,7 +634,7 @@ const perms   = isAdmin
             </div>
           </div>
 
-          {/* ── Candidats reportés ── */}
+          {/* ── Candidats reportés (section repliable existante) ── */}
           {reportesEntries.length > 0 && (
             <div style={{ marginTop: 20 }}>
               <button
@@ -630,6 +695,110 @@ const perms   = isAdmin
               )}
             </div>
           )}
+
+          {/* ══════════════════════════════════════════════════════════════
+              NOUVEAU : Table récapitulative — Reportés / Échoués / Réussis
+              Onglets de filtrage + tri alphabétique par nom (cliquable)
+          ══════════════════════════════════════════════════════════════ */}
+          <div style={{ marginTop: 28 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <FaListUl style={{ color: "#2b537e" }} />
+              <h2 className="examens-page-title" style={{ margin: 0, fontSize: 17 }}>
+                Récapitulatif par statut
+              </h2>
+            </div>
+
+            {/* Onglets */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+              {RECAP_TABS.map(tab => {
+                const count = tab.id === "Tous"
+                  ? recapRows.length
+                  : recapRows.filter(r => r.categorie === tab.id).length;
+                const isActive = recapTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setRecapTab(tab.id)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 7,
+                      padding: "8px 16px", borderRadius: 20, fontSize: 13, fontWeight: 600,
+                      cursor: "pointer",
+                      border: `1.5px solid ${isActive ? tab.color : tab.border}`,
+                      background: isActive ? tab.color : tab.bg,
+                      color: isActive ? "#fff" : tab.color,
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    {tab.label}
+                    <span style={{
+                      background: isActive ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.07)",
+                      padding: "1px 7px", borderRadius: 10, fontSize: 11.5,
+                    }}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Table */}
+            <div style={{ background: "#fff", borderRadius: 15, overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)" }}>
+              <div style={{ maxHeight: 420, overflowY: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
+                    <tr style={{ background: "#2b537e" }}>
+                      <th
+                        style={{ ...th, cursor: "pointer", userSelect: "none" }}
+                        onClick={() => setRecapSortAsc(v => !v)}
+                        title="Trier par nom"
+                      >
+                        <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                          Candidat(e)
+                          {recapSortAsc ? <FaSortAlphaDown size={11} /> : <FaSortAlphaUp size={11} />}
+                        </span>
+                      </th>
+                      <th style={th}>Type</th>
+                      <th style={th}>Statut</th>
+                      <th style={th}>Détail</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recapSorted.length > 0 ? recapSorted.map((row, i) => {
+                      const cfg = recapCatConfig[row.categorie];
+                      return (
+                        <tr key={row.key} style={{ background: i % 2 === 0 ? "#fff" : "#F8FAFC" }}>
+                          <td style={{ ...td, fontWeight: 600 }}>{row.nom}</td>
+                          <td style={td}>{row.type || "—"}</td>
+                          <td style={td}>
+                            <span style={{
+                              background: cfg.bg, color: cfg.color,
+                              padding: "4px 10px", borderRadius: 20, fontWeight: 600, fontSize: 12.5,
+                              display: "inline-flex", alignItems: "center", gap: 6,
+                            }}>
+                              {row.categorie}
+                              {row.raisonTag && (
+                                <span style={{ fontSize: 10, opacity: 0.75, fontWeight: 500 }}>
+                                  ({row.raisonTag})
+                                </span>
+                              )}
+                            </span>
+                          </td>
+                          <td style={{ ...td, color: "#64748b" }}>{row.detail}</td>
+                        </tr>
+                      );
+                    }) : (
+                      <tr>
+                        <td colSpan={4} style={{ textAlign: "center", padding: 32, color: "#A0AEC0" }}>
+                          Aucun candidat dans cette catégorie.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
         </div>
 
         {/* ── Modal détail examen ── */}

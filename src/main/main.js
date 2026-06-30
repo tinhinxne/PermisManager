@@ -752,8 +752,8 @@ ipcMain.handle("delete-moniteur", async (event, id) => {
 // ── 4. DASHBOARD ──────────────────────────────────────────────────────────────
 ipcMain.handle("get-dashboard-stats", async () => {
   return new Promise((resolve) => {
-    db.query('SELECT COUNT(*) as total FROM Candidat', (err1, res1) => {
-      if (err1) return resolve({ totalCandidats: 0, sessionsToday: 0, revenuMois: 0 });
+    db.query('SELECT COUNT(*) as total FROM Candidat WHERE deleted_at IS NULL', (err1, res1) => {
+        if (err1) return resolve({ totalCandidats: 0, sessionsToday: 0, revenuMois: 0 });
 
       const totalCandidats = res1[0].total;
 

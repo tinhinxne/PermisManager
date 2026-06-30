@@ -2,13 +2,11 @@
 const { ipcMain } = require('electron');
 
 function registerMoniteurHandlers(db) {
-
   // ── Stats dashboard moniteur ─────────────────────────────────────────────
   ipcMain.handle("get-moniteur-stats", async (event, moniteurId) => {
     return new Promise((resolve) => {
       const today = new Date();
       const todayStr = today.toISOString().split("T")[0];
-
       const dayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1;
       const monday = new Date(today);
       monday.setDate(today.getDate() - dayOfWeek);
@@ -17,12 +15,18 @@ function registerMoniteurHandlers(db) {
       const mondayStr = monday.toISOString().split("T")[0];
       const sundayStr = sunday.toISOString().split("T")[0];
 
+      // ── totalCandidats : même logique que MesCandidats.jsx ──────────────
+      // "Mes candidats" = candidats actifs (deleted_at IS NULL) qui :
+      //   - ont eu au moins une séance avec ce moniteur, OU
+      //   - ont été créés directement par ce moniteur (même sans séance encore)
       db.query(
-        `SELECT COUNT(DISTINCT cs.idCandidat) AS total
-         FROM Seance s
-         JOIN CandidatSeance cs ON s.idSeance = cs.idSeance
-         WHERE s.moniteur_id = ?`,
-        [moniteurId],
+        `SELECT COUNT(DISTINCT c.idCandidat) AS total
+         FROM Candidat c
+         LEFT JOIN CandidatSeance cs ON cs.idCandidat = c.idCandidat
+         LEFT JOIN Seance s ON s.idSeance = cs.idSeance AND s.moniteur_id = ?
+         WHERE c.deleted_at IS NULL
+           AND (s.idSeance IS NOT NULL OR c.created_by_moniteur_id = ?)`,
+        [moniteurId, moniteurId],
         (err1, res1) => {
           if (err1) return resolve({ success: false, error: err1.message });
 
@@ -50,7 +54,7 @@ function registerMoniteurHandlers(db) {
                            GROUP_CONCAT(CONCAT(c.prenom, ' ', c.nom) SEPARATOR ', ') AS candidatsNoms
                          FROM Seance s
                          LEFT JOIN CandidatSeance cs ON s.idSeance = cs.idSeance
-                         LEFT JOIN Candidat c ON cs.idCandidat = c.idCandidat
+                         LEFT JOIN Candidat c ON cs.idCandidat = c.idCandidat AND c.deleted_at IS NULL
                          WHERE s.moniteur_id = ? AND DATE(s.date) >= ? AND s.statut != 'annulée'
                          GROUP BY s.idSeance
                          ORDER BY s.date ASC, s.heure ASC
@@ -58,6 +62,7 @@ function registerMoniteurHandlers(db) {
                         [moniteurId, todayStr],
                         (err5, res5) => {
                           if (err5) return resolve({ success: false, error: err5.message });
+
                           resolve({
                             success: true,
                             data: {
@@ -80,7 +85,6 @@ function registerMoniteurHandlers(db) {
       );
     });
   });
-
 }
 
 module.exports = { registerMoniteurHandlers };
