@@ -5,24 +5,16 @@ const crypto  = require("crypto");
 const mysql   = require("mysql2/promise");
 
 const app = express();
-app.use(express.json());
 app.use(cors());
 
-// ─── CONFIG CHARGILY ─────────────────────────────────────────────────────────
-const CHARGILY_SECRET_KEY = process.env.CHARGILY_SECRET_KEY || "test_sk_VUBUlBXWwpNYUOtySb4WDBuJgPAogzXfGJsp4R";
-const APP_URL             = process.env.APP_URL             || "http://localhost:3000";
+// ─── Map en mémoire pour le polling ──────────────────────────────────────────
+const confirmedCheckouts = new Map();
 
-const CHARGILY_BASE_URL = process.env.CHARGILY_MODE === "live"
-  ? "https://pay.chargily.net/api/v2"
-  : "https://pay.chargily.net/test/api/v2";
-
-const chargilyHeaders = {
-  "Authorization": `Bearer ${CHARGILY_SECRET_KEY}`,
-  "Content-Type":  "application/json",
-};
+// ─── Middleware ───────────────────────────────────────────────────────────────
+app.use("/chargily/webhook", express.raw({ type: "application/json" }));
+app.use(express.json());
 
 // ─── CONNEXION MYSQL ──────────────────────────────────────────────────────────
-// ⚠️ La Map est supprimée, remplacée par MySQL
 let db;
 async function connectDB() {
   db = await mysql.createConnection({
@@ -30,27 +22,29 @@ async function connectDB() {
     port:     process.env.DB_PORT     || 3306,
     user:     process.env.DB_USER     || "root",
     password: process.env.DB_PASSWORD || "",
-    database: process.env.DB_NAME     || "autoecole",
+    database: process.env.DB_NAME     || "auto_ecole_db",
   });
   console.log("✅ Connecté à MySQL");
 }
 connectDB();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ROUTE 1 — Créer un checkout Chargily + INSERT en BDD
-// POST /chargily/payer
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── ROUTE 1 — Créer un checkout ─────────────────────────────────────────────
 app.post("/chargily/payer", async (req, res) => {
-  const { idCandidat, montant, nomCandidat, typePaiement } = req.body;
+  const { idCandidat, montant, nomCandidat, chargilyKey, chargilyMode } = req.body;
 
-  if (!idCandidat || !montant) {
+  if (!idCandidat || !montant || !chargilyKey) {
     return res.status(400).json({ success: false, message: "Paramètres manquants" });
   }
 
+  const baseUrl = chargilyMode === "live"
+    ? "https://pay.chargily.net/api/v2"
+    : "https://pay.chargily.net/test/api/v2";
+
+  const APP_URL = process.env.APP_URL || "https://permismanager.onrender.com";
+
   try {
-    // 1. Créer le checkout sur Chargily
     const response = await axios.post(
-      `${CHARGILY_BASE_URL}/checkouts`,
+      `${baseUrl}/checkouts`,
       {
         amount:           montant,
         currency:         "dzd",
@@ -58,159 +52,128 @@ app.post("/chargily/payer", async (req, res) => {
         failure_url:      `${APP_URL}/chargily/retour?status=failed`,
         webhook_endpoint: `${APP_URL}/chargily/webhook`,
         locale:           "fr",
-        description:      `Formation permis — Candidat ${nomCandidat || idCandidat}`,
-        metadata: {
-          idCandidat: String(idCandidat),
-          montant:    String(montant),
-        },
+        description:      `Formation permis — ${nomCandidat || idCandidat}`,
+        metadata: { idCandidat: String(idCandidat), montant: String(montant) },
       },
-      { headers: chargilyHeaders }
+      { headers: { "Authorization": `Bearer ${chargilyKey}`, "Content-Type": "application/json" } }
     );
 
     const checkout = response.data;
 
-    // 2. ✅ INSERT dans ta table PAIEMENT
+    // INSERT dans Paiement
     await db.query(
-      `INSERT INTO PAIEMENT 
-       (idCandidat, montantTotal, montantRestant, typePaiement, statutPaiement, checkoutId, dateCreation)
-       VALUES (?, ?, ?, ?, 'en_attente', ?, NOW())`,
-      [
-        idCandidat,
-        montant,
-        montant,                          // au départ restant = total
-        typePaiement || "complet",
-        checkout.id,
-      ]
+      `INSERT INTO Paiement (montantTotal, montantRestant, typePaiement, statutPaiement, idCandidat, checkoutId, dateCreation)
+       VALUES (?, ?, 'complet', 'en_attente', ?, ?, NOW())`,
+      [montant, montant, idCandidat, checkout.id]
     );
 
-    return res.json({
-      success:     true,
-      checkoutId:  checkout.id,
-      checkoutUrl: checkout.checkout_url,
-    });
+    return res.json({ success: true, checkoutId: checkout.id, checkoutUrl: checkout.checkout_url });
 
   } catch (err) {
-    console.error("Erreur /chargily/payer:", err.response?.data || err.message);
-    return res.status(500).json({ success: false, message: "Erreur serveur" });
+    console.error("Erreur Chargily /checkouts:", err.response?.data || err.message);
+    return res.status(500).json({ success: false, message: "Erreur serveur Chargily" });
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ROUTE 2 — Page retour candidat après paiement
-// GET /chargily/retour?status=success|failed
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── ROUTE 2 — Page retour candidat ──────────────────────────────────────────
 app.get("/chargily/retour", (req, res) => {
-  const { status } = req.query;
-  const success = status === "success";
-
+  const success = req.query.status === "success";
   return res.send(`
-    <html>
-      <head><meta charset="utf-8"></head>
-      <body style="font-family:sans-serif;text-align:center;padding:60px;background:#f8fafc">
-        <div style="max-width:400px;margin:0 auto;background:#fff;padding:40px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.1)">
-          <div style="font-size:56px;margin-bottom:16px">${success ? "✅" : "❌"}</div>
-          <h2 style="color:${success ? "#166534" : "#dc2626"};margin:0 0 12px">
-            ${success ? "Paiement réussi !" : "Paiement échoué"}
-          </h2>
-          <p style="color:#64748b;font-size:14px">
-            ${success
-              ? "Votre versement a été enregistré. Vous pouvez fermer cette fenêtre."
-              : "Le paiement n'a pas abouti. Veuillez réessayer ou contacter l'auto-école."}
-          </p>
-        </div>
-      </body>
-    </html>
+    <html><head><meta charset="utf-8"></head>
+    <body style="font-family:sans-serif;text-align:center;padding:60px;background:#f8fafc">
+      <div style="max-width:400px;margin:0 auto;background:#fff;padding:40px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.1)">
+        <div style="font-size:56px;margin-bottom:16px">${success ? "✅" : "❌"}</div>
+        <h2 style="color:${success ? "#166534" : "#dc2626"};margin:0 0 12px">
+          ${success ? "Paiement réussi !" : "Paiement échoué"}
+        </h2>
+        <p style="color:#64748b;font-size:14px">
+          ${success
+            ? "Votre versement a été enregistré. Vous pouvez fermer cette fenêtre."
+            : "Le paiement n'a pas abouti. Veuillez réessayer ou contacter l'auto-école."}
+        </p>
+      </div>
+    </body></html>
   `);
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ROUTE 3 — Webhook Chargily → UPDATE BDD
-// POST /chargily/webhook
-// ─────────────────────────────────────────────────────────────────────────────
-app.post("/chargily/webhook", express.raw({ type: "application/json" }), async (req, res) => {
-  const signature = req.headers["signature"];
-  const payload   = req.body;
+// ─── ROUTE 3 — Webhook Chargily ───────────────────────────────────────────────
+app.post("/chargily/webhook", async (req, res) => {
+  const payload = req.body;
 
-  // Vérification signature
-  const computedSig = crypto
-    .createHmac("sha256", CHARGILY_SECRET_KEY)
-    .update(payload)
-    .digest("hex");
-
-  if (computedSig !== signature) {
-    console.error("❌ Signature webhook invalide !");
-    return res.status(401).send("Unauthorized");
-  }
-
-  const event = JSON.parse(payload);
-
-  if (event.type === "checkout.paid") {
-    const checkout = event.data;
-
-    // ✅ UPDATE dans ta table PAIEMENT (plus de Map !)
-    await db.query(
-      `UPDATE PAIEMENT 
-       SET statutPaiement = 'payé',
-           datePaiement   = NOW(),
-           montantRestant = 0
-       WHERE checkoutId = ?`,
-      [checkout.id]
-    );
-
-    console.log(`✅ Paiement confirmé en BDD : ${checkout.id}`);
-
-  } else if (event.type === "checkout.failed") {
-    const checkout = event.data;
-
-    await db.query(
-      `UPDATE PAIEMENT 
-       SET statutPaiement = 'échoué'
-       WHERE checkoutId = ?`,
-      [checkout.id]
-    );
-
-    console.log(`❌ Paiement échoué en BDD : ${checkout.id}`);
+  try {
+    const event = JSON.parse(payload);
+    if (event.type === "checkout.paid") {
+      const checkout = event.data;
+      confirmedCheckouts.set(checkout.id, { status: "success", orderInfo: checkout });
+      await db.query(
+        `UPDATE Paiement SET statutPaiement = 'payé', datePaiement = NOW(), montantRestant = 0 WHERE checkoutId = ?`,
+        [checkout.id]
+      );
+      console.log(`✅ Paiement confirmé : ${checkout.id}`);
+    } else if (event.type === "checkout.failed") {
+      const checkout = event.data;
+      confirmedCheckouts.set(checkout.id, { status: "failed" });
+      await db.query(
+        `UPDATE Paiement SET statutPaiement = 'échoué' WHERE checkoutId = ?`,
+        [checkout.id]
+      );
+    }
+  } catch (e) {
+    console.error("Erreur parsing webhook:", e.message);
   }
 
   return res.status(200).send("OK");
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ROUTE 4 — Polling statut paiement → depuis BDD directement
-// GET /chargily/statut/:checkoutId
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── ROUTE 4 — Statut polling ─────────────────────────────────────────────────
 app.get("/chargily/statut/:checkoutId", async (req, res) => {
   const { checkoutId } = req.params;
+  const chargilyKey    = req.headers["x-chargily-key"];
+  const chargilyMode   = req.headers["x-chargily-mode"] || "test";
 
+  // Vérifier Map d'abord
+  const result = confirmedCheckouts.get(checkoutId);
+  if (result) {
+    confirmedCheckouts.delete(checkoutId);
+    return res.json(result);
+  }
+
+  // Vérifier BDD
   try {
-    // ✅ On lit directement depuis la BDD, plus depuis la Map
     const [rows] = await db.query(
-      `SELECT statutPaiement, idCandidat, montantTotal 
-       FROM PAIEMENT 
-       WHERE checkoutId = ?`,
+      `SELECT statutPaiement, idCandidat, montantTotal FROM Paiement WHERE checkoutId = ?`,
       [checkoutId]
     );
-
-    if (rows.length === 0) {
-      return res.json({ status: "pending" });
+    if (rows.length > 0) {
+      const p = rows[0];
+      if (p.statutPaiement === "payé")    return res.json({ status: "success", orderInfo: p });
+      if (p.statutPaiement === "échoué") return res.json({ status: "failed" });
     }
+  } catch (e) {
+    console.error("Erreur BDD statut:", e.message);
+  }
 
-    const paiement = rows[0];
+  // Vérifier directement Chargily
+  if (!chargilyKey) return res.json({ status: "pending" });
 
-    if (paiement.statutPaiement === "payé") {
-      return res.json({ status: "success", orderInfo: paiement });
-    } else if (paiement.statutPaiement === "échoué") {
-      return res.json({ status: "failed" });
-    } else {
-      return res.json({ status: "pending" });
-    }
+  const baseUrl = chargilyMode === "live"
+    ? "https://pay.chargily.net/api/v2"
+    : "https://pay.chargily.net/test/api/v2";
 
+  try {
+    const response = await axios.get(
+      `${baseUrl}/checkouts/${checkoutId}`,
+      { headers: { "Authorization": `Bearer ${chargilyKey}`, "Content-Type": "application/json" } }
+    );
+    const checkout = response.data;
+    if (checkout.status === "paid")                                      return res.json({ status: "success" });
+    if (checkout.status === "failed" || checkout.status === "canceled") return res.json({ status: "failed" });
+    return res.json({ status: "pending" });
   } catch (err) {
-    console.error("Erreur /statut:", err.message);
     return res.json({ status: "pending" });
   }
 });
 
 // ─── Démarrage ────────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`✅ Serveur Chargily démarré sur le port ${PORT}`));
