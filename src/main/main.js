@@ -536,7 +536,7 @@ ipcMain.handle("add-candidat", async (event, data) => {
     photoBuffer = Buffer.from(photo.split(",")[1], "base64");
   }
 
-    const sql = `
+  const sql = `
     INSERT INTO Candidat (nom, prenom, nom_ar, prenom_ar, telephone, date_naissance, date_inscription, sexe, photo, statut, email, categoriePermis, created_by_moniteur_id)
     VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?, ?)
   `;
@@ -544,10 +544,23 @@ ipcMain.handle("add-candidat", async (event, data) => {
     db.query(sql, [
       nom, prenom,
       nom_ar || null, prenom_ar || null,
-      telephone, date_naissance || null, sexe, photoBuffer, statut, email || null, categoriePermis, created_by_moniteur_id 
-   ||null], (err) => {
-      if (err) { console.error('add-candidat error:', err); resolve(false); }
-      else resolve(true);
+      telephone, date_naissance || null, sexe, photoBuffer, statut, email || null, categoriePermis, created_by_moniteur_id || null
+    ], async (err, res) => {
+      if (err) { console.error('add-candidat error:', err); return resolve(false); }
+
+      const newCandidatId = res.insertId;
+
+      // ── Fige le prix de formation actuel dès l'inscription ──────────────
+      const prixActuel = await getPrixFormationFromDB();
+      db.query(
+        `INSERT INTO Paiement (montantTotal, montantRestant, typePaiement, statutPaiement, idCandidat)
+         VALUES (?, ?, 'tranche', 'en_cours', ?)`,
+        [prixActuel, prixActuel, newCandidatId],
+        (errPaiement) => {
+          if (errPaiement) console.error('Erreur création dossier Paiement:', errPaiement.message);
+          resolve(true);
+        }
+      );
     });
   });
 });
@@ -783,39 +796,41 @@ ipcMain.handle("get-dashboard-stats", async () => {
   });
 });
 // ── 5. PAIEMENTS ──────────────────────────────────────────────────────────────
-ipcMain.handle('add-payment', async (event, data) => {
-  const { idCandidat, montant, methode, dateVersement, remarque, typeVersement } = data;
-  const PRIX_PERMIS = 30000;
-  const versement = parseFloat(montant);
+// ── PRIX DE LA FORMATION (configurable par l'admin) ────────────────────────
+function getPrixFormationFromDB() {
+  return new Promise((resolve) => {
+    db.query(
+      "SELECT valeurParametre FROM ConfigurationSysteme WHERE cleParametre = 'PRIX_FORMATION'",
+      (err, res) => {
+        if (err || !res.length) return resolve(30000);
+        const val = parseFloat(res[0].valeurParametre);
+        resolve(isNaN(val) ? 30000 : val);
+      }
+    );
+  });
+}
 
-  // ── Séances supplémentaires : paiement indépendant du forfait ─────────────
-  // Le nombre de séances payées est stocké dans numeroTranche (libre/NULL pour
-  // ce typeVersement) afin de calculer plus tard le crédit de séances sup
-  // restant : credit = somme(numeroTranche) − (nb séances agenda au-delà de 20).
-  if (typeVersement === 'seance_supplementaire') {
-    const nbSeancesPayees = parseInt(data._meta?.nbSeances) || 1;
-    return new Promise((resolve) => {
-      db.query('SELECT * FROM Paiement WHERE idCandidat = ? LIMIT 1', [idCandidat], (err, rows) => {
-        if (err) return resolve({ success: false, message: "Erreur DB: " + err.message });
-        if (!rows || rows.length === 0)
-          return resolve({ success: false, message: "Aucun dossier de paiement trouvé pour ce candidat." });
+ipcMain.handle("get-prix-formation", async () => {
+  return await getPrixFormationFromDB();
+});
 
-        const idPaiement = rows[0].idPaiement;
-        db.query(
-          `INSERT INTO Versement (montant, typeVersement, datePaiement, methode, numeroTranche, remarque, dateVersement, idPaiement)
-           VALUES (?, 'seance_supplementaire', NOW(), ?, ?, ?, ?, ?)`,
-          [versement, methode, nbSeancesPayees, remarque || null, dateVersement, idPaiement],
-          (err2) => {
-            if (err2) return resolve({ success: false, message: "Erreur Versement: " + err2.message });
-            resolve({ success: true, montantRestant: rows[0].montantRestant, nbSeancesPayees });
-          }
-        );
-      });
-    });
-  }
-  // ── Crédit de séances supplémentaires restant pour un candidat ───────────────
-// credit = somme(numeroTranche) des versements 'seance_supplementaire'
-//          − nombre de séances agenda au-delà de la 20ème pour ce candidat
+ipcMain.handle("set-prix-formation", async (event, prix) => {
+  const val = String(parseFloat(prix) || 30000);
+  return new Promise((resolve) => {
+    db.query(
+      `INSERT INTO ConfigurationSysteme (cleParametre, valeurParametre)
+       VALUES ('PRIX_FORMATION', ?)
+       ON DUPLICATE KEY UPDATE valeurParametre = ?`,
+      [val, val],
+      (err) => {
+        if (err) { console.error("set-prix-formation:", err); resolve({ success: false }); }
+        else resolve({ success: true });
+      }
+    );
+  });
+});
+
+// ── Crédit de séances supplémentaires restant pour un candidat ───────────────
 ipcMain.handle('get-credit-seances-sup', async (event, candidatId) => {
   return new Promise((resolve) => {
     db.query(
@@ -846,6 +861,35 @@ ipcMain.handle('get-credit-seances-sup', async (event, candidatId) => {
     );
   });
 });
+
+// ── 5. PAIEMENTS ──────────────────────────────────────────────────────────────
+ipcMain.handle('add-payment', async (event, data) => {
+  const { idCandidat, montant, methode, dateVersement, remarque, typeVersement } = data;
+  const PRIX_PERMIS = await getPrixFormationFromDB();
+  const versement = parseFloat(montant);
+
+  // ── Séances supplémentaires : paiement indépendant du forfait ─────────────
+  if (typeVersement === 'seance_supplementaire') {
+    const nbSeancesPayees = parseInt(data._meta?.nbSeances) || 1;
+    return new Promise((resolve) => {
+      db.query('SELECT * FROM Paiement WHERE idCandidat = ? LIMIT 1', [idCandidat], (err, rows) => {
+        if (err) return resolve({ success: false, message: "Erreur DB: " + err.message });
+        if (!rows || rows.length === 0)
+          return resolve({ success: false, message: "Aucun dossier de paiement trouvé pour ce candidat." });
+
+        const idPaiement = rows[0].idPaiement;
+        db.query(
+          `INSERT INTO Versement (montant, typeVersement, datePaiement, methode, numeroTranche, remarque, dateVersement, idPaiement)
+           VALUES (?, 'seance_supplementaire', NOW(), ?, ?, ?, ?, ?)`,
+          [versement, methode, nbSeancesPayees, remarque || null, dateVersement, idPaiement],
+          (err2) => {
+            if (err2) return resolve({ success: false, message: "Erreur Versement: " + err2.message });
+            resolve({ success: true, montantRestant: rows[0].montantRestant, nbSeancesPayees });
+          }
+        );
+      });
+    });
+  }
 
   // ── Paiement forfait normal ───────────────────────────────────────────────
   return new Promise((resolve) => {
@@ -921,16 +965,13 @@ ipcMain.handle("get-payments", async () => {
 });
 
 ipcMain.handle('get-candidats-debiteurs', async () => {
+  const prix = await getPrixFormationFromDB();
   return new Promise((resolve) => {
-    console.log("Calling this guy!");
     const sql = `
       SELECT 
-        c.idCandidat, 
-        c.nom, 
-        c.prenom, 
-        c.telephone,
-        MAX(COALESCE(p.montantTotal, 30000)) AS montantTotal,
-        MAX(COALESCE(p.montantRestant, 30000)) AS montantRestant,
+        c.idCandidat, c.nom, c.prenom, c.telephone,
+        MAX(COALESCE(p.montantTotal, ?)) AS montantTotal,
+        MAX(COALESCE(p.montantRestant, ?)) AS montantRestant,
         MAX(COALESCE(p.statutPaiement, 'en_attente')) AS statutPaiement,
         GROUP_CONCAT(s.idSeance) AS seanceIds,
         GROUP_CONCAT(CONCAT(s.date, ' à ', s.heure)) AS seanceDetails
@@ -942,8 +983,7 @@ ipcMain.handle('get-candidats-debiteurs', async () => {
       GROUP BY c.idCandidat
       ORDER BY c.nom ASC
     `;
-
-    db.query(sql, (err, res) => {
+    db.query(sql, [prix, prix], (err, res) => {
       if (err) {
         console.error('get-candidats-debiteurs error:', err);
         resolve([]);
@@ -1764,8 +1804,7 @@ ipcMain.handle("get-seances-mois", async () => {
 // });
 
 // ── CHARGILY PAY ─────────────────────────────────────────────────────────────
-const SERVEUR_URL_CHARGILY = "http://localhost:5000";
-
+const SERVEUR_URL_CHARGILY = "https://permismanager.onrender.com";
 // Fonction pour lire la config Chargily depuis la base
 function getChargilyKeyFromDB() {
   return new Promise((resolve) => {
@@ -1783,12 +1822,50 @@ function getChargilyKeyFromDB() {
 
 ipcMain.handle("payer-chargily", async (event, data) => {
   const { key, mode } = await getChargilyKeyFromDB();
+
+  // ── Récupère les infos à jour du candidat depuis la base locale ─────────
+  const candidat = await new Promise((resolve) => {
+    db.query(
+      "SELECT nom, prenom, date_naissance, sexe FROM Candidat WHERE idCandidat = ?",
+      [data.idCandidat],
+      (err, rows) => {
+        if (err || !rows.length) return resolve(null);
+        resolve(rows[0]);
+      }
+    );
+  });
+
+  if (!candidat) {
+    return { success: false, message: "Candidat introuvable en base locale." };
+  }
+
+  // Formatage de la date (le driver MySQL renvoie un objet Date)
+  const dateNaissance = candidat.date_naissance instanceof Date
+    ? candidat.date_naissance.toISOString().split("T")[0]
+    : candidat.date_naissance;
+
+  // ── Récupère le prix de la formation configuré ───────────────────────────
+  const prixFormationTotal = await getPrixFormationFromDB();
+
+  console.log("🔑 Clé Chargily:", key, "Mode:", mode);
+
   const res = await fetch(`${SERVEUR_URL_CHARGILY}/chargily/payer`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...data, chargilyKey: key, chargilyMode: mode }),
+    body: JSON.stringify({
+      ...data,
+      nomCandidat:    candidat.nom,
+      prenomCandidat: candidat.prenom,
+      dateNaissance,
+      sexe:           candidat.sexe,
+      prixFormationTotal,
+      chargilyKey:    key,
+      chargilyMode:   mode,
+    }),
   });
-  return await res.json();
+  const result = await res.json();
+  console.log("📩 Réponse Render:", result);
+  return result;
 });
 
 ipcMain.handle("statut-chargily", async (event, checkoutId) => {

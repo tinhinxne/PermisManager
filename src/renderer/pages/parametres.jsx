@@ -9,6 +9,7 @@ import {
   Users, Calendar, CreditCard, ClipboardCheck, Umbrella,
   Eye as EyeIcon, UserPlus, Trash2, CalendarPlus,
   Receipt, PenLine, CalendarX, Lock, LockOpen, FileSpreadsheet,
+  Wallet,
 } from "lucide-react";
 import { useRulesCtx }       from "../context/RulesContext";
 import { usePermissionsCtx } from "../context/PermissionsContext";
@@ -482,6 +483,107 @@ const ModalChargily = ({ onClose }) => {
   );
 };
 
+/* ─── Modal Prix de la formation ─────────────────────────────────────────── */
+const ModalPrixFormation = ({ onClose }) => {
+  const [prix, setPrix]       = useState(30000);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [saved, setSaved]     = useState(false);
+  const [error, setError]     = useState(null);
+
+  useEffect(() => {
+    window.electron.getPrixFormation()
+      .then(p => { setPrix(p); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const handleChange = (val) => {
+    setPrix(val);
+    setSaved(false);
+    setError(null);
+  };
+
+  const handleSave = async () => {
+    const val = parseFloat(prix);
+    if (isNaN(val) || val <= 0) {
+      setError("Veuillez saisir un montant valide.");
+      return;
+    }
+    setSaving(true);
+    const r = await window.electron.setPrixFormation(val);
+    setSaving(false);
+    if (r.success) {
+      setSaved(true);
+      setTimeout(() => onClose(), 900);
+    } else {
+      setError("Erreur lors de la sauvegarde. Réessayez.");
+    }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal new-modal" style={{ maxWidth: 440 }}>
+        <div className="new-modal-header" style={{ background: "linear-gradient(135deg,#0F6E56,#0c5844)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 22 }}>💰</span>
+            <div>
+              <h2 style={{ color: "#fff", margin: 0, fontSize: 16 }}>Prix de la formation</h2>
+              <p style={{ color: "rgba(255,255,255,0.75)", margin: 0, fontSize: 12 }}>Montant total du permis facturé</p>
+            </div>
+          </div>
+          <span className="close" onClick={onClose} style={{ color: "#fff" }}><X size={16}/></span>
+        </div>
+        <hr/>
+        <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 8 }}>
+              Montant total (DA)
+            </label>
+            {loading ? (
+              <p style={{ color: "#94a3b8", fontSize: 13 }}>Chargement...</p>
+            ) : (
+              <div style={{ position: "relative" }}>
+                <input
+                  type="number"
+                  min="0"
+                  step="500"
+                  value={prix}
+                  onChange={e => handleChange(e.target.value)}
+                  style={{
+                    width: "100%", padding: "11px 60px 11px 14px",
+                    border: `1.5px solid ${error ? "#fca5a5" : "#e2e8f0"}`,
+                    borderRadius: 10, fontSize: 15, fontWeight: 700, color: "#0f172a",
+                    outline: "none", background: "#f8fafc", boxSizing: "border-box",
+                  }}
+                />
+                <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", color: "#94a3b8", fontSize: 13, fontWeight: 600 }}>
+                  DA
+                </span>
+              </div>
+            )}
+            {error && <p style={{ fontSize: 12, color: "#dc2626", marginTop: 6 }}>{error}</p>}
+          </div>
+
+          <div style={{ background: "#f0fdf7", border: "1px solid #bbf0dd", borderRadius: 10, padding: "12px 14px", fontSize: 12, color: "#0F6E56", lineHeight: 1.6 }}>
+            Ce montant s'applique aux <strong>nouveaux dossiers de paiement</strong>. Les candidats déjà inscrits gardent le montant fixé lors de leur inscription.
+          </div>
+        </div>
+        <div className="new-modal-footer">
+          <button className="btn cancel" onClick={onClose}><X size={13}/> Annuler</button>
+          <button
+            className="btn primary"
+            onClick={handleSave}
+            disabled={loading || saving}
+            style={{ background: saved ? "#22c55e" : "#0F6E56", transition: "background 0.3s" }}
+          >
+            {saved ? <><Check size={13}/> Sauvegardé !</> : saving ? "⏳..." : <><Save size={13}/> Sauvegarder</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 /* ─── Page Paramètres ────────────────────────────────────────────────────── */
 const Parametres = () => {
   const [activeModal,   setActiveModal]   = useState(null);
@@ -493,11 +595,12 @@ const Parametres = () => {
   }, [location.state]);
 
   const sections = [
-    { id:"inscription", icon:<ClipboardList size={20}/>,              title:"Règles d'inscriptions",      description:"Conditions d'âge et documents requis",              accentColor:"#6c63ff" },
-    { id:"examens",     icon:<BookOpen size={20}/>,                   title:"Règles des examens",          description:"Délais, tentatives max et jours autorisés",         accentColor:"#3b82f6" },
-    { id:"conges",      icon:<CalendarOff size={20}/>,                title:"Gestion des congés",          description:"Congé annuel auto-école & congés moniteurs",        accentColor:"#f97316" },
-    { id:"moniteurs",   icon:<UserCog size={20}/>,                    title:"Permissions des moniteurs",   description:"Accès aux fonctionnalités par moniteur",            accentColor:"#8b5cf6" },
-    { id:"chargily",    icon:<span style={{ fontSize:18 }}>💳</span>, title:"Paiement en ligne",           description:"Configurer Chargily Pay — CIB / EDAHABIA",         accentColor:"#6c63ff" },
+    { id:"inscription",   icon:<ClipboardList size={20}/>,              title:"Règles d'inscriptions",      description:"Conditions d'âge et documents requis",              accentColor:"#6c63ff" },
+    { id:"examens",       icon:<BookOpen size={20}/>,                   title:"Règles des examens",          description:"Délais, tentatives max et jours autorisés",         accentColor:"#3b82f6" },
+    { id:"conges",        icon:<CalendarOff size={20}/>,                title:"Gestion des congés",          description:"Congé annuel auto-école & congés moniteurs",        accentColor:"#f97316" },
+    { id:"moniteurs",     icon:<UserCog size={20}/>,                    title:"Permissions des moniteurs",   description:"Accès aux fonctionnalités par moniteur",            accentColor:"#8b5cf6" },
+    { id:"prixFormation", icon:<Wallet size={20}/>,                     title:"Prix de la formation",        description:"Montant total du permis facturé aux candidats",     accentColor:"#0F6E56" },
+    { id:"chargily",      icon:<span style={{ fontSize:18 }}>💳</span>, title:"Paiement en ligne",           description:"Configurer Chargily Pay — CIB / EDAHABIA",         accentColor:"#6c63ff" },
   ];
 
   const openModal  = (id) => setActiveModal(id);
@@ -535,11 +638,12 @@ const Parametres = () => {
         </div>
       </div>
 
-      {activeModal === "examens"     && <ModalExamens     onClose={closeModal}/>}
-      {activeModal === "moniteurs"   && <ModalMoniteurs   onClose={closeModal}/>}
-      {activeModal === "inscription" && <ModalInscription onClose={closeModal}/>}
-      {activeModal === "conges"      && <ModalConges      onClose={closeModal}/>}
-      {activeModal === "chargily"    && <ModalChargily    onClose={closeModal}/>}
+      {activeModal === "examens"       && <ModalExamens       onClose={closeModal}/>}
+      {activeModal === "moniteurs"     && <ModalMoniteurs     onClose={closeModal}/>}
+      {activeModal === "inscription"   && <ModalInscription   onClose={closeModal}/>}
+      {activeModal === "conges"        && <ModalConges        onClose={closeModal}/>}
+      {activeModal === "prixFormation" && <ModalPrixFormation onClose={closeModal}/>}
+      {activeModal === "chargily"      && <ModalChargily      onClose={closeModal}/>}
     </div>
   );
 };
