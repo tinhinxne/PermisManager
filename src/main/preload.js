@@ -85,6 +85,8 @@ testChargilyConfig: (data) => ipcRenderer.invoke("test-chargily-config", data),
   addPayment: (data) => ipcRenderer.invoke('add-payment', data),
   getCandidatsDebiteurs:  ()     => ipcRenderer.invoke('get-candidats-debiteurs'),
   getCreditSeancesSup: (candidatId) => ipcRenderer.invoke('get-credit-seances-sup', candidatId),
+  getPrixFormation: () => ipcRenderer.invoke('get-prix-formation'),
+setPrixFormation: (prix) => ipcRenderer.invoke('set-prix-formation', prix),
 });
 
 // EXAMENS 

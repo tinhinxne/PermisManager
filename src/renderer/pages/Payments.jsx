@@ -9,7 +9,9 @@ import SmallCar from "../../assets/SmallCar.png";
 import "../../styles/payment.css";
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
-const PRIX_PERMIS = 30000;
+// Valeur de secours utilisée uniquement si le prix configuré par l'admin
+// n'a pas encore pu être chargé depuis la base de données.
+const PRIX_PERMIS_DEFAULT = 30000;
 const AUTOECOLE = { nom: "Auto-École El Amal", telephone: "0550 00 00 00", adresse: "Sétif, Algérie" };
 
 // ─── Utilitaires ──────────────────────────────────────────────────────────────
@@ -28,11 +30,16 @@ function statutCandidat(montantRestant, aVerse) {
 }
 
 // ─── PDF Reçu ─────────────────────────────────────────────────────────────────
-function genererRecuPDF(versement, candidat) {
+// prixFormationParDefaut : utilisé UNIQUEMENT si ce candidat/versement n'a pas encore
+// de montantTotal propre en base (ex: tout nouveau dossier). Pour un candidat déjà
+// inscrit, on utilise TOUJOURS son propre montantTotal figé — jamais le prix "actuel" —
+// afin que changer le prix de la formation n'affecte pas rétroactivement les anciens dossiers.
+function genererRecuPDF(versement, candidat, prixFormationParDefaut = PRIX_PERMIS_DEFAULT) {
+  const total  = Number(versement.montantTotal ?? candidat.montantTotal ?? prixFormationParDefaut);
   const doc    = new jsPDF({ unit: "mm", format: "a4" });
   const W      = doc.internal.pageSize.getWidth();
-  const paye   = PRIX_PERMIS - Number(versement.montantRestant || 0);
-  const pct    = Math.min(100, Math.round((paye / PRIX_PERMIS) * 100));
+  const paye   = total - Number(versement.montantRestant || 0);
+  const pct    = Math.min(100, Math.round((paye / total) * 100));
   const numero = `REC-${versement.idVersement || Date.now()}`;
 
   doc.setFillColor(43, 83, 126);
@@ -86,7 +93,7 @@ function genererRecuPDF(versement, candidat) {
   doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(43, 83, 126);
   doc.text("RÉCAPITULATIF DU SOLDE", 14, y); y += 5;
   [
-    ["Total formation", fDA(PRIX_PERMIS),              [30, 41, 59]],
+    ["Total formation", fDA(total),              [30, 41, 59]],
     ["Total réglé",     fDA(paye),                     [22, 101, 52]],
     ["Solde restant",   fDA(versement.montantRestant), Number(versement.montantRestant) > 0 ? [185, 28, 28] : [22, 101, 52]],
   ].forEach(([label, val, color], i) => {
@@ -121,13 +128,16 @@ function genererRecuPDF(versement, candidat) {
   return doc;
 }
 
-function genererHistoriquePDF(candidat, versements) {
+// prixFormationParDefaut : uniquement pour un candidat sans montantTotal propre en base
+// (pas encore de dossier de paiement). Sinon on utilise son propre montantTotal figé.
+function genererHistoriquePDF(candidat, versements, prixFormationParDefaut = PRIX_PERMIS_DEFAULT) {
   versements = versements || [];
   const doc       = new jsPDF({ unit: "mm", format: "a4" });
   const W         = doc.internal.pageSize.getWidth();
+  const total     = Number(candidat.montantTotal ?? prixFormationParDefaut);
   const totalPaye = versements.reduce((s, v) => s + Number(v.montant || 0), 0);
-  const reste     = Number(candidat.montantRestant ?? PRIX_PERMIS);
-  const pct       = Math.min(100, Math.round((totalPaye / PRIX_PERMIS) * 100));
+  const reste     = Number(candidat.montantRestant ?? total);
+  const pct       = Math.min(100, Math.round((totalPaye / total) * 100));
 
   doc.setFillColor(43, 83, 126); doc.rect(0, 0, W, 36, "F");
   doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(16);
@@ -150,7 +160,7 @@ function genererHistoriquePDF(candidat, versements) {
 
   const bW = (W - 28 - 8) / 3;
   [
-    { label: "Total formation", val: fDA(PRIX_PERMIS),  bg: [240, 244, 250], fg: [43, 83, 126] },
+    { label: "Total formation", val: fDA(total),  bg: [240, 244, 250], fg: [43, 83, 126] },
     { label: "Total versé",     val: fDA(totalPaye),    bg: [240, 253, 244], fg: [22, 101, 52] },
     { label: "Reste à payer",   val: fDA(reste),        bg: reste > 0 ? [254, 242, 242] : [240, 253, 244], fg: reste > 0 ? [185, 28, 28] : [22, 101, 52] },
   ].forEach((b, i) => {
@@ -643,14 +653,15 @@ function ExportModal({ fiches, onClose }) {
 }
 
 // ─── Modal Rappel ─────────────────────────────────────────────────────────────
-function RappelModal({ candidat, onClose }) {
+function RappelModal({ candidat, prixFormation = PRIX_PERMIS_DEFAULT, onClose }) {
   const [sending,  setSending]  = useState(false);
   const [sent,     setSent]     = useState(false);
   const [erreur,   setErreur]   = useState("");
   const [msgPerso, setMsgPerso] = useState("");
 
   if (!candidat) return null;
-  const montantDA  = fDA(candidat.montantRestant ?? PRIX_PERMIS);
+  const montantTotalCandidat = candidat.montantTotal ?? prixFormation;
+  const montantDA  = fDA(candidat.montantRestant ?? montantTotalCandidat);
   const msgSuggere = `Bonjour ${candidat.prenom} ${candidat.nom},\n\nNous vous contactons au sujet de votre dossier de formation au permis de conduire à ${AUTOECOLE.nom}.\n\nUn solde de ${montantDA} reste à régler. Nous vous invitons à régulariser votre situation dans les meilleurs délais.\n\nPour tout renseignement, contactez-nous au ${AUTOECOLE.telephone}.\n\nCordialement,\nL'équipe ${AUTOECOLE.nom}`;
 
   const handleEnvoyer = async () => {
@@ -659,7 +670,7 @@ function RappelModal({ candidat, onClose }) {
     try {
       const result = await window.electron.sendRappelPaiement({
         email: candidat.email, nomCandidat: `${candidat.prenom} ${candidat.nom}`,
-        montantRestant: candidat.montantRestant ?? PRIX_PERMIS, montantTotal: PRIX_PERMIS,
+        montantRestant: candidat.montantRestant ?? montantTotalCandidat, montantTotal: montantTotalCandidat,
         telephone: AUTOECOLE.telephone, messagePersonnalise: msgPerso.trim() || null,
       });
       if (result?.success) setSent(true);
@@ -724,18 +735,18 @@ function RappelModal({ candidat, onClose }) {
 }
 
 // ─── Modal Historique ─────────────────────────────────────────────────────────
-function HistoriqueModal({ candidat, onClose }) {
+function HistoriqueModal({ candidat, prixFormation = PRIX_PERMIS_DEFAULT, onClose }) {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [doc,        setDoc]        = useState(null);
 
   useEffect(() => {
     if (!candidat) return;
-    const d   = genererHistoriquePDF(candidat, candidat.versements);
+    const d   = genererHistoriquePDF(candidat, candidat.versements, prixFormation);
     const url = d.output("bloburl");
     setDoc(d);
     setPreviewUrl(url);
     return () => { if (url) URL.revokeObjectURL(url); };
-  }, [candidat]);
+  }, [candidat, prixFormation]);
 
   if (!candidat) return null;
 
@@ -822,6 +833,8 @@ const Payments = () => {
   const [toastMsg,       setToastMsg]       = useState(null);
   const [paymentsData,   setPaymentsData]   = useState([]);
   const [allCandidates,  setAllCandidates]  = useState([]);
+  // ── Prix de la formation, configurable par l'admin (Paramètres) ──────────
+  const [prixFormation,  setPrixFormation]  = useState(PRIX_PERMIS_DEFAULT);
 
   const showToast = (msg, type = "success") => {
     setToastMsg({ msg, type });
@@ -830,9 +843,16 @@ const Payments = () => {
 
   const fetchData = useCallback(async () => {
     try {
-      const [payments, candidates] = await Promise.all([window.electron.getPayments(), window.electron.getCandidats()]);
+      const [payments, candidates, prix] = await Promise.all([
+        window.electron.getPayments(),
+        window.electron.getCandidats(),
+        window.electron.getPrixFormation(),
+      ]);
       setPaymentsData(payments || []);
       setAllCandidates(candidates || []);
+      if (prix !== undefined && prix !== null && !isNaN(Number(prix))) {
+        setPrixFormation(Number(prix));
+      }
     } catch (err) { console.error("Erreur fetchData:", err); }
   }, []);
 
@@ -852,14 +872,21 @@ const Payments = () => {
   };
 
   // ── Fiches candidats ───────────────────────────────────────────────────────
+  // Important : montantTotal est propre à CHAQUE candidat (figé en base lors de
+  // la création de son dossier de paiement). On ne se rabat sur `prixFormation`
+  // (le prix actuellement configuré) que pour un candidat qui n'a AUCUN dossier
+  // de paiement pour l'instant — son futur dossier utilisera bien le prix actuel.
+  // Ainsi, changer le prix de la formation n'affecte jamais rétroactivement les
+  // candidats déjà inscrits, seulement les nouveaux.
   const fichesCandidats = allCandidates.map(c => {
     const versements     = paymentsData.filter(p => p.idCandidat === (c.idCandidat || c.id));
     const totalVerse     = versements.reduce((s, v) => s + Number(v.montant || 0), 0);
-    const montantRestant = Number(c.montantRestant ?? PRIX_PERMIS);
+    const montantTotal   = Number(c.montantTotal ?? prixFormation);
+    const montantRestant = Number(c.montantRestant ?? prixFormation);
     const aVerse         = versements.length > 0;
     const statut         = statutCandidat(montantRestant, aVerse);
-    const pct            = Math.min(100, Math.round(((PRIX_PERMIS - montantRestant) / PRIX_PERMIS) * 100));
-    return { ...c, idCandidat: c.idCandidat || c.id, versements, totalVerse, montantRestant, aVerse, statut, pct };
+    const pct            = Math.min(100, Math.round(((montantTotal - montantRestant) / montantTotal) * 100));
+    return { ...c, idCandidat: c.idCandidat || c.id, versements, totalVerse, montantTotal, montantRestant, aVerse, statut, pct };
   });
 
   // ── Stats globales ─────────────────────────────────────────────────────────
@@ -1096,14 +1123,14 @@ const Payments = () => {
                             {f.versements.length > 0 && (
                               <>
                                 <button
-                                  onClick={() => { const d = genererRecuPDF(f.versements[0], f); d.save(`Recu_${f.nom}_${f.prenom}.pdf`); }}
+                                  onClick={() => { const d = genererRecuPDF(f.versements[0], f, prixFormation); d.save(`Recu_${f.nom}_${f.prenom}.pdf`); }}
                                   style={btnAct("#f0fdf4", "#166534", "#86efac")}
                                   title="Télécharger le reçu PDF"
                                 >
                                   ⬇ Reçu
                                 </button>
                                 <button
-                                  onClick={() => { const d = genererRecuPDF(f.versements[0], f); window.open(d.output("bloburl"), "_blank"); }}
+                                  onClick={() => { const d = genererRecuPDF(f.versements[0], f, prixFormation); window.open(d.output("bloburl"), "_blank"); }}
                                   style={btnAct("#f0f4fa", "#2b537e", "#93c5fd")}
                                   title="Imprimer le reçu"
                                 >
@@ -1161,13 +1188,13 @@ const Payments = () => {
                                       <td style={{ padding: "6px 10px" }}>
                                         <div style={{ display: "flex", gap: 5 }}>
                                           <button
-                                            onClick={() => { const d = genererRecuPDF(v, f); d.save(`Recu_${f.nom}_${v.idVersement}.pdf`); }}
+                                            onClick={() => { const d = genererRecuPDF(v, f, prixFormation); d.save(`Recu_${f.nom}_${v.idVersement}.pdf`); }}
                                             style={{ ...btnAct("#f0fdf4", "#166634", "#86efac"), padding: "3px 9px" }}
                                           >
                                             ⬇ Reçu
                                           </button>
                                           <button
-                                            onClick={() => { const d = genererRecuPDF(v, f); window.open(d.output("bloburl"), "_blank"); }}
+                                            onClick={() => { const d = genererRecuPDF(v, f, prixFormation); window.open(d.output("bloburl"), "_blank"); }}
                                             style={{ ...btnAct("#f0f4fa", "#2b537e", "#93c5fd"), padding: "3px 9px" }}
                                           >
                                             🖨 Imprimer
@@ -1229,11 +1256,11 @@ const Payments = () => {
         )}
 
         {rappelCand && (
-          <RappelModal candidat={rappelCand} onClose={() => setRappelCand(null)} />
+          <RappelModal candidat={rappelCand} prixFormation={prixFormation} onClose={() => setRappelCand(null)} />
         )}
 
         {historiqueCand && (
-          <HistoriqueModal candidat={historiqueCand} onClose={() => setHistoriqueCand(null)} />
+          <HistoriqueModal candidat={historiqueCand} prixFormation={prixFormation} onClose={() => setHistoriqueCand(null)} />
         )}
 
       </div>
