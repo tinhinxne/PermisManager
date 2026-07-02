@@ -123,6 +123,7 @@ const PaymentModal = ({ candidate, allCandidates, onClose, onAddPayment, moniteu
         dateVersement: date,
         remarque:      remarqueFinal,
         typeVersement: "seance",
+        checkoutId:    checkoutId,
       });
     }
   };
@@ -178,6 +179,7 @@ const stat = await window.electron.statutChargily(checkoutId);
               dateVersement: date,
               remarque:      remark || `Paiement Chargily — réf. ${checkoutId}`,
               typeVersement: "seance",
+              checkoutId:    checkoutId,
             });
 
           } else if (stat.status === "failed") {

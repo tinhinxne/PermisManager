@@ -897,30 +897,30 @@ ipcMain.handle('add-payment', async (event, data) => {
       if (err) return resolve({ success: false, message: "Erreur DB: " + err.message });
 
       const enregistrer = (idPaiement, restantActuel, numeroTranche) => {
-        if (restantActuel <= 0) {
-          return resolve({ success: false, message: "Action bloquée : ce candidat a déjà soldé son compte." });
-        }
-        if (versement > restantActuel) {
-          return resolve({ success: false, message: `Le montant (${versement} DA) dépasse le reste à payer (${restantActuel} DA).` });
-        }
-        const nouveauRestant = Math.max(0, restantActuel - versement);
-        const nouveauStatut = nouveauRestant <= 0 ? 'payé' : 'en_cours';
+  if (restantActuel <= 0) {
+    return resolve({ success: false, message: "Action bloquée : ce candidat a déjà soldé son compte." });
+  }
+  if (versement > restantActuel) {
+    return resolve({ success: false, message: `Le montant (${versement} DA) dépasse le reste à payer (${restantActuel} DA).` });
+  }
+  const nouveauRestant = Math.max(0, restantActuel - versement);
+  const nouveauStatut = nouveauRestant <= 0 ? 'payé' : 'en_cours';
 
-        db.query('UPDATE Paiement SET montantRestant = ?, statutPaiement = ? WHERE idPaiement = ?',
-          [nouveauRestant, nouveauStatut, idPaiement], (err2) => {
-            if (err2) return resolve({ success: false, message: "Erreur Update: " + err2.message });
-            db.query(
-              `INSERT INTO Versement (montant, typeVersement, datePaiement, methode, numeroTranche, remarque, dateVersement, idPaiement)
-               VALUES (?, ?, NOW(), ?, ?, ?, ?, ?)`,
-              [versement, typeVersement || 'seance', methode, numeroTranche, remarque || null, dateVersement, idPaiement],
-              (err3) => {
-                if (err3) return resolve({ success: false, message: "Erreur Versement: " + err3.message });
-                resolve({ success: true, montantRestant: nouveauRestant });
-              }
-            );
-          }
-        );
-      };
+  db.query('UPDATE Paiement SET montantRestant = ?, statutPaiement = ? WHERE idPaiement = ?',
+    [nouveauRestant, nouveauStatut, idPaiement], (err2) => {
+      if (err2) return resolve({ success: false, message: "Erreur Update: " + err2.message });
+     db.query(
+        `INSERT INTO Versement (montant, typeVersement, datePaiement, methode, numeroTranche, remarque, dateVersement, idPaiement, checkoutId, statutVersement)
+         VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, ?, 'confirme')`,
+        [versement, typeVersement || 'seance', methode, numeroTranche, remarque || null, dateVersement, idPaiement, data.checkoutId || null],
+        (err3) => {
+          if (err3) return resolve({ success: false, message: "Erreur Versement: " + err3.message });
+          resolve({ success: true, montantRestant: nouveauRestant });
+        }
+      );
+    }
+  );
+};
 
       if (rows && rows.length > 0) {
         const p = rows[0];
