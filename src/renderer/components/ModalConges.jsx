@@ -172,29 +172,6 @@ if (isDateFinInvalide(dateDebut, dateFin)) { setError("La date de fin doit être
             />
           </div>
 
-          {/* Dates
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4 }}>
-                Date de début <span style={{ color: "#ef4444" }}>*</span>
-              </label>
-              <input
-                style={inp} type="date" value={dateDebut}
-                onChange={e => { setDateDebut(e.target.value); setError(""); }}
-              />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4 }}>
-                Date de fin <span style={{ color: "#ef4444" }}>*</span>
-              </label>
-              <input
-                style={inp} type="date" value={dateFin}
-                onChange={e => { setDateFin(e.target.value); setError(""); }}
-              />
-            </div>
-          </div> */}
-
-
           {/* Dates */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -293,15 +270,11 @@ if (isDateFinInvalide(dateDebut, dateFin)) { setError("La date de fin doit être
         </div>
       )}
 
-      {/* <button
+      <button
         onClick={handleSave}
-        disabled={saving} */}
-        <button
-  onClick={handleSave}
-  disabled={saving || dateBloquee}
+        disabled={saving || dateBloquee}
         style={{
           padding: "10px 0", borderRadius: 10, border: "none",
-          // background: saved ? "#22c55e" : saving ? "#94a3b8" : "#2b537e",
           background: saved ? "#22c55e" : (saving || dateBloquee) ? "#94a3b8" : "#2b537e",
           color: "#fff", fontFamily: "'Poppins',sans-serif",
           fontSize: "0.85rem", fontWeight: 700,
@@ -328,6 +301,10 @@ function TabCongesMoniteurs() {
   const [conflit,     setConflit]     = useState(null);
   const [loadingMons, setLoadingMons] = useState(true);
 
+  // ── Recherche moniteur ──
+  const [searchTerm, setSearchTerm]     = useState("");
+  const [showDropdown, setShowDropdown] = useState(false);
+
   useEffect(() => {
     window.electron.getMoniteurs().then(list => {
       setMoniteurs(list || []);
@@ -342,6 +319,10 @@ function TabCongesMoniteurs() {
 
   const conges      = selectedId ? (congesMoniteurs[selectedId] || []) : [];
   const selectedMon = moniteurs.find(m => String(m.id) === selectedId);
+
+  const filteredMoniteurs = moniteurs.filter(m =>
+    `${m.prenom} ${m.nom}`.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   // Détection chevauchement en temps réel
   useEffect(() => {
@@ -420,23 +401,56 @@ function TabCongesMoniteurs() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
-      {/* Sélecteur moniteur */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      {/* Sélecteur moniteur avec recherche */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 5, position: "relative" }}>
         <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4 }}>
           Moniteur
         </label>
-        <select
-          value={selectedId || ""}
-          onChange={e => { setSelectedId(e.target.value); setShowForm(false); setError(""); setConflit(null); }}
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={e => { setSearchTerm(e.target.value); setShowDropdown(true); }}
+          onFocus={() => setShowDropdown(true)}
+          onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+          placeholder={selectedMon ? `${selectedMon.prenom} ${selectedMon.nom}` : "Rechercher un moniteur…"}
           style={inp}
-        >
-          {moniteurs.map(m => (
-            <option key={m.id} value={String(m.id)}>
-              {m.prenom} {m.nom}
-              {congesMoniteurs[String(m.id)]?.some(c => c.statut === "validee" && isActive(c.dateDebut, c.dateFin)) ? " 🌴" : ""}
-            </option>
-          ))}
-        </select>
+        />
+
+        {showDropdown && (
+          <div style={{
+            position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4,
+            background: "#fff", border: "1.5px solid #e2e8f0", borderRadius: 10,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 20,
+            maxHeight: 200, overflowY: "auto",
+          }}>
+            {filteredMoniteurs.length === 0 ? (
+              <div style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#94a3b8" }}>Aucun moniteur trouvé</div>
+            ) : (
+              filteredMoniteurs.map(m => {
+                const enConge = congesMoniteurs[String(m.id)]?.some(
+                  c => c.statut === "validee" && isActive(c.dateDebut, c.dateFin)
+                );
+                return (
+                  <div
+                    key={m.id}
+                    onMouseDown={() => {
+                      setSelectedId(String(m.id));
+                      setShowForm(false); setError(""); setConflit(null);
+                      setSearchTerm(""); setShowDropdown(false);
+                    }}
+                    style={{
+                      padding: "9px 12px", cursor: "pointer", fontSize: "0.8rem",
+                      background: String(m.id) === selectedId ? "#f0f5fa" : "#fff",
+                      color: "#1e293b",
+                    }}
+                  >
+                    {m.prenom} {m.nom}{enConge ? " 🌴" : ""}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
       </div>
 
       {/* Fiche récap moniteur */}
