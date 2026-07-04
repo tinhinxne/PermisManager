@@ -497,42 +497,108 @@ const ModalChargily = ({ onClose }) => {
   const handleSave=async()=>{ if(!key.trim())return; setSaving(true); const r=await window.electron.setChargilyConfig({key:key.trim(),mode}); setSaving(false); if(r.success){setSaved(true);setTimeout(()=>onClose(),1000);} };
   return (
     <div className="modal-overlay">
-      <div className="modal new-modal" style={{ maxWidth:520 }}>
-        <div className="new-modal-header" style={{ background:"linear-gradient(135deg,#6c63ff,#4f46e5)" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <span style={{ fontSize:22 }}>💳</span>
-            <div><h2 style={{ color:"#fff", margin:0, fontSize:16 }}>Paiement en ligne — Chargily</h2><p style={{ color:"rgba(255,255,255,0.7)", margin:0, fontSize:12 }}>Configuration CIB / EDAHABIA</p></div>
+      <div className="modal new-modal" style={{ maxWidth:500, borderRadius:18, overflow:"hidden", boxShadow:"0 24px 60px rgba(30,41,59,0.22)" }}>
+        <div className="new-modal-header" style={{ background:"linear-gradient(135deg,#4F46E5,#4338CA)", padding:"20px 24px" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <div style={{ width:38, height:38, borderRadius:11, background:"rgba(255,255,255,0.16)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+              <CreditCard size={19} color="#fff"/>
+            </div>
+            <div>
+              <h2 style={{ color:"#fff", margin:0, fontSize:15.5, fontWeight:700 }}>Paiement en ligne — Chargily</h2>
+              <p style={{ color:"rgba(255,255,255,0.72)", margin:0, fontSize:12, marginTop:2 }}>Configuration CIB / EDAHABIA</p>
+            </div>
           </div>
           <span className="close" onClick={onClose} style={{ color:"#fff" }}><X size={16}/></span>
         </div>
-        <hr/>
-        <div style={{ padding:"20px 24px", display:"flex", flexDirection:"column", gap:20 }}>
+        <div style={{ padding:"22px 24px 6px", display:"flex", flexDirection:"column", gap:20 }}>
+
           <div>
-            <label style={{ fontSize:12, fontWeight:700, color:"#475569", textTransform:"uppercase", letterSpacing:"0.05em", display:"block", marginBottom:10 }}>Mode</label>
+            <label style={{ fontSize:11.5, fontWeight:700, color:"#475569", textTransform:"uppercase", letterSpacing:"0.06em", display:"block", marginBottom:10 }}>Mode</label>
             <div style={{ display:"flex", gap:10 }}>
-              {[["test","🧪 Test","Pour tester sans argent réel"],["live","🚀 Production","Paiements réels"]].map(([val,label,desc])=>(
-                <div key={val} onClick={()=>{setMode(val);setTestResult(null);}} style={{ flex:1, padding:"12px 14px", borderRadius:10, cursor:"pointer", border:`2px solid ${mode===val?(val==="live"?"#22c55e":"#6c63ff"):"#e2e8f0"}`, background:mode===val?(val==="live"?"#f0fdf4":"#ede9fe"):"#f8fafc", transition:"all 0.2s" }}>
-                  <div style={{ fontWeight:700, fontSize:13, color:mode===val?(val==="live"?"#166534":"#4f46e5"):"#64748b" }}>{label}</div>
-                  <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>{desc}</div>
+              {[["test","🧪 Test","Pour tester sans argent réel","#4F46E5","#EEF2FF","#C7D2FE"],["live","🚀 Production","Paiements réels","#16A34A","#F0FDF4","#BBF7D0"]].map(([val,label,desc,color,bg,border])=>(
+                <div
+                  key={val}
+                  onClick={()=>{setMode(val);setTestResult(null);}}
+                  style={{
+                    flex:1, padding:"14px 16px", borderRadius:12, cursor:"pointer",
+                    border:`1.5px solid ${mode===val?color:"#e2e8f0"}`,
+                    background:mode===val?bg:"#fff",
+                    boxShadow:mode===val?`0 4px 14px ${color}22`:"none",
+                    transition:"all 0.18s",
+                  }}
+                >
+                  <div style={{ fontWeight:700, fontSize:13.5, color:mode===val?color:"#64748b" }}>{label}</div>
+                  <div style={{ fontSize:11, color:"#94a3b8", marginTop:4, lineHeight:1.4 }}>{desc}</div>
                 </div>
               ))}
             </div>
           </div>
+
           <div>
-            <label style={{ fontSize:12, fontWeight:700, color:"#475569", textTransform:"uppercase", letterSpacing:"0.05em", display:"block", marginBottom:8 }}>Clé secrète {mode==="test"?"(test_sk_...)":"(live_sk_...)"}</label>
+            <label style={{ fontSize:11.5, fontWeight:700, color:"#475569", textTransform:"uppercase", letterSpacing:"0.06em", display:"block", marginBottom:8 }}>
+              Clé secrète {mode==="test"?"(test_sk_...)":"(live_sk_...)"}
+            </label>
             <div style={{ position:"relative" }}>
-              <input type={showKey?"text":"password"} value={key} onChange={e=>{setKey(e.target.value);setTestResult(null);setSaved(false);}} placeholder={mode==="test"?"test_sk_xxxxxxxxxxxxxxxx":"live_sk_xxxxxxxxxxxxxxxx"} style={{ width:"100%", padding:"11px 44px 11px 14px", border:`1.5px solid ${testResult?.success?"#86efac":testResult?.success===false?"#fca5a5":"#e2e8f0"}`, borderRadius:10, fontSize:13, outline:"none", background:"#f8fafc", boxSizing:"border-box", fontFamily:"monospace" }}/>
-              <button onClick={()=>setShowKey(!showKey)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:"#94a3b8" }}>{showKey?<EyeOff size={16}/>:<Eye size={16}/>}</button>
+              <input
+                type={showKey?"text":"password"}
+                value={key}
+                onChange={e=>{setKey(e.target.value);setTestResult(null);setSaved(false);}}
+                placeholder={mode==="test"?"test_sk_xxxxxxxxxxxxxxxx":"live_sk_xxxxxxxxxxxxxxxx"}
+                style={{
+                  width:"100%", padding:"12px 44px 12px 14px",
+                  border:`1.5px solid ${testResult?.success?"#86efac":testResult?.success===false?"#fca5a5":"#e2e8f0"}`,
+                  borderRadius:11, fontSize:13, outline:"none", background:"#f8fafc",
+                  boxSizing:"border-box", fontFamily:"monospace",
+                  transition:"border-color 0.15s",
+                }}
+              />
+              <button onClick={()=>setShowKey(!showKey)} style={{ position:"absolute", right:13, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:"#94a3b8", display:"flex" }}>
+                {showKey?<EyeOff size={16}/>:<Eye size={16}/>}
+              </button>
             </div>
-            <p style={{ fontSize:11, color:"#94a3b8", marginTop:6 }}>Disponible dans <strong>pay.chargily.com → Coin des développeurs</strong></p>
+            <p style={{ fontSize:11, color:"#94a3b8", marginTop:7 }}>
+              Disponible dans <strong style={{ color:"#64748b" }}>pay.chargily.com → Coin des développeurs</strong>
+            </p>
           </div>
-          {testResult && <div style={{ padding:"10px 14px", borderRadius:10, background:testResult.success?"#f0fdf4":"#fef2f2", border:`1px solid ${testResult.success?"#86efac":"#fca5a5"}`, fontSize:13, fontWeight:600, color:testResult.success?"#166534":"#dc2626" }}>{testResult.success?"✅ Connexion réussie !":` ❌ ${testResult.message||"Clé invalide"}`}</div>}
-          <div style={{ background:"#f0f6ff", borderRadius:10, padding:"12px 14px", fontSize:12, color:"#475569", lineHeight:1.6 }}><strong>Comment ça marche ?</strong><br/>Le candidat paie avec sa carte <strong>CIB ou EDAHABIA</strong> directement depuis l'app.</div>
+
+          {testResult && (
+            <div style={{
+              padding:"11px 15px", borderRadius:11,
+              background:testResult.success?"#f0fdf4":"#fef2f2",
+              border:`1px solid ${testResult.success?"#86efac":"#fca5a5"}`,
+              fontSize:13, fontWeight:600,
+              color:testResult.success?"#166534":"#dc2626",
+              display:"flex", alignItems:"center", gap:8,
+            }}>
+              {testResult.success ? <Check size={15}/> : <X size={15}/>}
+              {testResult.success ? "Connexion réussie !" : (testResult.message||"Clé invalide")}
+            </div>
+          )}
+
+          <div style={{ background:"#F5F6FF", border:"1px solid #E0E3FA", borderRadius:12, padding:"14px 16px", fontSize:12.5, color:"#475569", lineHeight:1.65 }}>
+            <strong style={{ color:"#4338CA" }}>Comment ça marche ?</strong><br/>
+            Le candidat paie avec sa carte <strong>CIB ou EDAHABIA</strong> directement depuis l'app.
+          </div>
         </div>
         <div className="new-modal-footer">
           <button className="btn cancel" onClick={onClose}><X size={13}/> Annuler</button>
-          <button onClick={handleTest} disabled={!key.trim()||testing} style={{ background:"#f0f6ff", color:"#2b537e", border:"1px solid #4E96E1", borderRadius:8, padding:"8px 16px", cursor:key.trim()?"pointer":"not-allowed", fontSize:13, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>{testing?"⏳ Test...":"🔌 Tester"}</button>
-          <button className="btn primary" onClick={handleSave} disabled={!key.trim()||saving} style={{ background:saved?"#22c55e":undefined, transition:"background 0.3s" }}>{saved?<><Check size={13}/> Sauvegardé !</>:saving?"⏳...":<><Save size={13}/> Sauvegarder</>}</button>
+          <button
+            onClick={handleTest} disabled={!key.trim()||testing}
+            style={{
+              background:"#EEF2FF", color:"#4338CA", border:"1px solid #C7D2FE",
+              borderRadius:9, padding:"9px 16px",
+              cursor:key.trim()?"pointer":"not-allowed", fontSize:13, fontWeight:600,
+              display:"flex", alignItems:"center", gap:6, transition:"background 0.15s",
+            }}
+          >
+            {testing?"⏳ Test...":"🔌 Tester"}
+          </button>
+          <button
+            className="btn primary" onClick={handleSave} disabled={!key.trim()||saving}
+            style={{ background:saved?"#22c55e":"#4F46E5", transition:"background 0.3s" }}
+          >
+            {saved?<><Check size={13}/> Sauvegardé !</>:saving?"⏳...":<><Save size={13}/> Sauvegarder</>}
+          </button>
         </div>
       </div>
     </div>
@@ -546,6 +612,8 @@ const ModalPrixFormation = ({ onClose }) => {
   const [saving, setSaving]   = useState(false);
   const [saved, setSaved]     = useState(false);
   const [error, setError]     = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft]     = useState("");
 
   useEffect(() => {
     window.electron.getPrixFormation()
@@ -553,10 +621,22 @@ const ModalPrixFormation = ({ onClose }) => {
       .catch(() => setLoading(false));
   }, []);
 
+  const fmt = (n) => Number(n || 0).toLocaleString("fr-FR");
+
   const handleChange = (val) => {
-    setPrix(val);
+    const num = Math.max(0, Number(val) || 0);
+    setPrix(num);
     setSaved(false);
     setError(null);
+  };
+
+  const step = (delta) => handleChange(Number(prix || 0) + delta);
+
+  const startEdit = () => { setDraft(String(prix)); setEditing(true); };
+  const commitEdit = () => {
+    const num = parseFloat(String(draft).replace(",", "."));
+    if (!isNaN(num)) handleChange(num);
+    setEditing(false);
   };
 
   const handleSave = async () => {
@@ -576,54 +656,141 @@ const ModalPrixFormation = ({ onClose }) => {
     }
   };
 
+  const presets = [20000, 25000, 30000, 35000, 40000];
+
   return (
     <div className="modal-overlay">
-      <div className="modal new-modal" style={{ maxWidth: 440 }}>
-        <div className="new-modal-header" style={{ background: "linear-gradient(135deg,#0F6E56,#0c5844)" }}>
+      <div className="modal new-modal" style={{ maxWidth: 460, overflow: "hidden" }}>
+
+        {/* Header */}
+        <div style={{
+          background: "linear-gradient(135deg,#0F6E56 0%,#0B5945 60%,#093F32 100%)",
+          padding: "22px 24px 20px", position: "relative",
+        }}>
+          <span
+            onClick={onClose}
+            style={{
+              position: "absolute", top: 16, right: 16, width: 28, height: 28,
+              borderRadius: 8, background: "rgba(255,255,255,0.15)",
+              display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+            }}
+          >
+            <X size={14} color="#fff"/>
+          </span>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 22 }}>💰</span>
+            <div style={{
+              width: 34, height: 34, borderRadius: 10, background: "rgba(255,255,255,0.16)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <Wallet size={17} color="#fff"/>
+            </div>
             <div>
-              <h2 style={{ color: "#fff", margin: 0, fontSize: 16 }}>Prix de la formation</h2>
-              <p style={{ color: "rgba(255,255,255,0.75)", margin: 0, fontSize: 12 }}>Montant total du permis facturé</p>
+              <h2 style={{ color: "#fff", margin: 0, fontSize: 15, fontWeight: 700 }}>Prix de la formation</h2>
+              <p style={{ color: "rgba(255,255,255,0.65)", margin: 0, fontSize: 11.5 }}>Montant facturé pour un permis complet</p>
             </div>
           </div>
-          <span className="close" onClick={onClose} style={{ color: "#fff" }}><X size={16}/></span>
         </div>
-        <hr/>
-        <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 8 }}>
-              Montant total (DA)
-            </label>
-            {loading ? (
-              <p style={{ color: "#94a3b8", fontSize: 13 }}>Chargement...</p>
+
+        <div style={{ padding: "26px 24px 8px", display: "flex", flexDirection: "column", gap: 20 }}>
+
+          {/* Signature element : cadran de prix interactif */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, padding: "18px 10px" }}>
+            <button
+              onClick={() => step(-500)}
+              disabled={loading}
+              style={{
+                width: 34, height: 34, borderRadius: "50%", border: "1.5px solid #d1e7df",
+                background: "#f0fdf7", color: "#0F6E56", fontSize: 18, fontWeight: 700,
+                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                flexShrink: 0, lineHeight: 1,
+              }}
+            >−</button>
+
+            {editing ? (
+              <input
+                autoFocus
+                type="number"
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={e => e.key === "Enter" && commitEdit()}
+                style={{
+                  width: 150, textAlign: "center", fontSize: 30, fontWeight: 800,
+                  color: "#0F6E56", border: "none", outline: "none", background: "transparent",
+                  fontFamily: "inherit",
+                }}
+              />
             ) : (
-              <div style={{ position: "relative" }}>
-                <input
-                  type="number"
-                  min="0"
-                  step="500"
-                  value={prix}
-                  onChange={e => handleChange(e.target.value)}
-                  style={{
-                    width: "100%", padding: "11px 60px 11px 14px",
-                    border: `1.5px solid ${error ? "#fca5a5" : "#e2e8f0"}`,
-                    borderRadius: 10, fontSize: 15, fontWeight: 700, color: "#0f172a",
-                    outline: "none", background: "#f8fafc", boxSizing: "border-box",
-                  }}
-                />
-                <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", color: "#94a3b8", fontSize: 13, fontWeight: 600 }}>
-                  DA
-                </span>
+              <div
+                onClick={startEdit}
+                title="Cliquer pour modifier"
+                style={{
+                  fontSize: 30, fontWeight: 800, color: "#0F6E56", cursor: "text",
+                  letterSpacing: "-0.02em", minWidth: 150, textAlign: "center",
+                }}
+              >
+                {loading ? "…" : fmt(prix)}
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#5eb79a", marginLeft: 5 }}>DA</span>
               </div>
             )}
-            {error && <p style={{ fontSize: 12, color: "#dc2626", marginTop: 6 }}>{error}</p>}
+
+            <button
+              onClick={() => step(500)}
+              disabled={loading}
+              style={{
+                width: 34, height: 34, borderRadius: "50%", border: "1.5px solid #d1e7df",
+                background: "#f0fdf7", color: "#0F6E56", fontSize: 18, fontWeight: 700,
+                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                flexShrink: 0, lineHeight: 1,
+              }}
+            >+</button>
           </div>
 
-          <div style={{ background: "#f0fdf7", border: "1px solid #bbf0dd", borderRadius: 10, padding: "12px 14px", fontSize: 12, color: "#0F6E56", lineHeight: 1.6 }}>
-            Ce montant s'applique aux <strong>nouveaux dossiers de paiement</strong>. Les candidats déjà inscrits gardent le montant fixé lors de leur inscription.
+          {/* Montants rapides */}
+          <div style={{ display: "flex", gap: 7, justifyContent: "center", flexWrap: "wrap" }}>
+            {presets.map(p => (
+              <button
+                key={p}
+                onClick={() => handleChange(p)}
+                style={{
+                  padding: "5px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600,
+                  cursor: "pointer",
+                  border: `1.5px solid ${Number(prix) === p ? "#0F6E56" : "#e2e8f0"}`,
+                  background: Number(prix) === p ? "#0F6E56" : "#fff",
+                  color: Number(prix) === p ? "#fff" : "#64748b",
+                  transition: "all 0.15s",
+                }}
+              >
+                {fmt(p)}
+              </button>
+            ))}
           </div>
+
+          {error && (
+            <div style={{ fontSize: 12, color: "#dc2626", textAlign: "center", fontWeight: 600 }}>
+              ⚠️ {error}
+            </div>
+          )}
+
+          {/* Aperçu reçu */}
+          <div style={{ border: "1px dashed #bfe3d4", borderRadius: 12, padding: "12px 14px", background: "#f7fdfa" }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: "#5eb79a", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+              Aperçu — reçu candidat
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: "#0f172a" }}>Formation permis — Total</div>
+                <div style={{ fontSize: 10.5, color: "#94a3b8", marginTop: 1 }}>Nouveau dossier candidat</div>
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#0F6E56" }}>{fmt(prix)} DA</div>
+            </div>
+          </div>
+
+          <p style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", margin: 0 }}>
+            S'applique aux nouveaux dossiers. Les candidats déjà inscrits gardent leur montant initial.
+          </p>
         </div>
+
         <div className="new-modal-footer">
           <button className="btn cancel" onClick={onClose}><X size={13}/> Annuler</button>
           <button
