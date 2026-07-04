@@ -10,6 +10,7 @@ const PERMS_DEFAUT = {
   CAN_VIEW_ALL_CANDIDATES:    false,
   CAN_ADD_CANDIDAT:           false,
   CAN_EXPORT_LISTE_CANDIDATS: false, // ← nouveau : génération قائمة المترشحين (PDF examens)
+  CAN_EXPORT_LISTE_ENVOI:     false, // ← nouveau : génération لائحة الإرسال (page Candidats)
 };
 
 const PermissionsContext = createContext(null);

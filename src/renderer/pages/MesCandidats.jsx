@@ -269,7 +269,12 @@ const AVATAR_COLORS = [
 // ─────────────────────────────────────────────
 const MesCandidats = () => {
   const { currentUser } = useAuth();
-  const { CAN_VIEW_ALL_CANDIDATES, CAN_REMOVE_CANDIDAT, CAN_ADD_CANDIDAT } = useMyPermissions();
+  const {
+    CAN_VIEW_ALL_CANDIDATES,
+    CAN_REMOVE_CANDIDAT,
+    CAN_ADD_CANDIDAT,
+    CAN_EXPORT_LISTE_ENVOI,
+  } = useMyPermissions();
 
   const [search,         setSearch]         = useState("");
   const [candidats,      setCandidats]      = useState([]);
@@ -434,6 +439,7 @@ const MesCandidats = () => {
 
   // ── Bordereau ────────────────────────────────────────────────────────────────
   const handleOpenEnvoiModal = () => {
+    if (!CAN_EXPORT_LISTE_ENVOI) return;
     if (candidats.length === 0) {
       alert("Aucun candidat enregistré pour le moment.");
       return;
@@ -627,8 +633,6 @@ const MesCandidats = () => {
             </div>
           </div>
 
-
-
           {/* Stat bonus : nombre de "mes candidats" — visible seulement en vue complète */}
           {CAN_VIEW_ALL_CANDIDATES && (
             <div className="interactive-stat-card-small large-stat">
@@ -656,17 +660,19 @@ const MesCandidats = () => {
             </div>
 
             <div style={{ display: "flex", gap: 10 }}>
-              <button
-                onClick={handleOpenEnvoiModal}
-                style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  background: "#7c3aed", color: "#fff", border: "none",
-                  padding: "10px 18px", borderRadius: 10, cursor: "pointer",
-                  fontSize: 14, fontWeight: 600,
-                }}
-              >
-                <FileText size={16} /> لائحة الإرسال (نوعي)
-              </button>
+              {CAN_EXPORT_LISTE_ENVOI && (
+                <button
+                  onClick={handleOpenEnvoiModal}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    background: "#7c3aed", color: "#fff", border: "none",
+                    padding: "10px 18px", borderRadius: 10, cursor: "pointer",
+                    fontSize: 14, fontWeight: 600,
+                  }}
+                >
+                  <FileText size={16} /> لائحة الإرسال (نوعي)
+                </button>
+              )}
 
               {CAN_ADD_CANDIDAT && (
                 <button

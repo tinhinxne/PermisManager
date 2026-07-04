@@ -9,7 +9,7 @@ import {
   Users, Calendar, CreditCard, ClipboardCheck, Umbrella,
   Eye as EyeIcon, UserPlus, Trash2, CalendarPlus,
   Receipt, PenLine, CalendarX, Lock, LockOpen, FileSpreadsheet,
-  Wallet,
+  Wallet, Search,
 } from "lucide-react";
 import { useRulesCtx }       from "../context/RulesContext";
 import { usePermissionsCtx } from "../context/PermissionsContext";
@@ -51,6 +51,7 @@ const PERM_GROUPS = [
       { key: "CAN_VIEW_ALL_CANDIDATES", Icon: EyeIcon,   label: "Voir tous les candidats" },
       { key: "CAN_ADD_CANDIDAT",        Icon: UserPlus,  label: "Ajouter un candidat"      },
       { key: "CAN_REMOVE_CANDIDAT",     Icon: Trash2,    label: "Supprimer un candidat"    },
+      { key: "CAN_EXPORT_LISTE_ENVOI",  Icon: FileSpreadsheet, label: "Générer لائحة الإرسال (PDF)" },
     ],
   },
   {
@@ -107,6 +108,11 @@ const ModalMoniteurs = ({ onClose }) => {
   const [saved,      setSaved]      = useState(false);
   const [openGroups, setOpenGroups] = useState({ candidats: true });
 
+  // ── Recherche moniteur ──
+  const [searchTerm, setSearchTerm]     = useState("");
+  const [showDropdown, setShowDropdown] = useState(false);
+  const searchInputRef = React.useRef(null);
+
   useEffect(() => {
     window.electron.getMoniteurs()
       .then(list => {
@@ -139,6 +145,10 @@ const ModalMoniteurs = ({ onClose }) => {
   const totalActive = Object.values(localPerms).filter(Boolean).length;
   const selected    = moniteurs.find(m => m.id === selectedId);
   const initials    = (m) => m ? `${m.prenom?.[0] ?? ""}${m.nom?.[0] ?? ""}`.toUpperCase() : "";
+
+  const filteredMoniteurs = moniteurs.filter(m =>
+    `${m.prenom} ${m.nom}`.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const S = {
     overlay: {
@@ -197,21 +207,67 @@ const ModalMoniteurs = ({ onClose }) => {
             </button>
           </div>
 
-          {/* Sélecteur moniteur */}
-          <div style={S.monRow}>
-            <div style={S.avatar}>{loading ? "…" : initials(selected)}</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{selected ? `${selected.prenom} ${selected.nom}` : "—"}</div>
-              <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>Moniteur</div>
-            </div>
-            <select
-              value={selectedId ?? ""}
-              onChange={e => handleSelect(e.target.value)}
-              style={{ fontSize: 12, color: "#475569", background: "transparent", border: "none", outline: "none", cursor: "pointer" }}
+          {/* Sélecteur moniteur avec recherche */}
+          <div style={{ position: "relative" }}>
+            <div
+              style={{ ...S.monRow, cursor: "text" }}
+              onClick={() => searchInputRef.current?.focus()}
             >
-              {moniteurs.map(m => <option key={m.id} value={m.id}>{m.prenom} {m.nom}</option>)}
-            </select>
-            <ChevronDown size={13} color="#94a3b8" style={{ flexShrink: 0, pointerEvents: "none" }}/>
+              <div style={S.avatar}>{loading ? "…" : initials(selected)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchTerm}
+                  onChange={e => { setSearchTerm(e.target.value); setShowDropdown(true); }}
+                  onFocus={() => setShowDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                  placeholder={selected ? `${selected.prenom} ${selected.nom}` : "Rechercher un moniteur…"}
+                  style={{
+                    width: "100%", fontSize: 13, fontWeight: 600, color: "#0f172a",
+                    background: "transparent", border: "none", outline: "none",
+                    fontFamily: "inherit", cursor: "text",
+                  }}
+                />
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>Moniteur</div>
+              </div>
+              <Search size={13} color="#94a3b8" style={{ flexShrink: 0 }}/>
+              <ChevronDown
+                size={13} color="#94a3b8"
+                style={{ flexShrink: 0, cursor: "pointer" }}
+                onClick={(e) => { e.stopPropagation(); setShowDropdown(v => !v); searchInputRef.current?.focus(); }}
+              />
+            </div>
+
+            {showDropdown && (
+              <div style={{
+                position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
+                background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 12,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 20,
+                maxHeight: 220, overflowY: "auto",
+              }}>
+                {filteredMoniteurs.length === 0 ? (
+                  <div style={{ padding: "12px 14px", fontSize: 12, color: "#94a3b8" }}>Aucun moniteur trouvé</div>
+                ) : (
+                  filteredMoniteurs.map(m => (
+                    <div
+                      key={m.id}
+                      onMouseDown={() => { handleSelect(m.id); setSearchTerm(""); setShowDropdown(false); }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10, padding: "9px 14px",
+                        cursor: "pointer",
+                        background: m.id === selectedId ? "#EEEDFE" : "#fff",
+                      }}
+                    >
+                      <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#EEEDFE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600, color: "#3C3489", flexShrink: 0 }}>
+                        {initials(m)}
+                      </div>
+                      <span style={{ fontSize: 13, color: "#0f172a" }}>{m.prenom} {m.nom}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
 
           {/* Badge global */}
