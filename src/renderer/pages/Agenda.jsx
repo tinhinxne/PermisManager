@@ -470,13 +470,13 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
   } : {
     candidat:"", candidatId: prefillCandidatId ? String(prefillCandidatId) : "",
     moniteur:"", moniteur_id:"",
-    type:"code", date:toLocalISO(new Date()),
+    type:"creneau", date:toLocalISO(new Date()),
     heure:"08:00", statut:"planifiée", dur:"1", notes:"",
   });
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
- // ── Examens du candidat ────────────────────────────────────────────────────
+  // ── Examens du candidat ────────────────────────────────────────────────────
   // RÈGLE STRICTE : on ne passe au stade suivant QUE quand l'examen précédent
   // a le statut "Passed" (réussi). Le nombre de séances ou le fait qu'un
   // examen soit simplement "Scheduled" (programmé) ne donne AUCUN accès.
@@ -497,12 +497,10 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
   const currentStage = !aReussiCode ? "code" : !aReussiCreneau ? "creneau" : "circulation";
 
   // Force le type au bon stade (sauf si permis obtenu).
-  // Recalculé aussi quand form.type change pour rattraper le cas où le type
-  // resterait bloqué sur une valeur devenue invalide (ex: chargement async
-  // des examens qui fait reculer currentStage après le premier rendu).
   useEffect(() => {
     if (!form.candidatId) return;
     if (permisObtenu) return;
+    if (currentStage === "code") return; // Le code se planifie désormais via le module dédié
     if (form.type !== currentStage) set("type", currentStage);
   }, [form.candidatId, currentStage, permisObtenu, form.type]);
 
@@ -592,28 +590,38 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
       });
       return;
     }
+
+    // ── Blocage : candidat encore au stade "code" ──────────────────────────
+    if (form.candidatId && !permisObtenu && currentStage === "code") {
+      setAlertInfo({
+        icon:"📘", title:"Cours de Code requis", color:"#3b82f6",
+        message:`${form.candidat || "Ce candidat"} doit d'abord suivre et réussir son examen de Code. Rendez-vous sur la page "Cours de Code" pour planifier ses séances de code.`,
+      });
+      return;
+    }
+
     // après la vérification "moniteur en congé"
-const candidatConflict = (sessions || []).find(s => {
-  if (editing && String(s.id) === String(editing.id)) return false;
-  if (toLocalISO(s._raw?.date) !== form.date) return false;
+    const candidatConflict = (sessions || []).find(s => {
+      if (editing && String(s.id) === String(editing.id)) return false;
+      if (toLocalISO(s._raw?.date) !== form.date) return false;
 
-  const sCandidatIds = s._raw?.candidatsIds
-    ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
-    : [];
-  if (!sCandidatIds.includes(String(form.candidatId))) return false;
+      const sCandidatIds = s._raw?.candidatsIds
+        ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
+        : [];
+      if (!sCandidatIds.includes(String(form.candidatId))) return false;
 
-  const startH = parseInt(form.heure.split(":")[0]) + parseInt(form.heure.split(":")[1] || 0) / 60;
-  const dur    = parseFloat(form.dur) || 1;
-  return startH < s.startH + s.dur && (startH + dur) > s.startH;
-});
+      const startH = parseInt(form.heure.split(":")[0]) + parseInt(form.heure.split(":")[1] || 0) / 60;
+      const dur    = parseFloat(form.dur) || 1;
+      return startH < s.startH + s.dur && (startH + dur) > s.startH;
+    });
 
-if (candidatConflict) {
-  setAlertInfo({
-    icon: "🚫", title: "Candidat déjà occupé", color: "#ef4444",
-    message: `${form.candidat || "Ce candidat"} a déjà une séance prévue de ${floatToHHMM(candidatConflict.startH)} à ${floatToHHMM(candidatConflict.startH + candidatConflict.dur)} ce jour-là. Choisissez un autre créneau.`,
-  });
-  return;
-}
+    if (candidatConflict) {
+      setAlertInfo({
+        icon: "🚫", title: "Candidat déjà occupé", color: "#ef4444",
+        message: `${form.candidat || "Ce candidat"} a déjà une séance prévue de ${floatToHHMM(candidatConflict.startH)} à ${floatToHHMM(candidatConflict.startH + candidatConflict.dur)} ce jour-là. Choisissez un autre créneau.`,
+      });
+      return;
+    }
 
     if (!form.candidatId) { setAlertInfo({ icon:"🧑", title:"Candidat manquant", message:"Veuillez sélectionner un candidat avant d'enregistrer la séance.", color:"#ef4444" }); return; }
     if (!form.moniteur_id) { setAlertInfo({ icon:"🧑‍🏫", title:"Moniteur manquant", message:"Veuillez sélectionner un moniteur avant d'enregistrer la séance.", color:"#ef4444" }); return; }
@@ -660,7 +668,7 @@ if (candidatConflict) {
       id:      editing ? editing.id : Date.now(),
       name:    form.candidat || "Nouveau Candidat",
       monitor: form.moniteur || "Moniteur 1",
-      type:    form.type || "code",
+      type:    form.type || "creneau",
       day:     new Date(form.date + "T12:00:00").getDay(),
       startH:  parseInt(form.heure.split(":")[0]) + parseInt(form.heure.split(":")[1] || 0) / 60,
       dur:     parseFloat(form.dur) || 1,
@@ -685,43 +693,43 @@ if (candidatConflict) {
       allSlots.push(h); allSlots.push(h+0.25); allSlots.push(h+0.5); allSlots.push(h+0.75);
     }
     const occupiedIntervals = (sessions || [])
-  .filter(s => {
-    if (!form.date) return false;
-    const sDate = toLocalISO(s._raw?.date);
-    if (sDate !== form.date) return false;
-    const isOther = editing ? String(s.id) !== String(editing.id) : true;
-    if (!isOther) return false;
+      .filter(s => {
+        if (!form.date) return false;
+        const sDate = toLocalISO(s._raw?.date);
+        if (sDate !== form.date) return false;
+        const isOther = editing ? String(s.id) !== String(editing.id) : true;
+        if (!isOther) return false;
 
-    const sameMoniteur = !!form.moniteur_id && String(s._raw?.moniteur_id) === String(form.moniteur_id);
+        const sameMoniteur = !!form.moniteur_id && String(s._raw?.moniteur_id) === String(form.moniteur_id);
 
-    const sCandidatIds = s._raw?.candidatsIds
-      ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
-      : [];
-    const sameCandidat = !!form.candidatId && sCandidatIds.includes(String(form.candidatId));
+        const sCandidatIds = s._raw?.candidatsIds
+          ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
+          : [];
+        const sameCandidat = !!form.candidatId && sCandidatIds.includes(String(form.candidatId));
 
-    return sameMoniteur || sameCandidat;
-  })
-  .map(s => ({ start: s.startH, end: s.startH + s.dur }));
+        return sameMoniteur || sameCandidat;
+      })
+      .map(s => ({ start: s.startH, end: s.startH + s.dur }));
 
     const formatSlot = slot => {
       const h = Math.floor(slot); const m = Math.round((slot % 1) * 60);
       return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
     };
 
-   return allSlots.map(slot => {
-  const slotEnd = slot + duree;
-  if (slotEnd > 19) return null;
-  const minutes = Math.round((slot % 1) * 60);
-  const isValid = duree === 0.75 ? [0,15,30,45].includes(minutes) : [0,30].includes(minutes);
-  if (!isValid) return null;
-  const conflict = occupiedIntervals.find(i => slot < i.end && slotEnd > i.start);
-  const startStr = formatSlot(slot); const endStr = formatSlot(slotEnd);
-  return (
-    <option key={slot} value={startStr} disabled={!!conflict} style={{ color: conflict ? "#cbd5e1" : "#1e293b" }}>
-      {conflict ? `${startStr} – ${endStr}  ✗` : `${startStr} – ${endStr}  ✓`}
-    </option>
-  );
-});
+    return allSlots.map(slot => {
+      const slotEnd = slot + duree;
+      if (slotEnd > 19) return null;
+      const minutes = Math.round((slot % 1) * 60);
+      const isValid = duree === 0.75 ? [0,15,30,45].includes(minutes) : [0,30].includes(minutes);
+      if (!isValid) return null;
+      const conflict = occupiedIntervals.find(i => slot < i.end && slotEnd > i.start);
+      const startStr = formatSlot(slot); const endStr = formatSlot(slotEnd);
+      return (
+        <option key={slot} value={startStr} disabled={!!conflict} style={{ color: conflict ? "#cbd5e1" : "#1e293b" }}>
+          {conflict ? `${startStr} – ${endStr}  ✗` : `${startStr} – ${endStr}  ✓`}
+        </option>
+      );
+    });
   };
 
   return (
@@ -747,7 +755,20 @@ if (candidatConflict) {
 
         <div style={{ padding:"18px 24px", overflowY:"auto", display:"flex", flexDirection:"column", gap:14 }}>
 
-         {/* Bannière permis obtenu */}
+          {/* Bannière : candidat encore au stade Code */}
+          {form.candidatId && !permisObtenu && currentStage === "code" && (
+            <div style={{ padding:"10px 14px", borderRadius:10, background:"#eff6ff", border:"1.5px solid #bfdbfe", fontSize:"0.78rem", color:"#1d4ed8", fontWeight:600, display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:18 }}>📘</span>
+              <div>
+                <div>Cours de Code requis</div>
+                <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>
+                  Ce candidat doit d'abord suivre et réussir son examen de Code. Les séances de code se planifient désormais depuis la page <strong>Cours de Code</strong>, pas depuis l'Agenda.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Bannière permis obtenu */}
           {permisObtenu && (
             <div style={{ padding:"10px 14px", borderRadius:10, background:"#eef2ff", border:"1.5px solid #c7d2fe", fontSize:"0.78rem", color:"#4338ca", fontWeight:600, display:"flex", alignItems:"center", gap:8 }}>
               <span style={{ fontSize:18 }}>🎓</span>
@@ -807,14 +828,14 @@ if (candidatConflict) {
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Moniteur <span style={{ color:"#ef4444" }}>*</span></label>
-              <select style={inpS} value={form.moniteur_id} disabled={!form.candidatId || dateEnCongeAnnuel} onChange={handleMoniteurChange}>
+              <select style={inpS} value={form.moniteur_id} disabled={!form.candidatId || dateEnCongeAnnuel || currentStage === "code"} onChange={handleMoniteurChange}>
                 <option value="">{form.candidatId ? "Sélectionner moniteur..." : "Choisissez d'abord un candidat"}</option>
                 {moniteursDisponibles.map(m => <option key={m.id} value={m.id}>{m.nom} {m.prenom}</option>)}
               </select>
             </div>
           </div>
 
-          {form.candidatId && !dateEnCongeAnnuel && (
+          {form.candidatId && !dateEnCongeAnnuel && currentStage !== "code" && (
             moniteursDisponibles.length > 0 ? (
               <div style={{ padding:"8px 12px", borderRadius:8, background:"#eff6ff", border:"1px solid #bfdbfe", fontSize:"0.73rem", color:"#1d4ed8", fontWeight:600 }}>
                 🎓 Catégorie {candidatCat} — seuls les moniteurs habilités et disponibles (non en congé) à cette date sont proposés.
@@ -836,22 +857,20 @@ if (candidatConflict) {
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Type <span style={{ color:"#ef4444" }}>*</span></label>
-              <select style={inpS} value={form.type} disabled={!form.candidatId} onChange={e => set("type", e.target.value)}>
+              <select style={inpS} value={form.type} disabled={!form.candidatId || currentStage === "code"} onChange={e => set("type", e.target.value)}>
                 {permisObtenu ? (
-                  // Permis obtenu → tous les types libres
+                  // Permis obtenu → tous les types (hors code) libres
                   <>
-                    <option value="code">Code</option>
                     <option value="creneau">Créneau</option>
                     <option value="circulation">Circulation</option>
                   </>
+                ) : currentStage === "code" ? (
+                  <option value="creneau" disabled>Cours de Code requis d'abord</option>
                 ) : (
-                  // Progression normale
+                  // Progression normale (Code déjà réussi)
                   <>
-                    <option value="code" disabled={currentStage !== "code"}>
-                      Code {currentStage !== "code" ? "(non disponible)" : ""}
-                    </option>
                     <option value="creneau" disabled={currentStage !== "creneau"}>
-                      Créneau {currentStage !== "creneau" ? (!aReussiCode ? "(Code requis)" : "(non disponible)") : ""}
+                      Créneau {currentStage !== "creneau" ? "(non disponible)" : ""}
                     </option>
                     <option value="circulation" disabled={currentStage !== "circulation"}>
                       Circulation {currentStage !== "circulation" ? "(Créneau requis)" : ""}
@@ -929,6 +948,7 @@ if (candidatConflict) {
     </div>
   );
 }
+
 // ── MILESTONE MODAL — Fin de formation (20 séances) ──────────────────────────
 function MilestoneModal({ candidatName, onClose, onPayer }) {
   return (
@@ -1082,6 +1102,7 @@ function MilestoneModal({ candidatName, onClose, onPayer }) {
     </div>
   );
 }
+
 // ── SÉANCE SUP PAIEMENT MODAL ─────────────────────────────────────────────────
 function SeanceSupPaiementModal({ candidatName, candidatId, allCandidates, onClose, onConfirm }) {
   const [montant,  setMontant]  = useState("");
@@ -1304,8 +1325,6 @@ function SeanceSupPaiementModal({ candidatName, candidatId, allCandidates, onClo
 function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupClick, onDrop, isMoniteurEnConge, isCongeAnnuel, onCandidatPermisClick, aObtenuPermis }) {
   const [dragging, setDragging] = React.useState(null);
   const [dragOver, setDragOver] = React.useState(null);
-// AJOUTER dans AgendaPage avec les autres useState :
-
   const dragRef = useRef(null);
 
   const handleDragStart = (e, session) => { dragRef.current = session; setDragging(session.id); e.dataTransfer.effectAllowed = "move"; };
@@ -1508,9 +1527,9 @@ export default function AgendaPage() {
   const [filterMon,       setFilterMon]       = useState("");
   const [filterCat,       setFilterCat]       = useState("");
   const [seanceSupModal,  setSeanceSupModal]  = useState(null); // { candidat }
- const [prefillCandidatId,  setPrefillCandidatId]  = useState(null);
+  const [prefillCandidatId,  setPrefillCandidatId]  = useState(null);
 
-const [seanceSupPaiement,  setSeanceSupPaiement]   = useState(null); // { candidatId, candidatName }
+  const [seanceSupPaiement,  setSeanceSupPaiement]   = useState(null); // { candidatId, candidatName }
 
   const { isMoniteurEnConge, isCongeAnnuel, congeAnnuel } = useCongeCtx();
   const { examensList } = useExamenCtx();
@@ -1622,36 +1641,36 @@ const [seanceSupPaiement,  setSeanceSupPaiement]   = useState(null); // { candid
       return;
     }
 
- const conflict = sessions.find(s => {
-  if (editing && String(s.id) === String(editing.id)) return false;
-  if (toLocalISO(s._raw?.date) !== _formData.date) return false;
+    const conflict = sessions.find(s => {
+      if (editing && String(s.id) === String(editing.id)) return false;
+      if (toLocalISO(s._raw?.date) !== _formData.date) return false;
 
-  const sameMoniteur = !!_formData.moniteur_id && !!s._raw?.moniteur_id
-    && String(s._raw?.moniteur_id) === String(_formData.moniteur_id);
+      const sameMoniteur = !!_formData.moniteur_id && !!s._raw?.moniteur_id
+        && String(s._raw?.moniteur_id) === String(_formData.moniteur_id);
 
-  const sCandidatIds = s._raw?.candidatsIds
-    ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
-    : [];
-  const sameCandidat = !!_formData.candidatIds?.[0]
-    && sCandidatIds.includes(String(_formData.candidatIds[0]));
+      const sCandidatIds = s._raw?.candidatsIds
+        ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
+        : [];
+      const sameCandidat = !!_formData.candidatIds?.[0]
+        && sCandidatIds.includes(String(_formData.candidatIds[0]));
 
-  if (!sameMoniteur && !sameCandidat) return false;
-  return newStart < s.startH + s.dur && newEnd > s.startH;
-});
+      if (!sameMoniteur && !sameCandidat) return false;
+      return newStart < s.startH + s.dur && newEnd > s.startH;
+    });
 
-if (conflict) {
-  const conflictCandidatIds = conflict._raw?.candidatsIds
-    ? String(conflict._raw.candidatsIds).split(",").map(x => x.trim())
-    : [];
-  const estCandidat = conflictCandidatIds.includes(String(_formData.candidatIds?.[0]));
-  showToast(
-    estCandidat
-      ? `⚠️ Ce candidat a déjà une séance de ${floatToHHMM(conflict.startH)} à ${floatToHHMM(conflict.startH + conflict.dur)} ce jour-là.`
-      : `⚠️ Ce moniteur est déjà occupé de ${floatToHHMM(conflict.startH)} à ${floatToHHMM(conflict.startH + conflict.dur)} ce jour-là.`,
-    "error"
-  );
-  return;
-}
+    if (conflict) {
+      const conflictCandidatIds = conflict._raw?.candidatsIds
+        ? String(conflict._raw.candidatsIds).split(",").map(x => x.trim())
+        : [];
+      const estCandidat = conflictCandidatIds.includes(String(_formData.candidatIds?.[0]));
+      showToast(
+        estCandidat
+          ? `⚠️ Ce candidat a déjà une séance de ${floatToHHMM(conflict.startH)} à ${floatToHHMM(conflict.startH + conflict.dur)} ce jour-là.`
+          : `⚠️ Ce moniteur est déjà occupé de ${floatToHHMM(conflict.startH)} à ${floatToHHMM(conflict.startH + conflict.dur)} ce jour-là.`,
+        "error"
+      );
+      return;
+    }
 
     setSaving(true);
     try {
@@ -1671,7 +1690,7 @@ if (conflict) {
           await loadSeances();
           showToast("Séance créée avec succès.");
 
-        const candidatId = _formData.candidatIds?.[0];
+          const candidatId = _formData.candidatIds?.[0];
           if (candidatId) {
             const nomCandidat = sessionObj.name || "Ce candidat";
             if (aObtenuPermis(candidatId)) {
@@ -1704,34 +1723,35 @@ if (conflict) {
       setPrefillCandidatId(null);
     }
   };
-  const handleSeanceSupPaiement = async (paymentData) => {
-  try {
-    if (api?.addPayment) {
-      const result = await api.addPayment(paymentData);
-      if (result?.success) {
-        showToast(`💳 Paiement séance supplémentaire enregistré — ${parseInt(paymentData.montant).toLocaleString("fr-DZ")} DA`, "success");
-      } else {
-        showToast("Erreur lors de l'enregistrement du paiement.", "error");
-      }
-    } else {
-      showToast("Paiement enregistré (mode démo).", "info");
-    }
-  } catch (e) {
-    showToast("Erreur lors de l'enregistrement du paiement.", "error");
-  } finally {
-    setSeanceSupPaiement(null);
-  }
-};
 
- const monitors = [...new Map(
-  sessions
-    .filter(s => s.moniteur_id)
-    .map(s => [s.moniteur_id, s.monitor])
-).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  const handleSeanceSupPaiement = async (paymentData) => {
+    try {
+      if (api?.addPayment) {
+        const result = await api.addPayment(paymentData);
+        if (result?.success) {
+          showToast(`💳 Paiement séance supplémentaire enregistré — ${parseInt(paymentData.montant).toLocaleString("fr-DZ")} DA`, "success");
+        } else {
+          showToast("Erreur lors de l'enregistrement du paiement.", "error");
+        }
+      } else {
+        showToast("Paiement enregistré (mode démo).", "info");
+      }
+    } catch (e) {
+      showToast("Erreur lors de l'enregistrement du paiement.", "error");
+    } finally {
+      setSeanceSupPaiement(null);
+    }
+  };
+
+  const monitors = [...new Map(
+    sessions
+      .filter(s => s.moniteur_id)
+      .map(s => [s.moniteur_id, s.monitor])
+  ).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const semaineClosed = congeAnnuel?.actif && weekDates.some(d => isCongeAnnuel(d));
 
   // ── Ouverture CreateModal depuis SeanceSupplementaireModal ────────────────
- const handleConfirmSeanceSup = () => {
+  const handleConfirmSeanceSup = () => {
     const cid = seanceSupModal?.candidat?.id;
     const candidat = seanceSupModal?.candidat;
     setSeanceSupModal(null);
@@ -1836,7 +1856,7 @@ if (conflict) {
           <select style={{ padding:"7px 10px", borderRadius:8, background:"#f8fafc", border:"1px solid #e2e8f0", color:"#334155", fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", outline:"none", cursor:"pointer" }}
             value={filterMon} onChange={e=>setFilterMon(e.target.value)}>
             <option value="">Tous</option>
-           {monitors.map(([id, nom]) => <option key={id} value={id}>{nom}</option>)}
+            {monitors.map(([id, nom]) => <option key={id} value={id}>{nom}</option>)}
           </select>
           <span style={{ fontSize:"0.75rem", color:"#94a3b8", fontWeight:500 }}>Catégorie :</span>
           <select style={{ padding:"7px 10px", borderRadius:8, background:"#f8fafc", border:"1px solid #e2e8f0", color:"#334155", fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", outline:"none", cursor:"pointer" }}
@@ -1930,9 +1950,6 @@ if (conflict) {
         />
       )}
 
-   
-     
-
       {/* Séance supplémentaire : candidat permis obtenu */}
       {seanceSupModal && (
         <SeanceSupplementaireModal
@@ -1942,14 +1959,13 @@ if (conflict) {
         />
       )}
       {seanceSupPaiement && (
-  <SeanceSupPaiementModal
-    candidatName={seanceSupPaiement.candidatName}
-    candidatId={seanceSupPaiement.candidatId}
-    onClose={() => setSeanceSupPaiement(null)}
-    onConfirm={handleSeanceSupPaiement}
-  />
-)}
-
+        <SeanceSupPaiementModal
+          candidatName={seanceSupPaiement.candidatName}
+          candidatId={seanceSupPaiement.candidatId}
+          onClose={() => setSeanceSupPaiement(null)}
+          onConfirm={handleSeanceSupPaiement}
+        />
+      )}
 
       {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
     </>

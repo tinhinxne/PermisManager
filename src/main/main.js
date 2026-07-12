@@ -2001,3 +2001,232 @@ ipcMain.handle("get-examens-candidat", async (event, candidatId) => {
     );
   });
 });
+
+ipcMain.handle('get-candidats-matricules', async () => {
+  return new Promise((resolve) => {
+    db.query(
+      `SELECT idCandidat, nom, prenom, matricule, date_inscription 
+       FROM Candidat 
+       ORDER BY date_inscription DESC`,
+      (err, rows) => {
+        if (err) { console.error("get-candidats-matricules:", err); return resolve([]); }
+        resolve(rows);
+      }
+    );
+  });
+});
+
+ipcMain.handle('update-matricule-candidat', async (event, { idCandidat, matricule }) => {
+  return new Promise((resolve) => {
+    db.query(
+      `UPDATE Candidat SET matricule = ? WHERE idCandidat = ?`,
+      [matricule, idCandidat],
+      (err) => {
+        if (err) { console.error("update-matricule-candidat:", err); return resolve({ success: false, error: err.message }); }
+        resolve({ success: true });
+      }
+    );
+  });
+});
+
+
+// ── COURS DE CODE ────────────────────────────────────────────────────────
+
+
+ipcMain.handle('add-seance-code', async (event, data) => {
+  return new Promise((resolve) => {
+    const { categoriePermis, moniteur_id, date, heure, duree, notes } = data;
+    db.query(
+      `INSERT INTO SeanceCode (categoriePermis, moniteur_id, date, heure, duree, notes) VALUES (?, ?, ?, ?, ?, ?)`,
+      [categoriePermis, moniteur_id, date, heure, duree, notes || null],
+      (err, result) => {
+        if (err) { console.error("add-seance-code:", err); return resolve({ success: false, error: err.message }); }
+        resolve({ success: true, id: result.insertId });
+      }
+    );
+  });
+});
+ipcMain.handle('get-seances-code', async (event, filtres = {}) => {
+  return new Promise((resolve) => {
+    const sql = `
+      SELECT
+        sc.idSeanceCode   AS id,
+        sc.categoriePermis,
+        sc.moniteur_id,
+        DATE_FORMAT(sc.date, '%Y-%m-%d') AS date,
+        sc.heure,
+        sc.duree,
+        sc.notes,
+        CONCAT(u.nom, ' ', u.prenom) AS moniteurNom,
+        (SELECT COUNT(*) FROM CandidatSeanceCode csc WHERE csc.idSeanceCode = sc.idSeanceCode) AS nbInscrits
+      FROM SeanceCode sc
+      JOIN Moniteur m ON m.id = sc.moniteur_id
+      JOIN Utilisateur u ON u.id = m.id
+      ORDER BY sc.date ASC, sc.heure ASC
+    `;
+    db.query(sql, [], (err, rows) => {
+      if (err) { console.error("get-seances-code:", err); return resolve([]); }
+      resolve(rows);
+    });
+  });
+});
+ipcMain.handle('add-seance-code-serie', async (event, data) => {
+  const { categoriePermis, moniteur_id, heure, duree, notes, dateDebut, dateFin, jours } = data;
+  const JOURS_MAP = { Dim: 0, Lun: 1, Mar: 2, Mer: 3, Jeu: 4, Ven: 5, Sam: 6 };
+  const joursIdx = jours.map(j => JOURS_MAP[j]);
+
+  const dates = [];
+  let cur = new Date(dateDebut + "T12:00:00");
+  const fin = new Date(dateFin + "T12:00:00");
+  let safety = 0;
+  while (cur <= fin && safety < 5000) {
+    if (joursIdx.includes(cur.getDay())) {
+      dates.push(new Date(cur).toISOString().split("T")[0]);
+    }
+    cur.setDate(cur.getDate() + 1);
+    safety++;
+  }
+
+  if (dates.length === 0) {
+    return { success: false, count: 0, error: "Aucune date correspondante." };
+  }
+
+  return new Promise((resolve) => {
+    const values = dates.map(d => [categoriePermis, moniteur_id, d, heure, duree, notes || null]);
+    db.query(
+      `INSERT INTO SeanceCode (categoriePermis, moniteur_id, date, heure, duree, notes) VALUES ?`,
+      [values],
+      (err, result) => {
+        if (err) { console.error("add-seance-code-serie:", err); return resolve({ success: false, count: 0, error: err.message }); }
+        resolve({ success: true, count: result.affectedRows });
+      }
+    );
+  });
+});
+
+ipcMain.handle('update-seance-code', async (event, id, data) => {
+  return new Promise((resolve) => {
+    const { categoriePermis, moniteur_id, date, heure, duree, notes } = data;
+    db.query(
+      `UPDATE SeanceCode SET categoriePermis=?, moniteur_id=?, date=?, heure=?, duree=?, notes=? WHERE idSeanceCode=?`,
+      [categoriePermis, moniteur_id, date, heure, duree, notes || null, id],
+      (err) => {
+        if (err) { console.error("update-seance-code:", err); return resolve({ success: false, error: err.message }); }
+        resolve({ success: true });
+      }
+    );
+  });
+});
+
+ipcMain.handle('delete-seance-code', async (event, id) => {
+  return new Promise((resolve) => {
+    db.query(`DELETE FROM SeanceCode WHERE idSeanceCode = ?`, [id], (err) => {
+      if (err) { console.error("delete-seance-code:", err); return resolve({ success: false, error: err.message }); }
+      resolve({ success: true });
+    });
+  });
+});
+
+ipcMain.handle('get-inscrits-seance-code', async (event, seanceId) => {
+  return new Promise((resolve) => {
+    const sql = `
+      SELECT c.idCandidat, c.nom, c.prenom, csc.statutPresence
+      FROM CandidatSeanceCode csc
+      JOIN Candidat c ON c.idCandidat = csc.idCandidat
+      WHERE csc.idSeanceCode = ?
+      ORDER BY c.nom ASC
+    `;
+    db.query(sql, [seanceId], (err, rows) => {
+      if (err) { console.error("get-inscrits-seance-code:", err); return resolve([]); }
+      resolve(rows);
+    });
+  });
+});
+
+ipcMain.handle('get-candidats-eligibles-code', async (event, categoriePermis, seanceId) => {
+  return new Promise((resolve) => {
+    const sql = `
+      SELECT c.idCandidat, c.nom, c.prenom
+      FROM Candidat c
+      WHERE UPPER(TRIM(c.categoriePermis)) = ?
+        AND c.idCandidat NOT IN (
+          SELECT idCandidat FROM CandidatSeanceCode WHERE idSeanceCode = ?
+        )
+      ORDER BY c.nom ASC
+    `;
+    db.query(sql, [categoriePermis, seanceId], (err, rows) => {
+      if (err) { console.error("get-candidats-eligibles-code:", err); return resolve([]); }
+      resolve(rows);
+    });
+  });
+});
+
+ipcMain.handle('inscrire-candidat-code', async (event, idCandidat, seanceId) => {
+  return new Promise((resolve) => {
+    db.query(
+      `INSERT INTO CandidatSeanceCode (idSeanceCode, idCandidat) VALUES (?, ?)`,
+      [seanceId, idCandidat],
+      (err) => {
+        if (err) { console.error("inscrire-candidat-code:", err); return resolve({ success: false, error: err.message }); }
+        resolve({ success: true });
+      }
+    );
+  });
+});
+
+ipcMain.handle('desinscrire-candidat-code', async (event, idCandidat, seanceId) => {
+  return new Promise((resolve) => {
+    db.query(
+      `DELETE FROM CandidatSeanceCode WHERE idSeanceCode = ? AND idCandidat = ?`,
+      [seanceId, idCandidat],
+      (err) => {
+        if (err) { console.error("desinscrire-candidat-code:", err); return resolve({ success: false, error: err.message }); }
+        resolve({ success: true });
+      }
+    );
+  });
+});
+
+ipcMain.handle('update-presence-code', async (event, idCandidat, seanceId, statut, updatedBy) => {
+  return new Promise((resolve) => {
+    db.query(
+      `UPDATE CandidatSeanceCode SET statutPresence = ?, marque_par_id = ?, marque_at = NOW() WHERE idSeanceCode = ? AND idCandidat = ?`,
+      [statut, updatedBy || null, seanceId, idCandidat],
+      (err) => {
+        if (err) { console.error("update-presence-code:", err); return resolve({ success: false, error: err.message }); }
+        resolve({ success: true });
+      }
+    );
+  });
+});
+
+ipcMain.handle('get-seances-code-disponibles', async (event, categoriePermis, excludeSeanceId) => {
+  return new Promise((resolve) => {
+    const sql = `
+      SELECT sc.idSeanceCode AS id, DATE_FORMAT(sc.date, '%Y-%m-%d') AS date, sc.heure,
+             CONCAT(u.nom, ' ', u.prenom) AS moniteurNom
+      FROM SeanceCode sc
+      JOIN Moniteur m ON m.id = sc.moniteur_id
+      JOIN Utilisateur u ON u.id = m.id
+      WHERE sc.categoriePermis = ? AND sc.idSeanceCode != ? AND sc.date >= CURDATE()
+      ORDER BY sc.date ASC, sc.heure ASC
+    `;
+    db.query(sql, [categoriePermis, excludeSeanceId], (err, rows) => {
+      if (err) { console.error("get-seances-code-disponibles:", err); return resolve([]); }
+      resolve(rows);
+    });
+  });
+});
+
+ipcMain.handle('replanifier-candidat-code', async (event, idCandidat, oldSeanceId, newSeanceId) => {
+  return new Promise((resolve) => {
+    db.query(
+      `UPDATE CandidatSeanceCode SET idSeanceCode = ?, statutPresence = NULL, rattrape_seance_id = ?, marque_at = NOW() WHERE idSeanceCode = ? AND idCandidat = ?`,
+      [newSeanceId, newSeanceId, oldSeanceId, idCandidat],
+      (err) => {
+        if (err) { console.error("replanifier-candidat-code:", err); return resolve({ success: false, error: err.message }); }
+        resolve({ success: true });
+      }
+    );
+  });
+});

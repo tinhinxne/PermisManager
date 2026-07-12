@@ -87,7 +87,24 @@ testChargilyConfig: (data) => ipcRenderer.invoke("test-chargily-config", data),
   getCreditSeancesSup: (candidatId) => ipcRenderer.invoke('get-credit-seances-sup', candidatId),
   getPrixFormation: () => ipcRenderer.invoke('get-prix-formation'),
 setPrixFormation: (prix) => ipcRenderer.invoke('set-prix-formation', prix),
+// EXAMENS 
+getExamensCandidat: (candidatId) => ipcRenderer.invoke("get-examens-candidat", candidatId),
+getCandidatsMatricules: () => ipcRenderer.invoke('get-candidats-matricules'),
+updateMatriculeCandidat: (idCandidat, matricule) =>
+  ipcRenderer.invoke('update-matricule-candidat', { idCandidat, matricule }),
+
+// Cours de Code
+getSeancesCode:            (filters) => ipcRenderer.invoke('get-seances-code', filters),
+addSeanceCode:              (data)   => ipcRenderer.invoke('add-seance-code', data),
+addSeanceCodeSerie:         (data)   => ipcRenderer.invoke('add-seance-code-serie', data),
+updateSeanceCode:           (id, data) => ipcRenderer.invoke('update-seance-code', id, data),
+deleteSeanceCode:           (id)     => ipcRenderer.invoke('delete-seance-code', id),
+getInscritsSeanceCode:      (seanceId) => ipcRenderer.invoke('get-inscrits-seance-code', seanceId),
+getCandidatsEligiblesCode:  (categoriePermis, seanceId) => ipcRenderer.invoke('get-candidats-eligibles-code', categoriePermis, seanceId),
+inscrireCandidatCode:       (idCandidat, seanceId) => ipcRenderer.invoke('inscrire-candidat-code', idCandidat, seanceId),
+desinscrireCandidatCode:    (idCandidat, seanceId) => ipcRenderer.invoke('desinscrire-candidat-code', idCandidat, seanceId),
+updatePresenceCode:         (idCandidat, seanceId, statut, updatedBy) => ipcRenderer.invoke('update-presence-code', idCandidat, seanceId, statut, updatedBy),
+getSeancesCodeDisponibles:  (categoriePermis, excludeSeanceId) => ipcRenderer.invoke('get-seances-code-disponibles', categoriePermis, excludeSeanceId),
+replanifierCandidatCode:    (idCandidat, oldSeanceId, newSeanceId) => ipcRenderer.invoke('replanifier-candidat-code', idCandidat, oldSeanceId, newSeanceId),
 });
 
-// EXAMENS 
-getExamensCandidat: (candidatId) => ipcRenderer.invoke("get-examens-candidat", candidatId)

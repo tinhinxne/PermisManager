@@ -16,6 +16,7 @@ import AgendaPage          from "./pages/Agenda";
 import Payments            from "./pages/Payments";
 import Examens             from "./pages/Examens";
 import Parametres          from "./pages/parametres";
+import CoursCode           from "./pages/CoursCode";   // ← AJOUTÉ
 import Layout              from "./layout/Layout";
 
 import LayoutMoniteur      from "./layout/LayoutMoniteur";
@@ -49,6 +50,7 @@ const App = () => {
                       <Route path="/agenda"     element={<AgendaPage />} />
                       <Route path="/examens"    element={<Examens />} />
                       <Route path="/payments"   element={<Payments />} />
+                      <Route path="/cours-code" element={<CoursCode />} />   {/* ← AJOUTÉ */}
                       <Route path="/parametres" element={<Parametres />} />
                     </Route>
 

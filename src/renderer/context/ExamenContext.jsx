@@ -35,7 +35,7 @@ export function ExamenProvider({ children }) {
   const examensListRef       = useRef(examensList);
   const candidatsReportesRef = useRef(candidatsReportes);
   const candidatsNomMapRef   = useRef(candidatsNomMap);
-  // ✅ NOUVEAU — pour éviter de lancer 2 générations en même temps
+  // ✅ pour éviter de lancer 2 générations en même temps
   const isGeneratingRef      = useRef(false);
 
   useEffect(() => {
@@ -202,7 +202,10 @@ export function ExamenProvider({ children }) {
       .replace(/é/g, "e").replace(/è/g, "e").replace(/ê/g, "e");
 
   // ─────────────────────────────────────────────────────────────────────────
-  // generateExamens — identique à avant + flag isGeneratingRef
+  // generateExamens
+  // ✅ FIX : si appelée sans arguments (ex: generateExamens?.() depuis
+  // CoursCode.jsx après une présence), on fetch nous-mêmes seances + candidats
+  // au lieu de planter sur seances.forEach / candidats.forEach avec undefined.
   // ─────────────────────────────────────────────────────────────────────────
   const generateExamens = async (seances, candidats) => {
     // ✅ Empêche les générations simultanées
@@ -210,6 +213,22 @@ export function ExamenProvider({ children }) {
     isGeneratingRef.current = true;
 
     try {
+      // ── Auto-fetch si appelée sans arguments ──────────────────────────
+      if (!seances || !candidats) {
+        try {
+          const [fetchedSeances, fetchedCandidats] = await Promise.all([
+            window.electron.getSeances(),
+            window.electron.getCandidats(),
+          ]);
+          seances   = fetchedSeances   || [];
+          candidats = fetchedCandidats || [];
+        } catch (fetchErr) {
+          console.error("generateExamens: erreur auto-fetch seances/candidats:", fetchErr);
+          seances   = seances   || [];
+          candidats = candidats || [];
+        }
+      }
+
       const today           = new Date().toISOString().split("T")[0];
       const currentExamens  = examensListRef.current;
       const currentReportes = candidatsReportesRef.current;
