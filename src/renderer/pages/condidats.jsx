@@ -838,6 +838,19 @@ function MatriculesEnAttenteModal({ onClose, onSaved }) {
     </div>
   );
 }
+function openWhatsAppBienvenue(telephone, prenom) {
+  if (!telephone) return;
+  // Garde uniquement les chiffres
+  let numero = telephone.replace(/\D/g, "");
+  // Ajoute l'indicatif Algérie (213) si le numéro commence par 0
+  if (numero.startsWith("0")) {
+    numero = "213" + numero.slice(1);
+  }
+  const message = `Bonjour ${prenom}, bienvenue à l'auto-école ! 🚗 Nous sommes ravis de vous compter parmi nos candidats.`;
+  const url = `https://wa.me/${numero}?text=${encodeURIComponent(message)}`;
+   console.log("URL générée :", url);
+  window.open(url, "_blank");
+}
 
 const Condidats = () => {
   const [candidats,         setCandidats]        = useState([]);
@@ -969,28 +982,30 @@ dob: c.date_naissance
     }
   };
 
-  const handleSave = async (data) => {
-    const categorieSelectionnee = data.categoriePermis || data.categorie || data.categorie_permis || "B";
-    const cleanData = {
-      ...data,
-      categoriePermis: categorieSelectionnee.toString().trim().toUpperCase()
-    };
-
-    try {
-      if (data.isReinscription) {
-        await window.electron.reinscrireCandidat(cleanData);
-      } else if (data.idCandidat) {
-        await window.electron.updateCandidat(cleanData);
-      } else {
-        await window.electron.addCandidat(cleanData);
-      }
-      await loadCandidats();
-      setShowModal(false);
-    } catch (error) {
-      console.error("Erreur lors de l'enregistrement :", error);
-      alert("Une erreur est survenue.");
-    }
+const handleSave = async (data) => {
+  const categorieSelectionnee = data.categoriePermis || data.categorie || data.categorie_permis || "B";
+  const cleanData = {
+    ...data,
+    categoriePermis: categorieSelectionnee.toString().trim().toUpperCase()
   };
+
+  try {
+    if (data.isReinscription) {
+      await window.electron.reinscrireCandidat(cleanData);
+    } else if (data.idCandidat) {
+      await window.electron.updateCandidat(cleanData);
+    } else {
+      await window.electron.addCandidat(cleanData);
+      // Nouveau candidat uniquement → message de bienvenue WhatsApp
+      openWhatsAppBienvenue(cleanData.telephone, cleanData.prenom);
+    }
+    await loadCandidats();
+    setShowModal(false);
+  } catch (error) {
+    console.error("Erreur lors de l'enregistrement :", error);
+    alert("Une erreur est survenue.");
+  }
+};
 
   const handleOpenEnvoiModal = () => {
     if (candidats.length === 0) {

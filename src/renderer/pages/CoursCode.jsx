@@ -95,6 +95,14 @@ const STATUT_PRESENCE_META = {
   absent_justifie:       { label: "Absent justifié",     color: "#d97706", bg: "#fffbeb", border: "#fcd34d", Icon: AlertCircle   },
   absent_non_justifie:   { label: "Absent non justifié", color: "#dc2626", bg: "#fef2f2", border: "#fca5a5", Icon: XCircle        },
 };
+const JOURS_FR = { 0:"dimanche",1:"lundi",2:"mardi",3:"mercredi",4:"jeudi",5:"vendredi",6:"samedi" };
+
+function formatWhatsAppUrl(telephone, message) {
+  if (!telephone) return null;
+  let numero = telephone.replace(/\D/g, "");
+  if (numero.startsWith("0")) numero = "213" + numero.slice(1);
+  return `https://wa.me/${numero}?text=${encodeURIComponent(message)}`;
+}
 
 // ── TOAST ─────────────────────────────────────────────────────────────────────
 function Toast({ message, type, onDone }) {
@@ -457,7 +465,7 @@ function CreateCoursCodeModal({ onClose, onSave, moniteurs, editing, saving, pre
   );
 }
 
-// ── MODAL GESTION (inscriptions + présence) ───────────────────────────────────
+
 function ManageCoursModal({ seance, onClose, onRefreshList, canMarkPresence }) {
   const { currentUser } = useAuth();
   const { generateExamens } = useExamenCtx(); 
@@ -471,6 +479,33 @@ function ManageCoursModal({ seance, onClose, onRefreshList, canMarkPresence }) {
   const [toast, setToast] = useState(null);
 
   const showToast = (message, type="success") => setToast({ message, type });
+const envoyerWhatsAppInscription = async (candidat) => {
+  console.log("📱 Candidat pour WhatsApp:", candidat); // ← ajoute
+  if (!candidat.telephone) {
+    console.log("⚠️ Pas de téléphone pour ce candidat"); // ← ajoute
+    return;
+  }
+
+  let message = `Bonjour ${candidat.prenom}, vous êtes inscrit(e) au cours de code du ${formatDateFr(seance.date)} à ${seance.heure?.slice(0,5)} avec ${seance.moniteurNom}.`;
+
+  try {
+    const autres = await window.electron.getSeancesCandidatCode(
+      candidat.idCandidat, seance.categoriePermis, seance.moniteur_id
+    );
+    console.log("📅 Autres séances trouvées:", autres); // ← ajoute
+    const futures = (autres || []).filter(s => s.date !== seance.date);
+    if (futures.length > 0) {
+      const jours = [...new Set(futures.map(s => JOURS_FR[new Date(s.date + "T12:00:00").getDay()]))];
+      message += ` Ce cours fait partie d'une série récurrente : vous avez également des séances chaque ${jours.join(", ")}, la prochaine étant le ${formatDateCourt(futures[0].date)}.`;
+    }
+  } catch (e) {
+    console.error("Erreur récupération séances série:", e);
+  }
+
+  const url = formatWhatsAppUrl(candidat.telephone, message);
+  console.log("🔗 URL WhatsApp générée:", url); // ← ajoute
+  if (url) window.electron.openExternal(url);
+};
   
   const loadInscrits = useCallback(async () => {
     if (!window.electron?.getInscritsSeanceCode) return;
@@ -493,12 +528,15 @@ function ManageCoursModal({ seance, onClose, onRefreshList, canMarkPresence }) {
     Promise.all([loadInscrits(), loadEligibles()]).finally(() => setLoading(false));
   }, [loadInscrits, loadEligibles]);
 
-  const handleInscrire = async (idCandidat) => {
+const handleInscrire = async (idCandidat) => {
     try {
+      const candidat = eligibles.find(c => c.idCandidat === idCandidat);
+      console.log("👤 Candidat trouvé dans eligibles:", candidat); // ← ajoute
       await window.electron.inscrireCandidatCode(idCandidat, seance.id);
       await Promise.all([loadInscrits(), loadEligibles()]);
       onRefreshList();
       showToast("Candidat inscrit.");
+      if (candidat) await envoyerWhatsAppInscription(candidat);
     } catch { showToast("Erreur lors de l'inscription.", "error"); }
   };
 

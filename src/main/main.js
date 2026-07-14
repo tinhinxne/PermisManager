@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const db = require('./db');
 
@@ -2117,6 +2117,26 @@ ipcMain.handle('update-seance-code', async (event, id, data) => {
     );
   });
 });
+ipcMain.handle('get-seances-candidat-code', async (event, idCandidat, categoriePermis, moniteur_id) => {
+  return new Promise((resolve) => {
+    const sql = `
+      SELECT
+        DATE_FORMAT(sc.date, '%Y-%m-%d') AS date,
+        sc.heure
+      FROM CandidatSeanceCode csc
+      JOIN SeanceCode sc ON sc.idSeanceCode = csc.idSeanceCode
+      WHERE csc.idCandidat = ?
+        AND sc.categoriePermis = ?
+        AND sc.moniteur_id = ?
+        AND sc.date >= CURDATE()
+      ORDER BY sc.date ASC
+    `;
+    db.query(sql, [idCandidat, categoriePermis, moniteur_id], (err, rows) => {
+      if (err) { console.error("get-seances-candidat-code:", err); return resolve([]); }
+      resolve(rows);
+    });
+  });
+});
 
 ipcMain.handle('delete-seance-code', async (event, id) => {
   return new Promise((resolve) => {
@@ -2142,11 +2162,19 @@ ipcMain.handle('get-inscrits-seance-code', async (event, seanceId) => {
     });
   });
 });
-
+ipcMain.handle('open-external', async (event, url) => {
+  try {
+    await shell.openExternal(url);
+    return { success: true };
+  } catch (err) {
+    console.error("open-external:", err);
+    return { success: false, error: err.message };
+  }
+});
 ipcMain.handle('get-candidats-eligibles-code', async (event, categoriePermis, seanceId) => {
   return new Promise((resolve) => {
     const sql = `
-      SELECT c.idCandidat, c.nom, c.prenom
+      SELECT c.idCandidat, c.nom, c.prenom, c.telephone
       FROM Candidat c
       WHERE UPPER(TRIM(c.categoriePermis)) = ?
         AND c.idCandidat NOT IN (

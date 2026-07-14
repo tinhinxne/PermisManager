@@ -99,6 +99,9 @@ addSeanceCode:              (data)   => ipcRenderer.invoke('add-seance-code', da
 addSeanceCodeSerie:         (data)   => ipcRenderer.invoke('add-seance-code-serie', data),
 updateSeanceCode:           (id, data) => ipcRenderer.invoke('update-seance-code', id, data),
 deleteSeanceCode:           (id)     => ipcRenderer.invoke('delete-seance-code', id),
+getSeancesCandidatCode: (idCandidat, categoriePermis, moniteur_id) =>
+  ipcRenderer.invoke('get-seances-candidat-code', idCandidat, categoriePermis, moniteur_id),
+openExternal: (url) => ipcRenderer.invoke('open-external', url),
 getInscritsSeanceCode:      (seanceId) => ipcRenderer.invoke('get-inscrits-seance-code', seanceId),
 getCandidatsEligiblesCode:  (categoriePermis, seanceId) => ipcRenderer.invoke('get-candidats-eligibles-code', categoriePermis, seanceId),
 inscrireCandidatCode:       (idCandidat, seanceId) => ipcRenderer.invoke('inscrire-candidat-code', idCandidat, seanceId),
