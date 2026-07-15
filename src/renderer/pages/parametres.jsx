@@ -806,6 +806,191 @@ const ModalPrixFormation = ({ onClose }) => {
     </div>
   );
 };
+/* ─── Modal Nombre de séances ────────────────────────────────────────────── */
+const ModalNbSeances = ({ onClose }) => {
+  const [nbSeances, setNbSeances] = useState(20);
+  const [loading, setLoading]     = useState(true);
+  const [saving, setSaving]       = useState(false);
+  const [saved, setSaved]         = useState(false);
+  const [error, setError]         = useState(null);
+  const [editing, setEditing]     = useState(false);
+  const [draft, setDraft]         = useState("");
+
+  useEffect(() => {
+    window.electron.getNbSeances()
+      .then(n => { setNbSeances(n); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const handleChange = (val) => {
+    const num = Math.max(1, Math.round(Number(val) || 0));
+    setNbSeances(num);
+    setSaved(false);
+    setError(null);
+  };
+
+  const step = (delta) => handleChange(Number(nbSeances || 0) + delta);
+
+  const startEdit = () => { setDraft(String(nbSeances)); setEditing(true); };
+  const commitEdit = () => {
+    const num = parseInt(draft, 10);
+    if (!isNaN(num)) handleChange(num);
+    setEditing(false);
+  };
+
+  const handleSave = async () => {
+    const val = parseInt(nbSeances, 10);
+    if (isNaN(val) || val <= 0) {
+      setError("Veuillez saisir un nombre valide.");
+      return;
+    }
+    setSaving(true);
+    const r = await window.electron.setNbSeances(val);
+    setSaving(false);
+    if (r.success) {
+      setSaved(true);
+      setTimeout(() => onClose(), 900);
+    } else {
+      setError("Erreur lors de la sauvegarde. Réessayez.");
+    }
+  };
+
+  const presets = [15, 20, 25, 30];
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal new-modal" style={{ maxWidth: 460, overflow: "hidden" }}>
+
+        {/* Header */}
+        <div style={{
+          background: "linear-gradient(135deg,#8b5cf6 0%,#7c3aed 60%,#5b21b6 100%)",
+          padding: "22px 24px 20px", position: "relative",
+        }}>
+          <span
+            onClick={onClose}
+            style={{
+              position: "absolute", top: 16, right: 16, width: 28, height: 28,
+              borderRadius: 8, background: "rgba(255,255,255,0.15)",
+              display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+            }}
+          >
+            <X size={14} color="#fff"/>
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 34, height: 34, borderRadius: 10, background: "rgba(255,255,255,0.16)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <CalendarPlus size={17} color="#fff"/>
+            </div>
+            <div>
+              <h2 style={{ color: "#fff", margin: 0, fontSize: 15, fontWeight: 700 }}>Nombre de séances</h2>
+              <p style={{ color: "rgba(255,255,255,0.65)", margin: 0, fontSize: 11.5 }}>Séances de conduite incluses par candidat</p>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ padding: "26px 24px 8px", display: "flex", flexDirection: "column", gap: 20 }}>
+
+          {/* Cadran interactif */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, padding: "18px 10px" }}>
+            <button
+              onClick={() => step(-1)}
+              disabled={loading}
+              style={{
+                width: 34, height: 34, borderRadius: "50%", border: "1.5px solid #e4defc",
+                background: "#f5f3ff", color: "#7c3aed", fontSize: 18, fontWeight: 700,
+                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                flexShrink: 0, lineHeight: 1,
+              }}
+            >−</button>
+
+            {editing ? (
+              <input
+                autoFocus
+                type="number"
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={e => e.key === "Enter" && commitEdit()}
+                style={{
+                  width: 110, textAlign: "center", fontSize: 30, fontWeight: 800,
+                  color: "#7c3aed", border: "none", outline: "none", background: "transparent",
+                  fontFamily: "inherit",
+                }}
+              />
+            ) : (
+              <div
+                onClick={startEdit}
+                title="Cliquer pour modifier"
+                style={{
+                  fontSize: 30, fontWeight: 800, color: "#7c3aed", cursor: "text",
+                  letterSpacing: "-0.02em", minWidth: 110, textAlign: "center",
+                }}
+              >
+                {loading ? "…" : nbSeances}
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#a78bfa", marginLeft: 5 }}>séances</span>
+              </div>
+            )}
+
+            <button
+              onClick={() => step(1)}
+              disabled={loading}
+              style={{
+                width: 34, height: 34, borderRadius: "50%", border: "1.5px solid #e4defc",
+                background: "#f5f3ff", color: "#7c3aed", fontSize: 18, fontWeight: 700,
+                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                flexShrink: 0, lineHeight: 1,
+              }}
+            >+</button>
+          </div>
+
+          {/* Presets */}
+          <div style={{ display: "flex", gap: 7, justifyContent: "center", flexWrap: "wrap" }}>
+            {presets.map(p => (
+              <button
+                key={p}
+                onClick={() => handleChange(p)}
+                style={{
+                  padding: "5px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600,
+                  cursor: "pointer",
+                  border: `1.5px solid ${Number(nbSeances) === p ? "#7c3aed" : "#e2e8f0"}`,
+                  background: Number(nbSeances) === p ? "#7c3aed" : "#fff",
+                  color: Number(nbSeances) === p ? "#fff" : "#64748b",
+                  transition: "all 0.15s",
+                }}
+              >
+                {p} séances
+              </button>
+            ))}
+          </div>
+
+          {error && (
+            <div style={{ fontSize: 12, color: "#dc2626", textAlign: "center", fontWeight: 600 }}>
+              ⚠️ {error}
+            </div>
+          )}
+
+          <p style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", margin: 0 }}>
+            S'applique aux nouveaux dossiers. Les candidats déjà inscrits gardent leur cap initial.
+          </p>
+        </div>
+
+        <div className="new-modal-footer">
+          <button className="btn cancel" onClick={onClose}><X size={13}/> Annuler</button>
+          <button
+            className="btn primary"
+            onClick={handleSave}
+            disabled={loading || saving}
+            style={{ background: saved ? "#22c55e" : "#7c3aed", transition: "background 0.3s" }}
+          >
+            {saved ? <><Check size={13}/> Sauvegardé !</> : saving ? "⏳..." : <><Save size={13}/> Sauvegarder</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 /* ─── Page Paramètres ────────────────────────────────────────────────────── */
 const Parametres = () => {
@@ -824,6 +1009,7 @@ const Parametres = () => {
     { id:"moniteurs",     icon:<UserCog size={20}/>,                    title:"Permissions des moniteurs",   description:"Accès aux fonctionnalités par moniteur",            accentColor:"#8b5cf6" },
     { id:"prixFormation", icon:<Wallet size={20}/>,                     title:"Prix de la formation",        description:"Montant total du permis facturé aux candidats",     accentColor:"#0F6E56" },
     { id:"chargily",      icon:<span style={{ fontSize:18 }}>💳</span>, title:"Paiement en ligne",           description:"Configurer Chargily Pay — CIB / EDAHABIA",         accentColor:"#6c63ff" },
+     { id:"nbSeances",     icon:<CalendarPlus size={20}/>,               title:"Nombre de séances",           description:"Séances de conduite incluses par candidat",         accentColor:"#8b5cf6" },
   ];
 
   const openModal  = (id) => setActiveModal(id);
@@ -866,6 +1052,7 @@ const Parametres = () => {
       {activeModal === "inscription"   && <ModalInscription   onClose={closeModal}/>}
       {activeModal === "conges"        && <ModalConges        onClose={closeModal}/>}
       {activeModal === "prixFormation" && <ModalPrixFormation onClose={closeModal}/>}
+      {activeModal === "nbSeances"     && <ModalNbSeances     onClose={closeModal}/>}
       {activeModal === "chargily"      && <ModalChargily      onClose={closeModal}/>}
     </div>
   );

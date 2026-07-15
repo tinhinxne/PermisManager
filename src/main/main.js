@@ -94,6 +94,16 @@ db.query(`
     console.log("✅ Colonnes CongeMoniteur ajoutées !");
   }
 });
+// ── SÉCURISATION : colonne presence sur Seance ─────────────────────────────
+db.query(`
+  ALTER TABLE Seance ADD COLUMN presence VARCHAR(20) NULL DEFAULT NULL
+`, (err) => {
+  if (err) {
+    console.log("ℹ️ Colonne 'presence' déjà présente sur Seance (ou erreur ignorée) :", err.code || err.message);
+  } else {
+    console.log("✅ Colonne 'presence' ajoutée avec succès à la table Seance !");
+  }
+});
 
 // ──────────────────────────────────────────────────────────────────────────
 const nodemailer = require("nodemailer");
@@ -861,6 +871,33 @@ ipcMain.handle('get-credit-seances-sup', async (event, candidatId) => {
     );
   });
 });
+// Garde celui-ci pour le statut de planification (annulée/confirmée/planifiée)
+ipcMain.handle("update-statut-seance", async (event, { id, statut }) => {
+  return new Promise((resolve) => {
+    db.query(
+      "UPDATE Seance SET statut = ? WHERE idSeance = ?",
+      [statut, id],
+      (err) => {
+        if (err) { console.error("update-statut-seance:", err); return resolve({ success: false, error: err.message }); }
+        resolve({ success: true });
+      }
+    );
+  });
+});
+
+// Nouveau handler dédié à la présence
+ipcMain.handle("update-presence-seance", async (event, { id, presence }) => {
+  return new Promise((resolve) => {
+    db.query(
+      "UPDATE Seance SET presence = ? WHERE idSeance = ?",
+      [presence, id],
+      (err) => {
+        if (err) { console.error("update-presence-seance:", err); return resolve({ success: false, error: err.message }); }
+        resolve({ success: true });
+      }
+    );
+  });
+});
 
 // ── 5. PAIEMENTS ──────────────────────────────────────────────────────────────
 ipcMain.handle('add-payment', async (event, data) => {
@@ -1005,7 +1042,7 @@ ipcMain.handle("get-seances", async () => {
   return new Promise((resolve) => {
     const sql = `
       SELECT 
-        s.idSeance, s.date, s.heure, s.duree, s.type, s.statut, s.moniteur_id, s.categoriePermis,
+        s.idSeance, s.date, s.heure, s.duree, s.type, s.statut, s.presence, s.moniteur_id, s.categoriePermis,
         CONCAT(u.prenom, ' ', u.nom) AS moniteurNom,
         GROUP_CONCAT(CONCAT(c.prenom, ' ', c.nom) SEPARATOR ', ') AS candidatsNoms,
         GROUP_CONCAT(c.idCandidat SEPARATOR ',') AS candidatsIds
@@ -2227,6 +2264,39 @@ ipcMain.handle('update-presence-code', async (event, idCandidat, seanceId, statu
     );
   });
 });
+function getNbSeancesFromDB() {
+  return new Promise((resolve) => {
+    db.query(
+      "SELECT valeurParametre FROM ConfigurationSysteme WHERE cleParametre = 'NB_SEANCES'",
+      (err, res) => {
+        if (err || !res.length) return resolve(20);
+        const val = parseInt(res[0].valeurParametre, 10);
+        resolve(isNaN(val) ? 20 : val);
+      }
+    );
+  });
+}
+
+ipcMain.handle('get-nb-seances', async () => {
+  return await getNbSeancesFromDB();
+});
+
+ipcMain.handle('set-nb-seances', async (event, val) => {
+  const v = String(parseInt(val, 10) || 20);
+  return new Promise((resolve) => {
+    db.query(
+      `INSERT INTO ConfigurationSysteme (cleParametre, valeurParametre)
+       VALUES ('NB_SEANCES', ?)
+       ON DUPLICATE KEY UPDATE valeurParametre = ?`,
+      [v, v],
+      (err) => {
+        if (err) { console.error("set-nb-seances:", err); resolve({ success: false }); }
+        else resolve({ success: true });
+      }
+    );
+  });
+});
+
 
 ipcMain.handle('get-seances-code-disponibles', async (event, categoriePermis, excludeSeanceId) => {
   return new Promise((resolve) => {

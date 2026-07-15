@@ -76,6 +76,14 @@ function formatDateFr(iso) {
     day: "2-digit", month: "long", year: "numeric",
   });
 }
+function formatWhatsAppUrl(telephone, message) {
+  if (!telephone) return null;
+  let numero = telephone.replace(/\D/g, "");
+  if (numero.startsWith("0")) numero = "213" + numero.slice(1);
+  return `https://wa.me/${numero}?text=${encodeURIComponent(message)}`;
+}
+
+const TYPE_LABELS_WA = { code: "Code", creneau: "Créneau", circulation: "Circulation" };
 
 function dbRowToSession(row) {
   const rawDate   = toLocalISO(row.date);
@@ -102,6 +110,7 @@ function dbRowToSession(row) {
     dur:     parseFloat(row.duree) || 1,
     notes:   row.statut || "",
     categoriePermis: normCat(row.categoriePermis || row.categorie || row.categorie_permis),
+    presence: row.presence || null,
     _raw:    row,
   };
 }
@@ -283,7 +292,13 @@ function SeanceSupplementaireModal({ candidat, onClose, onConfirm }) {
 }
 
 // ── MODALE GROUPE DE SÉANCES ──────────────────────────────────────────────────
-function GroupModal({ sessions, onClose, onDelete, onEdit }) {
+function GroupModal({
+    sessions,
+    onClose,
+    onDelete,
+    onEdit,
+    loadSeances
+}) {
   if (!sessions || sessions.length === 0) return null;
   const first = sessions[0];
   const endH  = first.startH + first.dur;
@@ -300,32 +315,75 @@ function GroupModal({ sessions, onClose, onDelete, onEdit }) {
           <button onClick={onClose} style={{ background:"#f1f5f9", border:"none", color:"#64748b", width:32, height:32, borderRadius:8, cursor:"pointer", fontSize:14, display:"grid", placeItems:"center" }}>✕</button>
         </div>
         <div style={{ overflowY:"auto", padding:"16px 24px", display:"flex", flexDirection:"column", gap:12 }}>
-          {sessions.map((s) => {
-            const col = COLORS[s.type] || COLORS.code;
-            const sEnd = s.startH + s.dur;
-            return (
-              <div key={s.id} style={{ border:`1px solid ${col.border}`, borderLeft:`4px solid ${col.bg}`, borderRadius:12, padding:"14px 16px", background:col.light, display:"flex", alignItems:"center", gap:16 }}>
-                <div style={{ width:42, height:42, borderRadius:10, background:"white", border:`1px solid ${col.border}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                  <div style={{ width:14, height:14, borderRadius:3, background:col.bg }} />
-                </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-                    <span style={{ fontSize:"0.88rem", fontWeight:700, color:"#1e293b", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{cap(s.name)}</span>
-                    <span style={{ fontSize:"0.68rem", fontWeight:600, padding:"2px 9px", borderRadius:20, background:"white", color:col.text, border:`1px solid ${col.border}`, textTransform:"capitalize", flexShrink:0 }}>{s.type}</span>
-                  </div>
-                  <div style={{ display:"flex", gap:16, fontSize:"0.75rem", color:"#64748b" }}>
-                    <span>👤 <strong style={{ color:"#334155" }}>{s.monitor}</strong></span>
-                    <span>🕐 {floatToHHMM(s.startH)} – {floatToHHMM(sEnd)}</span>
-                    {s.notes && <span>📋 {s.notes}</span>}
-                  </div>
-                </div>
-                <div style={{ display:"flex", gap:8, flexShrink:0 }}>
-                  <button onClick={() => { onEdit(s); onClose(); }} style={{ padding:"7px 14px", borderRadius:8, background:"rgba(59,130,246,0.08)", border:"1px solid rgba(59,130,246,0.25)", color:"#3b82f6", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600, cursor:"pointer" }}>Modifier</button>
-                  <button onClick={() => onDelete(s.id)} style={{ padding:"7px 14px", borderRadius:8, background:"rgba(239,68,68,0.08)", border:"1px solid rgba(239,68,68,0.25)", color:"#ef4444", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600, cursor:"pointer" }}>Supprimer</button>
-                </div>
-              </div>
-            );
-          })}
+         {sessions.map((s) => {
+  const col = COLORS[s.type] || COLORS.code;
+  const sEnd = s.startH + s.dur;
+
+  const handleMarquerPresence = async (presence) => {
+    try {
+      if (window.electron?.updatePresenceSeance) {
+        await window.electron.updatePresenceSeance({ id: s.id, presence });
+        if (loadSeances) await loadSeances();
+        window.dispatchEvent(new CustomEvent("seance-updated"));
+        onClose();
+      }
+    } catch (err) {
+      console.error("Erreur mise à jour présence :", err);
+    }
+  };
+
+  const handleAnnuler = async () => {
+    try {
+      if (window.electron?.updateStatutSeance) {
+        await window.electron.updateStatutSeance({ id: s.id, statut: "annulée" });
+        if (loadSeances) await loadSeances();
+        window.dispatchEvent(new CustomEvent("seance-updated"));
+        onClose();
+      }
+    } catch (err) {
+      console.error("Erreur mise à jour statut :", err);
+    }
+  };
+
+  return (
+    <div key={s.id} style={{ border:`1px solid ${col.border}`, borderLeft:`4px solid ${col.bg}`, borderRadius:12, padding:"14px 16px", background:col.light, display:"flex", flexDirection:"column", gap:10 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:16 }}>
+        <div style={{ width:42, height:42, borderRadius:10, background:"white", border:`1px solid ${col.border}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+          <div style={{ width:14, height:14, borderRadius:3, background:col.bg }} />
+        </div>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+            <span style={{ fontSize:"0.88rem", fontWeight:700, color:"#1e293b", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{cap(s.name)}</span>
+            <span style={{ fontSize:"0.68rem", fontWeight:600, padding:"2px 9px", borderRadius:20, background:"white", color:col.text, border:`1px solid ${col.border}`, textTransform:"capitalize", flexShrink:0 }}>{s.type}</span>
+          </div>
+          <div style={{ display:"flex", gap:16, fontSize:"0.75rem", color:"#64748b" }}>
+            <span>👤 <strong style={{ color:"#334155" }}>{s.monitor}</strong></span>
+            <span>🕐 {floatToHHMM(s.startH)} – {floatToHHMM(sEnd)}</span>
+            {s.notes && <span>📋 {s.notes}</span>}
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:8, flexShrink:0 }}>
+          <button onClick={() => { onEdit(s); onClose(); }} style={{ padding:"7px 14px", borderRadius:8, background:"rgba(59,130,246,0.08)", border:"1px solid rgba(59,130,246,0.25)", color:"#3b82f6", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600, cursor:"pointer" }}>Modifier</button>
+          <button onClick={() => onDelete(s.id)} style={{ padding:"7px 14px", borderRadius:8, background:"rgba(239,68,68,0.08)", border:"1px solid rgba(239,68,68,0.25)", color:"#ef4444", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600, cursor:"pointer" }}>Supprimer</button>
+        </div>
+      </div>
+
+      {/* ── Boutons présence / annulation ── */}
+      <div style={{ display:"flex", gap:6 }}>
+        <button onClick={() => handleMarquerPresence("présente")} style={{ flex:1, padding:"6px", borderRadius:8, background:"rgba(34,197,94,0.1)", border:"1px solid rgba(34,197,94,0.3)", color:"#16a34a", fontSize:"0.72rem", fontWeight:600, cursor:"pointer" }}>
+          ✅ Présent
+        </button>
+        <button onClick={() => handleMarquerPresence("absente")} style={{ flex:1, padding:"6px", borderRadius:8, background:"rgba(245,158,11,0.1)", border:"1px solid rgba(245,158,11,0.3)", color:"#b45309", fontSize:"0.72rem", fontWeight:600, cursor:"pointer" }}>
+          ❌ Absent
+        </button>
+        <button onClick={handleAnnuler} style={{ flex:1, padding:"6px", borderRadius:8, background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.3)", color:"#dc2626", fontSize:"0.72rem", fontWeight:600, cursor:"pointer" }}>
+          🚫 Annulée
+        </button>
+      </div>
+    </div>
+  );
+})}
+
         </div>
         <div style={{ padding:"14px 24px", borderTop:"1px solid #e2e8f0", background:"#f8fafc", display:"flex", justifyContent:"flex-end", flexShrink:0 }}>
           <button onClick={onClose} style={{ padding:"9px 22px", borderRadius:8, background:"#1e293b", border:"none", color:"white", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", fontWeight:600, cursor:"pointer" }}>Fermer</button>
@@ -336,7 +394,14 @@ function GroupModal({ sessions, onClose, onDelete, onEdit }) {
 }
 
 // ── POPUP simple (1 seule séance) ─────────────────────────────────────────────
-function SessionPopup({ session, anchor, onClose, onDelete, onEdit }) {
+function SessionPopup({
+  session,
+  anchor,
+  onClose,
+  onDelete,
+  onEdit,
+  loadSeances,
+}) {
   const ref = useRef();
   useEffect(() => {
     const h = e => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
@@ -347,7 +412,37 @@ function SessionPopup({ session, anchor, onClose, onDelete, onEdit }) {
   if (!session || !anchor) return null;
   const top  = Math.min(anchor.bottom + 8, window.innerHeight - 320);
   const left = Math.min(anchor.left, window.innerWidth - 270);
-  const col  = COLORS[session.type] || COLORS.code;
+ const col  = COLORS[session.type] || COLORS.code;
+
+  const handleMarquerPresence = async (presence) => {
+    try {
+      if (window.electron?.updatePresenceSeance) {
+        await window.electron.updatePresenceSeance({ id: session.id, presence });
+        if (loadSeances) await loadSeances();
+        window.dispatchEvent(new CustomEvent("seance-updated"));
+        onClose();
+      } else {
+        console.warn("window.electron.updatePresenceSeance n'existe pas !");
+      }
+    } catch (err) {
+      console.error("Erreur mise à jour présence :", err);
+    }
+  };
+
+  const handleAnnuler = async () => {
+    try {
+      if (window.electron?.updateStatutSeance) {
+        await window.electron.updateStatutSeance({ id: session.id, statut: "annulée" });
+        if (loadSeances) await loadSeances();
+        window.dispatchEvent(new CustomEvent("seance-updated"));
+        onClose();
+      } else {
+        console.warn("window.electron.updateStatutSeance n'existe pas !");
+      }
+    } catch (err) {
+      console.error("Erreur mise à jour statut :", err);
+    }
+  };
 
   return (
     <div ref={ref} style={{ position:"fixed", zIndex:200, top, left, background:"#fff", border:"1px solid #e2e8f0", borderRadius:14, width:250, boxShadow:"0 20px 60px rgba(0,0,0,0.15)", overflow:"hidden", fontFamily:"'Poppins',sans-serif" }}>
@@ -377,10 +472,66 @@ function SessionPopup({ session, anchor, onClose, onDelete, onEdit }) {
           <div style={{ fontSize:"0.73rem", color:"#64748b", background:"#f8fafc", padding:"6px 9px", borderRadius:7, marginTop:2 }}>{session.notes}</div>
         )}
       </div>
-      <div style={{ display:"flex", gap:8, padding:"10px 13px", borderTop:"1px solid #e2e8f0", background:"#f8fafc" }}>
-        <button onClick={() => { onDelete(session.id); onClose(); }} style={{ flex:1, padding:"7px", borderRadius:8, background:"rgba(239,68,68,0.08)", border:"1px solid rgba(239,68,68,0.25)", color:"#ef4444", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600, cursor:"pointer" }}>Supprimer</button>
-        <button onClick={() => { onEdit(session); onClose(); }} style={{ flex:1, padding:"7px", borderRadius:8, background:"rgba(59,130,246,0.08)", border:"1px solid rgba(59,130,246,0.25)", color:"#3b82f6", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600, cursor:"pointer" }}>Modifier</button>
-      </div>
+     <div
+  style={{
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+    padding: "10px 13px",
+    borderTop: "1px solid #e2e8f0",
+    background: "#f8fafc",
+  }}
+>
+
+  <div style={{ display: "flex", gap: 6 }}>
+ <button onClick={() => handleMarquerPresence("présente")}>✅ Présent</button>
+<button onClick={() => handleMarquerPresence("absente")}>❌ Absent</button>
+<button onClick={handleAnnuler}>🚫 Annulée</button>
+  </div>
+
+  <div style={{ display: "flex", gap: 8 }}>
+    <button
+      onClick={() => {
+        onDelete(session.id);
+        onClose();
+      }}
+      style={{
+        flex: 1,
+        padding: "7px",
+        borderRadius: 8,
+        background: "rgba(239,68,68,0.08)",
+        border: "1px solid rgba(239,68,68,0.25)",
+        color: "#ef4444",
+        fontSize: "0.75rem",
+        fontWeight: 600,
+        cursor: "pointer",
+      }}
+    >
+      Supprimer
+    </button>
+
+    <button
+      onClick={() => {
+        onEdit(session);
+        onClose();
+      }}
+      style={{
+        flex: 1,
+        padding: "7px",
+        borderRadius: 8,
+        background: "rgba(59,130,246,0.08)",
+        border: "1px solid rgba(59,130,246,0.25)",
+        color: "#3b82f6",
+        fontSize: "0.75rem",
+        fontWeight: 600,
+        cursor: "pointer",
+      }}
+    >
+      Modifier
+    </button>
+  </div>
+
+</div>
     </div>
   );
 }
@@ -664,26 +815,29 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
       return;
     }
 
-    onCreate({
-      id:      editing ? editing.id : Date.now(),
-      name:    form.candidat || "Nouveau Candidat",
-      monitor: form.moniteur || "Moniteur 1",
-      type:    form.type || "creneau",
-      day:     new Date(form.date + "T12:00:00").getDay(),
-      startH:  parseInt(form.heure.split(":")[0]) + parseInt(form.heure.split(":")[1] || 0) / 60,
-      dur:     parseFloat(form.dur) || 1,
-      notes:   form.statut,
-      _formData: {
-        date:        form.date,
-        heure:       form.heure,
-        type:        form.type,
-        statut:      form.statut,
-        moniteur_id: form.moniteur_id ? parseInt(form.moniteur_id) : null,
-        candidatIds: form.candidatId ? [parseInt(form.candidatId)] : [],
-        duree:       parseFloat(form.dur) || 1,
-        categoriePermis: candidatCat || null,
-      },
-    });
+   onCreate({
+  id:      editing ? editing.id : Date.now(),
+  name:    form.candidat || "Nouveau Candidat",
+  monitor: form.moniteur || "Moniteur 1",
+  type:    form.type || "code",
+  day:     new Date(form.date + "T12:00:00").getDay(),
+  startH:  parseInt(form.heure.split(":")[0]) + parseInt(form.heure.split(":")[1] || 0) / 60,
+  dur:     parseFloat(form.dur) || 1,
+  notes:   form.statut,
+  _formData: {
+    date:        form.date,
+    heure:       form.heure,
+    type:        form.type,
+    statut:      form.statut,
+    moniteur_id: form.moniteur_id ? parseInt(form.moniteur_id) : null,
+    candidatIds: form.candidatId ? [parseInt(form.candidatId)] : [],
+    duree:       parseFloat(form.dur) || 1,
+    categoriePermis: candidatCat || null,
+    // ── AJOUT ──
+    candidatTelephone: selectedCandidatObj?.telephone || null,
+    candidatPrenom:    selectedCandidatObj?.prenom || null,
+  },
+});
   };
 
   const renderHeureOptions = () => {
@@ -1440,17 +1594,22 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
                   ? String(s._raw.candidatsIds).split(",")[0].trim()
                   : null;
                 const candidatAPermis = candidatId && aObtenuPermis ? aObtenuPermis(candidatId) : false;
-
+                const statutNorm = (s._raw?.statut || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const estAnnulee   = statutNorm === "annulee";
+const estConfirmee = statutNorm === "confirmee";
+const presenceNorm = (s._raw?.presence || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const estPresent = presenceNorm === "presente";
+const estAbsent  = presenceNorm === "absente";
                 return (
                   <div key={s.id}
-                    draggable={!isClosed}
-                    onDragStart={isClosed ? undefined : e => handleDragStart(e, s)}
+                    draggable={!isClosed && !estAnnulee}
+                   onDragStart={isClosed || estAnnulee ? undefined : e => handleDragStart(e, s)}
                     onDragEnd={handleDragEnd}
                     onClick={e => {
                       e.stopPropagation();
                       hasOverlap ? onGroupClick(groupSessions) : onSessionClick(s, e.currentTarget.getBoundingClientRect());
                     }}
-                    title={congeConflict ? `⚠️ ${s.monitor} est en congé ce jour-là` : candidatAPermis ? "🎓 Cliquer sur le nom pour séance supp." : undefined}
+                   title={estAnnulee ? "🚫 Séance annulée" : congeConflict ? `⚠️ ${s.monitor} est en congé ce jour-là` : candidatAPermis ? "🎓 Cliquer sur le nom pour séance supp." : undefined}
                     style={{
                       position:"absolute", left:`calc(${leftPct}% + 2px)`, width:`calc(${widthPct}% - 4px)`,
                       top:topPx + 2, height:s.dur * CELL_H - 4, borderRadius:8, padding:"5px 8px",
@@ -1460,6 +1619,11 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
                       boxShadow:hasOverlap ? `0 0 0 2px ${colData.bg}, 0 2px 8px ${colData.bg}50` : `0 1px 4px ${colData.bg}30`,
                       opacity:isDragging ? 0.4 : 1, transition:"transform 0.15s, box-shadow 0.15s",
                       overflow:"hidden", zIndex:isDragging ? 1 : 2,
+                      background: estAnnulee
+  ? "repeating-linear-gradient(45deg, rgba(148,163,184,0.15), rgba(148,163,184,0.15) 6px, rgba(148,163,184,0.28) 6px, rgba(148,163,184,0.28) 12px)"
+  : colData.light,
+borderLeft: `3px solid ${estAnnulee ? "#94a3b8" : congeConflict ? "#f97316" : colData.bg}`,
+opacity: estAnnulee ? 0.55 : isDragging ? 0.4 : 1,
                     }}
                     onMouseEnter={e => { if (!isDragging) { e.currentTarget.style.transform="translateY(-1px)"; e.currentTarget.style.zIndex=5; }}}
                     onMouseLeave={e => { e.currentTarget.style.transform="scale(1)"; e.currentTarget.style.zIndex=2; }}
@@ -1470,7 +1634,7 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
                         fontSize:"0.72rem", fontWeight:700,
                         color: candidatAPermis ? "#6366f1" : colData.text,
                         whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
-                        textDecoration: candidatAPermis ? "underline dotted" : "none",
+                        textDecoration: estAnnulee ? "line-through" : candidatAPermis ? "underline dotted" : "none",
                         cursor: candidatAPermis ? "pointer" : "inherit",
                       }}
                       onClick={candidatAPermis ? (e) => {
@@ -1499,6 +1663,26 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
                         🌴
                       </div>
                     )}
+                    {estAnnulee && (
+  <div style={{ position:"absolute", bottom:3, left:6, fontSize:"0.58rem", fontWeight:700, color:"#64748b", background:"#fff", border:"1px solid #cbd5e1", borderRadius:5, padding:"1px 6px" }}>
+    🚫 Annulée
+  </div>
+)}
+{!estAnnulee && estConfirmee && (
+  <div style={{ position:"absolute", bottom:3, left:6, fontSize:"0.58rem", fontWeight:700, color:"#16a34a", background:"#fff", border:"1px solid #86efac", borderRadius:5, padding:"1px 6px" }}>
+    ✅ Confirmée
+  </div>
+)}
+{estPresent && (
+  <div style={{ position:"absolute", bottom:3, right:6, fontSize:"0.58rem", fontWeight:700, color:"#16a34a", background:"#fff", border:"1px solid #86efac", borderRadius:5, padding:"1px 6px" }}>
+    ✅ Présent
+  </div>
+)}
+{estAbsent && (
+  <div style={{ position:"absolute", bottom:3, right:6, fontSize:"0.58rem", fontWeight:700, color:"#b45309", background:"#fff", border:"1px solid #fcd34d", borderRadius:5, padding:"1px 6px" }}>
+    ❌ Absent
+  </div>
+)}
                   </div>
                 );
               })}
@@ -1614,17 +1798,21 @@ export default function AgendaPage() {
     }
   }, [sessions, weekDates, api, isMoniteurEnConge, isCongeAnnuel]);
 
-  const handleDelete = async (id) => {
-    setSessions(p => p.filter(s => s.id !== id));
-    if (groupModal) {
-      const updated = groupModal.filter(s => s.id !== id);
-      updated.length > 0 ? setGroupModal(updated) : setGroupModal(null);
+ const handleDelete = async (id) => {
+  setSessions(p => p.filter(s => s.id !== id));
+  if (groupModal) {
+    const updated = groupModal.filter(s => s.id !== id);
+    updated.length > 0 ? setGroupModal(updated) : setGroupModal(null);
+  }
+  if (api?.deleteSeance) {
+    try {
+      await api.deleteSeance(id);
+      showToast("Séance supprimée.", "success");
+      window.dispatchEvent(new CustomEvent("seance-updated")); // ← AJOUT
     }
-    if (api?.deleteSeance) {
-      try { await api.deleteSeance(id); showToast("Séance supprimée.", "success"); }
-      catch (err) { showToast("Erreur lors de la suppression.", "error"); }
-    } else { showToast("Séance supprimée (mode démo).", "info"); }
-  };
+    catch (err) { showToast("Erreur lors de la suppression.", "error"); }
+  } else { showToast("Séance supprimée (mode démo).", "info"); }
+};
 
   const handleSave = async (sessionObj) => {
     const { _formData } = sessionObj;
@@ -1683,12 +1871,29 @@ export default function AgendaPage() {
         });
         await loadSeances();
         showToast("Séance modifiée avec succès.");
+        window.dispatchEvent(new CustomEvent("seance-updated"));
 
       } else if (api?.addSeance && !editing) {
         const result = await api.addSeance(_formData);
         if (result?.success) {
           await loadSeances();
           showToast("Séance créée avec succès.");
+          // ── Notification WhatsApp au candidat ────────────────────────────
+    if (_formData.candidatTelephone) {
+      const typeLabel = TYPE_LABELS_WA[_formData.type] || cap(_formData.type || "");
+      const dureeLabel = (() => {
+        const v = parseFloat(_formData.duree) || 0;
+        const h = Math.floor(v);
+        const m = Math.round((v - h) * 60);
+        return m > 0 ? `${h}h${String(m).padStart(2, "0")}` : `${h}h`;
+      })();
+      const message =
+        `Bonjour ${_formData.candidatPrenom || ""}, une séance de ${typeLabel} ` +
+        `a été programmée pour vous le ${formatDateFr(_formData.date)} à ${_formData.heure} ` +
+        `avec ${sessionObj.monitor}. Durée : ${dureeLabel}.`;
+      const url = formatWhatsAppUrl(_formData.candidatTelephone, message);
+      if (url) window.electron?.openExternal?.(url);
+    }
 
           const candidatId = _formData.candidatIds?.[0];
           if (candidatId) {
@@ -1928,6 +2133,7 @@ export default function AgendaPage() {
           onClose={() => setPopup({session:null, anchor:null})}
           onDelete={handleDelete}
           onEdit={s => { setEditing(s); setPrefillCandidatId(null); setShowModal(true); setPopup({session:null,anchor:null}); }}
+          loadSeances={loadSeances}
         />
       )}
       {groupModal && (
@@ -1936,6 +2142,7 @@ export default function AgendaPage() {
           onClose={() => setGroupModal(null)}
           onDelete={handleDelete}
           onEdit={s => { setEditing(s); setPrefillCandidatId(null); setShowModal(true); setGroupModal(null); }}
+          loadSeances={loadSeances}
         />
       )}
       {showModal && (

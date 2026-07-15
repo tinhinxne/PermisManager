@@ -36,6 +36,8 @@ updateStatutCandidat: (data) => ipcRenderer.invoke('update-statut-candidat', dat
   addSeance:  (data) => ipcRenderer.invoke('add-seance', data),
   deleteSeance: (id)   => ipcRenderer.invoke('delete-seance', id),
   updateSeance: (data) => ipcRenderer.invoke('update-seance', data),
+updateStatutSeance: (data) => ipcRenderer.invoke('update-statut-seance', data),
+updatePresenceSeance: (data) => ipcRenderer.invoke('update-presence-seance', data),
   
   // Paiements
   getPayments: () => ipcRenderer.invoke('get-payments'),
@@ -109,5 +111,7 @@ desinscrireCandidatCode:    (idCandidat, seanceId) => ipcRenderer.invoke('desins
 updatePresenceCode:         (idCandidat, seanceId, statut, updatedBy) => ipcRenderer.invoke('update-presence-code', idCandidat, seanceId, statut, updatedBy),
 getSeancesCodeDisponibles:  (categoriePermis, excludeSeanceId) => ipcRenderer.invoke('get-seances-code-disponibles', categoriePermis, excludeSeanceId),
 replanifierCandidatCode:    (idCandidat, oldSeanceId, newSeanceId) => ipcRenderer.invoke('replanifier-candidat-code', idCandidat, oldSeanceId, newSeanceId),
+getNbSeances: () => ipcRenderer.invoke('get-nb-seances'),
+setNbSeances: (val) => ipcRenderer.invoke('set-nb-seances', val),
 });
 

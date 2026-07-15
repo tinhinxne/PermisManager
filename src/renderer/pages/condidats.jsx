@@ -864,9 +864,10 @@ const Condidats = () => {
   const [showMatriculesModal, setShowMatriculesModal] = useState(false);
   const [historiqueCandidat, setHistoriqueCandidat]  = useState(null);
 
-  const [selectedCategorieObtenu, setSelectedCategorieObtenu] = useState("Tous");
+const [selectedCategorieObtenu, setSelectedCategorieObtenu] = useState("Tous");
   const [dateObtentionDebut, setDateObtentionDebut] = useState("");
   const [dateObtentionFin,   setDateObtentionFin]   = useState("");
+  const [nbSeancesMax, setNbSeancesMax] = useState(SESSIONS_NORMALES_MAX); // valeur configurable, défaut 2
 
   const { examensList } = useExamenCtx();
 
@@ -902,56 +903,74 @@ const Condidats = () => {
     })
     .sort((a, b) => new Date(b.dateObtention || 0) - new Date(a.dateObtention || 0));
 
-  const loadCandidats = async () => {
+const loadCandidats = async (maxOverride) => {
+  const max = maxOverride ?? nbSeancesMax;
+  try {
+    const data    = await window.electron.getCandidats();
+    const seances = await window.electron.getSeances();
+
+    const formatted = data.map((c) => {
+      const currentCat = (c.categoriePermis || c.categorie || c.categorie_permis || "B")
+        .toString().trim().toUpperCase();
+
+const nbSessionsTotal = seances.filter((s) => {
+  if (!s.candidatsIds) return false;
+  const ids = String(s.candidatsIds).split(",").map((id) => parseInt(id.trim()));
+  const matchCandidat = ids.includes(c.idCandidat);
+  const seanceCat = (s.categoriePermis || "").toString().trim().toUpperCase();
+  const matchCategorie = seanceCat === currentCat;
+
+  const seanceType = (s.type || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const matchType = !seanceType.includes("code");
+
+  // ── On exclut les séances annulées : présente ET absente comptent, annulée non ──
+  const statutNorm = (s.statut || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const matchStatut = statutNorm !== "annulee";
+
+  return matchCandidat && matchCategorie && matchType && matchStatut;
+}).length;
+
+      const nbSessions      = Math.min(nbSessionsTotal, max);
+      const nbSessionsSuppl = Math.max(nbSessionsTotal - max, 0);
+
+      return {
+        id: c.idCandidat,
+        nom: c.nom || "",
+        prenom: c.prenom || "",
+        tel: c.telephone || "",
+        categoriePermis: currentCat,
+        inscription: formatDateAr(c.date_inscription),
+        sessions: nbSessions,
+        sessionsSuppl: nbSessionsSuppl,
+        status: c.status || "en cours",
+        _raw: c,
+      };
+    });
+
+    setCandidats(formatted);
+  } catch (e) {
+    console.error("Erreur lors du chargement des candidats:", e);
+  }
+};
+
+useEffect(() => {
+  (async () => {
+    let max = SESSIONS_NORMALES_MAX;
     try {
-      const data    = await window.electron.getCandidats();
-      const seances = await window.electron.getSeances();
-
-      const formatted = data.map((c) => {
-        const currentCat = (c.categoriePermis || c.categorie || c.categorie_permis || "B").toString().trim().toUpperCase();
-
-        const nbSessionsTotal = seances.filter((s) => {
-          if (!s.candidatsIds) return false;
-          const ids = String(s.candidatsIds).split(",").map((id) => parseInt(id.trim()));
-          const matchCandidat = ids.includes(c.idCandidat);
-          const seanceCat = (s.categoriePermis || "").toString().trim().toUpperCase();
-          const matchCategorie = seanceCat === currentCat; 
-          
-          return matchCandidat && matchCategorie;
-        }).length;
-
-        const nbSessions      = Math.min(nbSessionsTotal, SESSIONS_NORMALES_MAX);
-        const nbSessionsSuppl = Math.max(nbSessionsTotal - SESSIONS_NORMALES_MAX, 0);
-
-        return {
-          id:              c.idCandidat,
-          nom:             c.nom,
-          prenom:          c.prenom,
-          tel:             c.telephone,
-          categoriePermis: currentCat, 
-         inscription: c.date_inscription
-  ? new Date(c.date_inscription).toLocaleDateString("en-CA")
-  : "",
-dob: c.date_naissance
-  ? new Date(c.date_naissance).toLocaleDateString("en-CA")
-  : "",
-          sessions:      nbSessions,
-          sessionsSuppl: nbSessionsSuppl,
-          status:   c.statut, 
-          sexe:     c.sexe,
-          photo:    c.photo || null,
-          _raw:     c,
-        };
-      });
-
-      setCandidats(formatted);
-    } catch (error) {
-      console.error("Erreur lors du chargement des candidats :", error);
-      setCandidats([]);
+      const nb = await window.electron.getNbSeances();
+      max = Number(nb) || SESSIONS_NORMALES_MAX;
+      setNbSeancesMax(max);
+    } catch (e) {
+      console.error("Erreur chargement nombre de séances configuré:", e);
     }
-  };
-
-  useEffect(() => { loadCandidats(); }, []);
+    await loadCandidats(max);
+  })();
+}, []);
+useEffect(() => {
+  const handler = () => loadCandidats(nbSeancesMax);
+  window.addEventListener("seance-updated", handler);
+  return () => window.removeEventListener("seance-updated", handler);
+}, [nbSeancesMax]);
 
   const handleEdit = (candidat) => {
     setIsReinscription(false); 
@@ -1164,10 +1183,10 @@ const handleSave = async (data) => {
 
                         <td style={td}>
                           <div className="progress-container">
-                            <div className="progress-bar" style={{ width: `${(c.sessions / SESSIONS_NORMALES_MAX) * 100}%` }} />
+                            <div className="progress-bar" style={{ width: `${(c.sessions / nbSeancesMax) * 100}%` }} />
                           </div>
                           <span className="progress-text">
-                            {c.sessions}/{SESSIONS_NORMALES_MAX} sessions
+                            {c.sessions}/{nbSeancesMax} sessions
                             {c.sessionsSuppl > 0 && (
                               <span style={{ color: "#7c3aed", fontWeight: 700, marginLeft: 4 }}>
                                 (+{c.sessionsSuppl} suppl.)
