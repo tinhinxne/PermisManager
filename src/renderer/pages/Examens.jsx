@@ -63,6 +63,12 @@ function parseExamDate(dateStr) {
   const d = new Date(normalized + "T00:00:00");
   return isNaN(d) ? null : d;
 }
+function formatWhatsAppUrl(telephone, message) {
+  if (!telephone) return null;
+  let numero = telephone.replace(/\D/g, "");
+  if (numero.startsWith("0")) numero = "213" + numero.slice(1);
+  return `https://wa.me/${numero}?text=${encodeURIComponent(message)}`;
+}
 
 // ─────────────────────────────────────────────
 // AbsenceModal
@@ -439,9 +445,10 @@ function ExamenTable({ rows, isAdmin, perms, onRowClick, onResultClick, onRemove
 // Composant principal
 // ─────────────────────────────────────────────
 const Examens = () => {
-  const {
+ const {
     examensList, generateExamens, setExamenResult,
     retirerCandidat, candidatsReportes, EXAM_THRESHOLDS,
+    ajouterExamenManuel,
   } = useExamenCtx();
   const { examRules }      = useExamenRulesCtx();
   const { currentUser }    = useAuth();
@@ -470,6 +477,8 @@ const Examens = () => {
 
   const [showExportModal, setShowExportModal] = useState(false);
   const [pdfLoading,      setPdfLoading]      = useState(false);
+  const [showAddExamenModal, setShowAddExamenModal] = useState(false);
+  const [candidatsFullList,  setCandidatsFullList]  = useState([]);
   const [exportForm, setExportForm] = useState({ nomEcole: "", wilaya: "", centreExamen: "", morkaba: "", dateDepot: "", dateExamen: "" });
 
   useEffect(() => {
@@ -480,7 +489,7 @@ const Examens = () => {
   }, []);
 
   // ── génération ──
-  const handleGenerate = async () => {
+ const handleGenerate = async () => {
     setLoading(true);
     try {
       const [seances, candidats] = await Promise.all([
@@ -497,6 +506,17 @@ const Examens = () => {
         };
       });
       setCandidatsMap(map);
+
+      setCandidatsFullList(candidats.map(c => ({
+        id: c.idCandidat,
+        nom: c.nom ?? "",
+        prenom: c.prenom ?? "",
+        email: c.email ?? "",
+         telephone: c.telephone ?? "",
+        categoriePermis: c.categoriePermis ?? "",
+        dateNaissance: c.date_naissance ?? "",
+      })));
+
       generateExamens(seances, candidats);
       setLastGenerated(new Date().toLocaleString("fr-FR"));
     } catch (e) {
@@ -519,7 +539,9 @@ const Examens = () => {
       if (to   && d > to)   return false;
       return true;
     });
+ 
   };
+ 
 
   const hasDateFilter = !!(dateDebut || dateFin);
 
@@ -593,21 +615,46 @@ const Examens = () => {
     setShowExportModal(true);
   };
   const handleExportFormChange = (field, value) => setExportForm(f => ({ ...f, [field]: value }));
+const handleConfirm = async () => {
+  if (!candidatId)   { setError("Veuillez sélectionner un candidat."); return; }
+  if (!date)         { setError("Veuillez choisir une date."); return; }
+  if (!heure)        { setError("Veuillez choisir une heure."); return; }
+  if (!lieu.trim())  { setError("Veuillez indiquer un lieu."); return; }
 
-  const handleConfirmExport = async () => {
-    if (!exportForm.wilaya.trim() || !exportForm.centreExamen.trim()) { alert("Merci de renseigner la wilaya et le centre d'examen."); return; }
-    setPdfLoading(true);
-    try {
-      const candidatsPourPDF = allFiltered.map((examen, i) => {
-        const info = candidatsMap[String(examen.candidatId)] || {};
-        return { rang: i + 1, numDossier: examen.candidatId, nomPrenom: examen.candidat, nomPrenomAr: [info.nom_ar, info.prenom_ar].filter(Boolean).join(" "), dateNaissance: formatDateAr(examen.dateNaissance), categorie: examen.categoriePermis || "", typeExamen: examen.type || "", dateDepot: formatDateAr(exportForm.dateDepot), dateExamenRapport: formatDateAr(examen.date), observations: "" };
+  setSaving(true);
+  setError("");
+  try {
+    await onConfirm({
+      candidatId,
+      candidat: candidatSelectionne
+        ? `${candidatSelectionne.prenom} ${candidatSelectionne.nom}`
+        : `Candidat #${candidatId}`,
+      email: candidatSelectionne?.email,
+      type, date, heure, lieu: lieu.trim(),
+      dateNaissance: candidatSelectionne?.dateNaissance,
+      categoriePermis: candidatSelectionne?.categoriePermis,
+    });
+
+    // ── Notification WhatsApp au candidat ────────────────────────────
+    if (candidatSelectionne?.telephone) {
+      const dateFormatee = new Date(date + "T12:00:00").toLocaleDateString("fr-FR", {
+        weekday: "long", day: "numeric", month: "long", year: "numeric",
       });
-      const savedPath = await window.electron.generateListeCandidatsPDF({ ...exportForm, dateDepot: formatDateAr(exportForm.dateDepot), candidats: candidatsPourPDF });
-      localStorage.setItem("export_pdf_defaults", JSON.stringify({ nomEcole: exportForm.nomEcole, wilaya: exportForm.wilaya, morkaba: exportForm.morkaba }));
-      if (savedPath) { alert(`Document enregistré :\n${savedPath}`); setShowExportModal(false); }
-    } catch (e) { console.error(e); alert("Erreur lors de la génération du document."); }
-    setPdfLoading(false);
-  };
+      const message =
+        `Bonjour ${candidatSelectionne.prenom}, votre examen de ${type} a été programmé ` +
+        `le ${dateFormatee} à ${heure}, au lieu suivant : ${lieu.trim()}. ` +
+        `Merci de vous présenter 15 minutes avant l'heure indiquée avec votre pièce d'identité.`;
+      const url = formatWhatsAppUrl(candidatSelectionne.telephone, message);
+      if (url) window.electron?.openExternal?.(url);
+    }
+
+    onClose();
+  } catch (e) {
+    console.error(e);
+    setError("Erreur lors de la création de l'examen.");
+  }
+  setSaving(false);
+};
 
   // ─────────────────────────────────────────────
   // Rendu
@@ -631,10 +678,18 @@ const Examens = () => {
               {lastGenerated && <span style={{ color: "#94a3b8", marginLeft: 12, fontSize: 12 }}>Mise à jour : {lastGenerated}</span>}
             </p>
           </div>
-          <div style={{ display: "flex", gap: 10 }}>
+         <div style={{ display: "flex", gap: 10 }}>
             <button onClick={openExportModal} style={{ display: "flex", alignItems: "center", gap: 8, background: "#2b537e", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
               <FaFilePdf /> قائمة المترشحين
             </button>
+            {(isAdmin || perms.CAN_TOGGLE_STATUS) && (
+              <button
+                onClick={() => setShowAddExamenModal(true)}
+                style={{ display: "flex", alignItems: "center", gap: 8, background: "#16a34a", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600 }}
+              >
+                <FaCalendarPlus /> Ajouter un examen
+              </button>
+            )}
             {isAdmin && (
               <button onClick={handleGenerate} disabled={loading} style={{ display: "flex", alignItems: "center", gap: 8, background: "#4E96E1", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600, opacity: loading ? 0.7 : 1 }}>
                 <FaSync style={{ animation: loading ? "spin 1s linear infinite" : "none" }} />
@@ -1022,8 +1077,16 @@ const Examens = () => {
         }}
       />
 
-      {permisObtenuInfo && (
+    {permisObtenuInfo && (
         <PermisObtenuModal candidatName={permisObtenuInfo.candidat} onClose={() => setPermisObtenuInfo(null)} />
+      )}
+
+      {showAddExamenModal && (
+        <AjoutExamenModal
+          candidats={candidatsFullList}
+          onClose={() => setShowAddExamenModal(false)}
+          onConfirm={ajouterExamenManuel}
+        />
       )}
 
       {/* ── Modal export PDF ── */}
@@ -1067,6 +1130,135 @@ const Examens = () => {
     </div>
   );
 };
+
+// ─────────────────────────────────────────────
+// AjoutExamenModal
+// ─────────────────────────────────────────────
+function AjoutExamenModal({ candidats, onClose, onConfirm }) {
+  const [candidatId, setCandidatId] = useState("");
+  const [type, setType]             = useState("Code");
+  const [date, setDate]             = useState("");
+  const [heure, setHeure]           = useState("08:00");
+  const [lieu, setLieu]             = useState("");
+  const [saving, setSaving]         = useState(false);
+  const [error, setError]           = useState("");
+
+  const candidatSelectionne = candidats.find(c => String(c.id) === String(candidatId));
+
+  const handleConfirm = async () => {
+    if (!candidatId)   { setError("Veuillez sélectionner un candidat."); return; }
+    if (!date)         { setError("Veuillez choisir une date."); return; }
+    if (!heure)        { setError("Veuillez choisir une heure."); return; }
+    if (!lieu.trim())  { setError("Veuillez indiquer un lieu."); return; }
+
+    setSaving(true);
+    setError("");
+   try {
+      await onConfirm({
+        candidatId,
+        candidat: candidatSelectionne
+          ? `${candidatSelectionne.prenom} ${candidatSelectionne.nom}`
+          : `Candidat #${candidatId}`,
+        email: candidatSelectionne?.email,
+        type, date, heure, lieu: lieu.trim(),
+        dateNaissance: candidatSelectionne?.dateNaissance,
+        categoriePermis: candidatSelectionne?.categoriePermis,
+      });
+
+      // ── Notification WhatsApp au candidat ────────────────────────────
+      if (candidatSelectionne?.telephone) {
+        const dateFormatee = new Date(date + "T12:00:00").toLocaleDateString("fr-FR", {
+          weekday: "long", day: "numeric", month: "long", year: "numeric",
+        });
+        const message =
+          `Bonjour ${candidatSelectionne.prenom}, votre examen de ${type} a été programmé ` +
+          `le ${dateFormatee} à ${heure}, au lieu suivant : ${lieu.trim()}. ` +
+          `Merci de vous présenter 15 minutes avant l'heure indiquée avec votre pièce d'identité.`;
+        const url = formatWhatsAppUrl(candidatSelectionne.telephone, message);
+        if (url) window.electron?.openExternal?.(url);
+      }
+
+      onClose();
+    } catch (e) {
+      console.error(e);
+      setError("Erreur lors de la création de l'examen.");
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      onClick={() => !saving && onClose()}
+    >
+      <div style={{ background: "#fff", borderRadius: 14, padding: 24, width: 440, maxWidth: "90vw", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: 17, color: "#1F2937" }}>Ajouter un examen manuellement</h3>
+          <button onClick={() => !saving && onClose()} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16 }}>
+            <FaTimes />
+          </button>
+        </div>
+        <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>
+          Cet examen est ajouté directement, sans passer par les seuils automatiques.
+        </p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
+              Candidat(e) <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <select
+              value={candidatId}
+              onChange={e => setCandidatId(e.target.value)}
+              style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13.5, color: "#1F2937", outline: "none", background: "#fff" }}
+            >
+              <option value="">— Sélectionner —</option>
+              {candidats.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.prenom} {c.nom} {c.categoriePermis ? `(${c.categoriePermis})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
+              Type d'examen <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <select
+              value={type}
+              onChange={e => setType(e.target.value)}
+              style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13.5, color: "#1F2937", outline: "none", background: "#fff" }}
+            >
+              <option value="Code">Code</option>
+              <option value="Créneau">Créneau</option>
+              <option value="Circulation">Circulation</option>
+            </select>
+          </div>
+
+          <FormField label="Date"  value={date}  onChange={setDate}  type="date" required />
+          <FormField label="Heure" value={heure} onChange={setHeure} type="time" required />
+          <FormField label="Lieu"  value={lieu}  onChange={setLieu}  placeholder="Ex : Centre d'examen" required />
+        </div>
+
+        {error && (
+          <div style={{ marginTop: 12, padding: "9px 13px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontSize: 12, fontWeight: 500 }}>
+            ⚠ {error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button onClick={() => !saving && onClose()} disabled={saving} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>
+            Annuler
+          </button>
+          <button onClick={handleConfirm} disabled={saving} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#16a34a", color: "#fff", cursor: saving ? "not-allowed" : "pointer", fontWeight: 600, fontSize: 13.5, opacity: saving ? 0.7 : 1 }}>
+            {saving ? "Ajout..." : "Ajouter l'examen"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────
 // FormField

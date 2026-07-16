@@ -10,12 +10,35 @@ export const EXAM_THRESHOLDS = {
   Circulation: 14,
 };
 
+const SESSIONS_NORMALES_MAX = 20; // valeur de repli si pas encore configurée
+
+const computeThresholds = (base) => ({
+  Code:        base,
+  Créneau:     Math.ceil(base / 2),
+  Circulation: Math.ceil(base / 2),
+});
+
 const LS_KEY         = "examens_list";
 const LS_REPORTS_KEY = "examens_reports";
 const LS_CANDIDATS   = "examens_candidats_map";
 
 export function ExamenProvider({ children }) {
   const { examRules } = useExamenRulesCtx();
+
+  const [nbSeancesConfig, setNbSeancesConfig] = useState(SESSIONS_NORMALES_MAX);
+  const nbSeancesConfigRef = useRef(nbSeancesConfig);
+  useEffect(() => { nbSeancesConfigRef.current = nbSeancesConfig; }, [nbSeancesConfig]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const nb = await window.electron.getNbSeances();
+        setNbSeancesConfig(Number(nb) || SESSIONS_NORMALES_MAX);
+      } catch (e) {
+        console.error("Erreur chargement nombre de séances (ExamenContext):", e);
+      }
+    })();
+  }, []);
 
   const [examensList, setExamensList] = useState(() => {
     try { const s = localStorage.getItem(LS_KEY); return s ? JSON.parse(s) : []; }
@@ -35,7 +58,7 @@ export function ExamenProvider({ children }) {
   const examensListRef       = useRef(examensList);
   const candidatsReportesRef = useRef(candidatsReportes);
   const candidatsNomMapRef   = useRef(candidatsNomMap);
-  // ✅ NOUVEAU — pour éviter de lancer 2 générations en même temps
+  // ✅ pour éviter de lancer 2 générations en même temps
   const isGeneratingRef      = useRef(false);
 
   useEffect(() => {
@@ -202,7 +225,10 @@ export function ExamenProvider({ children }) {
       .replace(/é/g, "e").replace(/è/g, "e").replace(/ê/g, "e");
 
   // ─────────────────────────────────────────────────────────────────────────
-  // generateExamens — identique à avant + flag isGeneratingRef
+  // generateExamens
+  // ✅ FIX : si appelée sans arguments (ex: generateExamens?.() depuis
+  // CoursCode.jsx après une présence), on fetch nous-mêmes seances + candidats
+  // au lieu de planter sur seances.forEach / candidats.forEach avec undefined.
   // ─────────────────────────────────────────────────────────────────────────
   const generateExamens = async (seances, candidats) => {
     // ✅ Empêche les générations simultanées
@@ -210,6 +236,22 @@ export function ExamenProvider({ children }) {
     isGeneratingRef.current = true;
 
     try {
+      // ── Auto-fetch si appelée sans arguments ──────────────────────────
+      if (!seances || !candidats) {
+        try {
+          const [fetchedSeances, fetchedCandidats] = await Promise.all([
+            window.electron.getSeances(),
+            window.electron.getCandidats(),
+          ]);
+          seances   = fetchedSeances   || [];
+          candidats = fetchedCandidats || [];
+        } catch (fetchErr) {
+          console.error("generateExamens: erreur auto-fetch seances/candidats:", fetchErr);
+          seances   = seances   || [];
+          candidats = candidats || [];
+        }
+      }
+
       const today           = new Date().toISOString().split("T")[0];
       const currentExamens  = examensListRef.current;
       const currentReportes = candidatsReportesRef.current;
@@ -236,6 +278,8 @@ export function ExamenProvider({ children }) {
           seancesParCandidat[cid].push(s);
         });
       });
+
+    const thresholds = computeThresholds(nbSeancesConfigRef.current);
 
       const nouveauxExamens = [];
       const nomMapLocal = {};
@@ -275,8 +319,8 @@ export function ExamenProvider({ children }) {
         const nomComplet      = [candidat.prenom, candidat.nom].filter(Boolean).join(" ") || `Candidat #${cid}`;
 
         // ── CODE ──
-        if (
-          nbSeancesCode >= EXAM_THRESHOLDS.Code &&
+if (
+          nbSeancesCode >= thresholds.Code &&
           !aReussiCode && !aExamenCode &&
           echecsCode < examRules.tentativesMax &&
           (!rapportCandidat || rapportCandidat.type !== "Code" || rapportCandidat.nextSuggestedDate <= today)
@@ -295,8 +339,8 @@ export function ExamenProvider({ children }) {
         }
 
         // ── CRÉNEAU ──
-        if (
-          nbSeancesCreneau >= EXAM_THRESHOLDS.Créneau &&
+  if (
+          nbSeancesCreneau >= thresholds.Créneau &&
           aReussiCode && !aReussiCreneau && !aExamenCreneau &&
           echecsCreneau < examRules.tentativesMax &&
           (!rapportCandidat || rapportCandidat.type !== "Créneau" || rapportCandidat.nextSuggestedDate <= today)
@@ -315,8 +359,8 @@ export function ExamenProvider({ children }) {
         }
 
         // ── CIRCULATION ──
-        if (
-          nbSeancesCirculation >= EXAM_THRESHOLDS.Circulation &&
+      if (
+          nbSeancesCirculation >= thresholds.Circulation &&
           aReussiCode && aReussiCreneau && !aExamenCirculation &&
           echecsCirculation < examRules.tentativesMax &&
           (!rapportCandidat || rapportCandidat.type !== "Circulation" || rapportCandidat.nextSuggestedDate <= today)
@@ -415,6 +459,39 @@ export function ExamenProvider({ children }) {
   const updateExamen = (id, changes) =>
     setExamensList(prev => prev.map(e => e.id === id ? { ...e, ...changes } : e));
 
+  const ajouterExamenManuel = async ({
+    candidatId, candidat, type, date, heure, lieu,
+    email, dateNaissance, categoriePermis,
+  }) => {
+    const cid = String(candidatId);
+    const nouvelExamen = {
+      id: `manuel-${cid}-${type}-${Date.now()}`,
+      candidatId: cid,
+      candidat,
+      email,
+      type,
+      date,
+      heure,
+      lieu,
+      status: "Scheduled",
+      autoGenerated: false,
+      nbSeances: null,
+      dateNaissance: dateNaissance || "",
+      categoriePermis: categoriePermis || "",
+    };
+
+    setExamensList(prev => [...prev, nouvelExamen]);
+
+    if (email) {
+      try {
+        await window.electron.sendExamenNotification({ email, candidat, type, date, heure, lieu });
+      } catch (err) {
+        console.error("Erreur envoi notif examen manuel:", err);
+      }
+    }
+    return nouvelExamen;
+  };
+
   const getCandidatsReportes = () => candidatsReportesRef.current;
 
   const getNomCandidatReporte = (cid, info) => {
@@ -426,15 +503,15 @@ export function ExamenProvider({ children }) {
     }
     return `Candidat #${cid}`;
   };
-
-  return (
+return (
     <ExamenContext.Provider value={{
       examensList, setExamensList,
       generateExamens, setExamenResult,
       retirerCandidat, updateExamen,
+      ajouterExamenManuel,
       getCandidatsReportes, candidatsReportes,
       candidatsNomMap, getNomCandidatReporte,
-      EXAM_THRESHOLDS,
+      EXAM_THRESHOLDS: computeThresholds(nbSeancesConfigRef.current),
     }}>
       {children}
     </ExamenContext.Provider>

@@ -8,9 +8,6 @@ import AddCandidatModal from "../components/addCondidat";
 import { useExamenCtx } from "../context/ExamenContext";
 import { SquarePen, Trash, Phone, Mail, X, Send, PlusCircle, Filter, FileText, History } from "lucide-react";
 
-// ─────────────────────────────────────────────
-// LISTE COMPLÈTE DES CATÉGORIES DE PERMIS
-// ─────────────────────────────────────────────
 const TOUTES_CATEGORIES = [
   "Tous",
   "A1", "A","B", "C1", 
@@ -18,21 +15,13 @@ const TOUTES_CATEGORIES = [
   "C1E", "CE", "DE",
 ];
 
-// Clé localStorage utilisée pour mémoriser la dernière date de référence
-// de la liste d'envoi (لائحة الإرسال) — voir handleConfirmEnvoiCandidats
 const ENVOI_REF_KEY = "liste_envoi_derniere_date";
-const ENVOI_DEFAULTS_KEY = "export_pdf_defaults"; // réutilise les mêmes infos wilaya/école que la page Examens
-
-// Nombre de séances "normales" avant de basculer en séances supplémentaires
+const ENVOI_DEFAULTS_KEY = "export_pdf_defaults";
 const SESSIONS_NORMALES_MAX = 20;
 
-// ─────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────
 const getInitials = (prenom, nom) =>
   `${prenom?.[0] || ""}${nom?.[0] || ""}`.toUpperCase();
 
-// Formate une date ISO/Date en YYYY/MM/DD pour le PDF arabe
 function formatDateAr(rawDate) {
   if (!rawDate) return "";
   const str = rawDate instanceof Date ? rawDate.toISOString() : String(rawDate);
@@ -44,7 +33,6 @@ function formatDateAr(rawDate) {
   return `${y}/${m}/${j}`;
 }
 
-// Formate un timestamp ISO en date + heure lisibles (ex: "24/06/2026 à 14:32")
 function formatDateHeure(isoString) {
   if (!isoString) return "";
   const d = new Date(isoString);
@@ -57,15 +45,12 @@ function formatDateHeure(isoString) {
   return `${j}/${m}/${y} à ${h}:${min}`;
 }
 
-// Convertit une date (Date | string ISO | "YYYY-MM-DD") en string comparable "YYYY-MM-DD"
 function toComparableDate(rawDate) {
   if (!rawDate) return "";
   const str = rawDate instanceof Date ? rawDate.toISOString() : String(rawDate);
-  return str.slice(0, 10); // garde juste "YYYY-MM-DD"
+  return str.slice(0, 10);
 }
 
-// Déduit la date d'obtention du permis = date du dernier examen "Passed"
-// (normalement le 3e examen, étape Circulation) pour un candidat donné.
 function getDateObtention(candidatId, examensList) {
   if (!Array.isArray(examensList)) return null;
   const reussis = examensList
@@ -74,9 +59,6 @@ function getDateObtention(candidatId, examensList) {
   return reussis[0]?.date || null;
 }
 
-// ─────────────────────────────────────────────
-// Modale Contact Email
-// ─────────────────────────────────────────────
 const SUBJECTS = [
   "Rappel de séance",
   "Convocation à l'examen",
@@ -142,7 +124,6 @@ function ContactModal({ candidat, onClose }) {
           @keyframes spin    { to{transform:rotate(360deg)} }
         `}</style>
 
-        {/* Header */}
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
           padding: "18px 22px 14px", borderBottom: "1px solid #e2e8f0",
@@ -175,7 +156,6 @@ function ContactModal({ candidat, onClose }) {
           </button>
         </div>
 
-        {/* Body */}
         {sent ? (
           <div style={{
             padding: "40px 24px", textAlign: "center",
@@ -202,7 +182,6 @@ function ContactModal({ candidat, onClose }) {
         ) : (
           <div style={{ padding: "20px 22px", display: "flex", flexDirection: "column", gap: 14 }}>
 
-            {/* Sujet */}
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: "#475569" }}>
                 Sujet <span style={{ color: "#ef4444" }}>*</span>
@@ -234,7 +213,6 @@ function ContactModal({ candidat, onClose }) {
               )}
             </div>
 
-            {/* Message */}
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: "#475569" }}>
                 Message <span style={{ color: "#ef4444" }}>*</span>
@@ -279,7 +257,6 @@ function ContactModal({ candidat, onClose }) {
           </div>
         )}
 
-        {/* Footer */}
         {!sent && (
           <div style={{
             display: "flex", justifyContent: "flex-end", gap: 10,
@@ -325,9 +302,7 @@ function ContactModal({ candidat, onClose }) {
     </div>
   );
 }
-// ─────────────────────────────────────────────
-// Modale Historique des examens d'un candidat
-// ─────────────────────────────────────────────
+
 const STATUS_CONFIG_HISTO = {
   Scheduled: { bg: "#e3f2fd", color: "#1565c0", label: "Programmé" },
   Passed:    { bg: "#e8f5e9", color: "#2e7d32", label: "Réussi"    },
@@ -356,7 +331,6 @@ function HistoriqueExamensModal({ candidat, examensList, onClose }) {
         boxShadow: "0 20px 60px rgba(0,0,0,0.18)",
         display: "flex", flexDirection: "column", overflow: "hidden",
       }}>
-        {/* Header */}
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
           padding: "18px 22px 14px", borderBottom: "1px solid #e2e8f0",
@@ -389,7 +363,6 @@ function HistoriqueExamensModal({ candidat, examensList, onClose }) {
           </button>
         </div>
 
-        {/* Body */}
         <div style={{ padding: "16px 22px", overflowY: "auto" }}>
           {historique.length === 0 ? (
             <div style={{ textAlign: "center", padding: "30px 0", color: "#94a3b8", fontSize: 13 }}>
@@ -427,7 +400,6 @@ function HistoriqueExamensModal({ candidat, examensList, onClose }) {
           )}
         </div>
 
-        {/* Footer */}
         <div style={{
           display: "flex", justifyContent: "flex-end",
           padding: "14px 22px 18px", borderTop: "1px solid #e2e8f0",
@@ -445,9 +417,6 @@ function HistoriqueExamensModal({ candidat, examensList, onClose }) {
   );
 }
 
-// ─────────────────────────────────────────────
-// Sous-composant champ formulaire (réutilisé par la modale لائحة الإرسال)
-// ─────────────────────────────────────────────
 const FormField = ({ label, value, onChange, placeholder, type = "text", required = false, disabled = false }) => (
   <div>
     <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
@@ -470,32 +439,20 @@ const FormField = ({ label, value, onChange, placeholder, type = "text", require
   </div>
 );
 
-
-// ─────────────────────────────────────────────
-// Nouvelle clé : liste des IDs déjà envoyés (le vrai garde-fou anti-oubli)
-// ENVOI_REF_KEY et ENVOI_DEFAULTS_KEY sont déjà déclarés en haut du fichier
-// ─────────────────────────────────────────────
 const ENVOI_IDS_KEY = "liste_envoi_ids_envoyes";
-const ENVOI_TIMESTAMP_KEY = "liste_envoi_derniere_generation"; // date+heure ISO de la dernière génération réussie
-// ─────────────────────────────────────────────
-// Modale لائحة الإرسال — filtrée par date, mais sans jamais oublier
-// un candidat (suivi par ID en plus de la date)
-// ─────────────────────────────────────────────
-function EnvoiCandidatsModal({ candidats, onClose }) {
-  const [dateDebut, setDateDebut] = useState(""); // pré-rempli avec la référence, modifiable
-  const [dateFin,   setDateFin]   = useState("");
-  const [wilaya,    setWilaya]    = useState("");
-  const [nomEcole,  setNomEcole]  = useState("");
-  const [loading,   setLoading]   = useState(false);
-  const [error,     setError]     = useState("");
-  const [sentIds,   setSentIds]   = useState([]); // IDs déjà inclus dans une liste précédente
-  const [derniereGeneration, setDerniereGeneration] = useState(""); // date+heure ISO de la dernière liste générée
+const ENVOI_TIMESTAMP_KEY = "liste_envoi_derniere_generation";
+
+function EnvoiCandidatsModal({ candidats, onClose, onSent }) {
+  const [wilaya,     setWilaya]     = useState("");
+  const [nomEcole,   setNomEcole]   = useState("");
+  const [loading,    setLoading]    = useState(false);
+  const [error,      setError]      = useState("");
+  const [sentIds,    setSentIds]    = useState([]);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [derniereGeneration, setDerniereGeneration] = useState("");
 
   useEffect(() => {
     try {
-      const ref = localStorage.getItem(ENVOI_REF_KEY);
-      if (ref) setDateDebut(ref);
-
       const ids = JSON.parse(localStorage.getItem(ENVOI_IDS_KEY) || "[]");
       setSentIds(Array.isArray(ids) ? ids : []);
 
@@ -510,41 +467,44 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
     }
   }, []);
 
-  // ✅ Tous les candidats DONT la date d'inscription tombe dans la période choisie
-  //    (bornes INCLUSIVES des deux côtés). Le PDF inclura TOUS ces candidats,
-  //    qu'ils aient déjà été envoyés avant ou non.
-  const candidatsFiltres = candidats.filter((c) => {
-    const insc = toComparableDate(c._raw?.date_inscription);
-    if (!insc) return false;
-    if (!dateDebut || !dateFin) return false;
-    return insc >= dateDebut && insc <= dateFin; // bornes inclusives
-  });
+  const nouveauxInscrits = candidats
+    .filter((c) => !sentIds.includes(c.id))
+    .sort((a, b) => new Date(a._raw?.date_inscription || 0) - new Date(b._raw?.date_inscription || 0));
 
-  const periodeVide =
-    !!dateDebut && !!dateFin &&
-    candidatsFiltres.length === 0;
+  useEffect(() => {
+    setSelectedIds(new Set(nouveauxInscrits.map((c) => c.id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sentIds.length, candidats.length]);
+
+  const toggleOne = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selectedIds.size === nouveauxInscrits.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(nouveauxInscrits.map((c) => c.id)));
+    }
+  };
 
   const handleConfirm = async () => {
     setError("");
+    if (!wilaya.trim()) { setError("Merci de renseigner la wilaya."); return; }
+    if (selectedIds.size === 0) { setError("Sélectionnez au moins un candidat à inclure."); return; }
 
-    if (!dateDebut) { setError("Merci de renseigner la date de début.");                    return; }
-    if (!dateFin)   { setError("Merci de choisir la date jusqu'à laquelle inclure les inscrits."); return; }
-    if (!wilaya.trim()) { setError("Merci de renseigner la wilaya.");                        return; }
-
-    if (candidatsFiltres.length === 0) {
-      setError("Aucun candidat inscrit sur cette période.");
-      return;
-    }
-    // La génération inclut toujours tous les candidats inscrits sur la période,
-    // qu'ils aient déjà été envoyés avant ou non.
+    const candidatsSelectionnes = nouveauxInscrits.filter((c) => selectedIds.has(c.id));
 
     setLoading(true);
     try {
-      const candidatsPourEnvoi = candidatsFiltres.map((c) => {
+      const candidatsPourEnvoi = candidatsSelectionnes.map((c) => {
         const nomAr    = c._raw?.nom_ar    || "";
         const prenomAr = c._raw?.prenom_ar || "";
         const nomPrenomAr = (nomAr || prenomAr) ? `${nomAr} ${prenomAr}`.trim() : "";
-
         return {
           nomPrenom:     `${c.prenom} ${c.nom}`,
           nomPrenomAr,
@@ -556,22 +516,16 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
       const savedPath = await window.electron.generateListeEnvoiPDF({
         wilaya,
         nomEcole,
-        dateDepot: formatDateAr(dateFin),
+        dateDepot: formatDateAr(new Date()),
         candidats: candidatsPourEnvoi,
       });
 
       if (savedPath) {
-        // La date de fin choisie devient la nouvelle référence (pour pré-remplir la prochaine fois)
-        localStorage.setItem(ENVOI_REF_KEY, dateFin);
-
-        // ✅ On AJOUTE les IDs qu'on vient d'inclure (jamais on ne remplace), dédupliqués
-        const nouveauxIds = Array.from(new Set([...sentIds, ...candidatsFiltres.map((c) => c.id)]));
+        const nouveauxIds = Array.from(new Set([...sentIds, ...candidatsSelectionnes.map((c) => c.id)]));
         localStorage.setItem(ENVOI_IDS_KEY, JSON.stringify(nouveauxIds));
 
-        // ✅ On mémorise la date et l'heure exactes de cette génération
         const nowIso = new Date().toISOString();
         localStorage.setItem(ENVOI_TIMESTAMP_KEY, nowIso);
-        setDerniereGeneration(nowIso);
 
         try {
           const prev = JSON.parse(localStorage.getItem(ENVOI_DEFAULTS_KEY) || "{}");
@@ -579,6 +533,7 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
         } catch { /* ignore */ }
 
         alert(`لائحة الإرسال enregistrée :\n${savedPath}`);
+        onSent?.();
         onClose();
       }
     } catch (e) {
@@ -594,7 +549,7 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
       onClick={() => !loading && onClose()}
     >
       <div
-        style={{ background: "#fff", borderRadius: 14, padding: 24, width: 420, maxWidth: "90vw", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }}
+        style={{ background: "#fff", borderRadius: 14, padding: 24, width: 480, maxWidth: "92vw", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -604,33 +559,11 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
           </button>
         </div>
 
-        <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>
-          Liste de tous les candidats inscrits sur la période choisie — المندوبية الولائية للأمن في الطرق
+        <p style={{ fontSize: 12, color: "#64748b", marginBottom: 14 }}>
+          Nouveaux inscrits jamais envoyés — décochez ceux à exclure de cette liste.
         </p>
 
-        <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: "#475569" }}>
-          {derniereGeneration
-            ? <>Dernière liste générée le <strong>{formatDateHeure(derniereGeneration)}</strong></>
-            : "Aucune liste générée pour le moment."}
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-          <FormField
-            label="Depuis le"
-            value={dateDebut}
-            onChange={setDateDebut}
-            type="date"
-            required
-          />
-
-          <FormField
-            label="Jusqu'au"
-            value={dateFin}
-            onChange={setDateFin}
-            type="date"
-            required
-          />
-
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
           <FormField
             label="الولاية (Wilaya)"
             value={wilaya}
@@ -638,7 +571,6 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
             placeholder="Ex : بجاية / Béjaïa"
             required
           />
-
           <FormField
             label="Nom de l'auto-école (optionnel)"
             value={nomEcole}
@@ -647,24 +579,63 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
           />
         </div>
 
-        {/* ── Bandeau d'état : période vide / total trouvé ── */}
-        {periodeVide ? (
-          <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#64748b" }}>
-            Aucun candidat inscrit sur cette période.
-          </div>
-        ) : (
-          <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#475569" }}>
-            <strong style={{ color: "#1f2937" }}>Candidats trouvés sur cette période :</strong> {candidatsFiltres.length}
+        {derniereGeneration && (
+          <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#475569" }}>
+            Dernière liste générée le <strong>{formatDateHeure(derniereGeneration)}</strong>
           </div>
         )}
 
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>
+            🆕 Nouveaux inscrits ({nouveauxInscrits.length})
+          </span>
+          {nouveauxInscrits.length > 0 && (
+            <button onClick={toggleAll} style={{ background: "none", border: "none", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              {selectedIds.size === nouveauxInscrits.length ? "Tout décocher" : "Tout cocher"}
+            </button>
+          )}
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 14 }}>
+          {nouveauxInscrits.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "24px 0", color: "#94a3b8", fontSize: 13 }}>
+              Aucun nouvel inscrit en attente d'envoi.
+            </div>
+          ) : (
+            nouveauxInscrits.map((c) => (
+              <label
+                key={c.id}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "9px 12px", borderBottom: "1px solid #f1f5f9",
+                  cursor: "pointer", fontSize: 13,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(c.id)}
+                  onChange={() => toggleOne(c.id)}
+                  style={{ width: 15, height: 15, cursor: "pointer" }}
+                />
+                <span style={{ flex: 1, fontWeight: 600, color: "#1e293b" }}>{c.prenom} {c.nom}</span>
+                <span style={{ fontSize: 11, background: "#e0f2fe", color: "#0369a1", padding: "2px 6px", borderRadius: 4, fontWeight: 700 }}>
+                  {c.categoriePermis}
+                </span>
+                <span style={{ fontSize: 11, color: "#94a3b8" }}>
+                  {c._raw?.date_inscription ? formatDateAr(c._raw.date_inscription) : "—"}
+                </span>
+              </label>
+            ))
+          )}
+        </div>
+
         {error && (
-          <div style={{ marginTop: 10, padding: "9px 13px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontSize: 12, fontWeight: 500 }}>
+          <div style={{ marginBottom: 10, padding: "9px 13px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontSize: 12, fontWeight: 500 }}>
             ⚠ {error}
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+        <div style={{ display: "flex", gap: 10 }}>
           <button
             onClick={onClose}
             disabled={loading}
@@ -684,7 +655,7 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
               opacity: loading ? 0.7 : 1,
             }}
           >
-            {loading ? "Génération..." : "Générer لائحة الإرسال"}
+            {loading ? "Génération..." : `Générer (${selectedIds.size})`}
           </button>
         </div>
       </div>
@@ -692,9 +663,195 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
   );
 }
 
-// ─────────────────────────────────────────────
-// Composant principal
-// ─────────────────────────────────────────────
+function MatriculesEnAttenteModal({ onClose, onSaved }) {
+  const [candidatsTous, setCandidatsTous] = useState([]);
+  const [valeurs, setValeurs] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState(null);
+  const [filtre, setFiltre] = useState("sans"); // "sans" | "avec" | "tous"
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const rows = await window.electron.getCandidatsMatricules();
+      setCandidatsTous(Array.isArray(rows) ? rows : []);
+    } catch (e) {
+      console.error("Erreur chargement matricules:", e);
+      setCandidatsTous([]);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const candidatsAffiches = candidatsTous.filter((c) => {
+    const aMatricule = !!(c.matricule && c.matricule.trim());
+    if (filtre === "sans") return !aMatricule;
+    if (filtre === "avec") return aMatricule;
+    return true; // "tous"
+  });
+
+  const nbSans = candidatsTous.filter((c) => !(c.matricule && c.matricule.trim())).length;
+  const nbAvec = candidatsTous.length - nbSans;
+
+  const handleSave = async (idCandidat) => {
+    const matricule = (valeurs[idCandidat] || "").trim();
+    if (!matricule) return;
+    setSavingId(idCandidat);
+    try {
+      const result = await window.electron.updateMatriculeCandidat(idCandidat, matricule);
+      if (result?.success) {
+        // On met à jour la ligne localement au lieu de la retirer
+        setCandidatsTous((prev) =>
+          prev.map((c) => (c.idCandidat === idCandidat ? { ...c, matricule } : c))
+        );
+        setValeurs((prev) => {
+          const next = { ...prev };
+          delete next[idCandidat];
+          return next;
+        });
+        onSaved?.();
+      } else {
+        alert("Erreur lors de l'enregistrement du matricule.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Erreur lors de l'enregistrement du matricule.");
+    }
+    setSavingId(null);
+  };
+
+  const TabButton = ({ value, label, count }) => (
+    <button
+      onClick={() => setFiltre(value)}
+      style={{
+        padding: "7px 14px", borderRadius: 8, border: "none",
+        background: filtre === value ? "#7c3aed" : "#f1f5f9",
+        color: filtre === value ? "#fff" : "#475569",
+        fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+        display: "flex", alignItems: "center", gap: 6,
+      }}
+    >
+      {label}
+      <span style={{
+        background: filtre === value ? "rgba(255,255,255,0.25)" : "#e2e8f0",
+        color: filtre === value ? "#fff" : "#64748b",
+        borderRadius: 20, padding: "1px 7px", fontSize: 11,
+      }}>
+        {count}
+      </span>
+    </button>
+  );
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      onClick={() => onClose()}
+    >
+      <div
+        style={{ background: "#fff", borderRadius: 14, padding: 24, width: 500, maxWidth: "92vw", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: 17, color: "#1F2937" }}>Matricules</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8" }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <p style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>
+          Consultez et complétez les matricules officiels des candidats.
+        </p>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          <TabButton value="sans" label="Sans matricule" count={nbSans} />
+          <TabButton value="avec" label="Avec matricule" count={nbAvec} />
+          <TabButton value="tous" label="Tous" count={candidatsTous.length} />
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "24px 0", color: "#94a3b8", fontSize: 13 }}>
+              Chargement...
+            </div>
+          ) : candidatsAffiches.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "24px 0", color: "#94a3b8", fontSize: 13 }}>
+              {filtre === "sans" ? "Aucun candidat en attente de matricule. 🎉" : "Aucun candidat à afficher."}
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {candidatsAffiches.map((c) => {
+                const aMatricule = !!(c.matricule && c.matricule.trim());
+                return (
+                  <div key={c.idCandidat} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", border: "1px solid #e2e8f0", borderRadius: 9 }}>
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: "#1e293b" }}>
+                      {c.prenom} {c.nom}
+                    </span>
+
+                    {aMatricule ? (
+                      <span style={{
+                        padding: "6px 12px", borderRadius: 7,
+                        background: "#dcfce7", color: "#16a34a",
+                        fontSize: 12.5, fontWeight: 700, minWidth: 90, textAlign: "center",
+                      }}>
+                        {c.matricule}
+                      </span>
+                    ) : (
+                      <>
+                        <input
+                          type="text"
+                          placeholder="Matricule"
+                          value={valeurs[c.idCandidat] || ""}
+                          onChange={(e) => setValeurs((prev) => ({ ...prev, [c.idCandidat]: e.target.value }))}
+                          onKeyDown={(e) => e.key === "Enter" && handleSave(c.idCandidat)}
+                          style={{ width: 130, padding: "6px 9px", borderRadius: 7, border: "1px solid #d1d5db", fontSize: 12.5, outline: "none" }}
+                        />
+                        <button
+                          onClick={() => handleSave(c.idCandidat)}
+                          disabled={savingId === c.idCandidat || !valeurs[c.idCandidat]?.trim()}
+                          style={{
+                            padding: "6px 12px", borderRadius: 7, border: "none",
+                            background: !valeurs[c.idCandidat]?.trim() ? "#e2e8f0" : "#7c3aed",
+                            color: !valeurs[c.idCandidat]?.trim() ? "#94a3b8" : "#fff",
+                            fontSize: 12, fontWeight: 600,
+                            cursor: !valeurs[c.idCandidat]?.trim() ? "not-allowed" : "pointer",
+                          }}
+                        >
+                          {savingId === c.idCandidat ? "..." : "OK"}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={onClose}
+          style={{ marginTop: 14, padding: "9px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}
+        >
+          Fermer
+        </button>
+      </div>
+    </div>
+  );
+}
+function openWhatsAppBienvenue(telephone, prenom) {
+  if (!telephone) return;
+  // Garde uniquement les chiffres
+  let numero = telephone.replace(/\D/g, "");
+  // Ajoute l'indicatif Algérie (213) si le numéro commence par 0
+  if (numero.startsWith("0")) {
+    numero = "213" + numero.slice(1);
+  }
+  const message = `Bonjour ${prenom}, bienvenue à l'auto-école ! 🚗 Nous sommes ravis de vous compter parmi nos candidats.`;
+  const url = `https://wa.me/${numero}?text=${encodeURIComponent(message)}`;
+   console.log("URL générée :", url);
+  window.open(url, "_blank");
+}
+
 const Condidats = () => {
   const [candidats,         setCandidats]        = useState([]);
   const [showModal,         setShowModal]        = useState(false);
@@ -704,19 +861,19 @@ const Condidats = () => {
   const [selectedCategorie, setSelectedCategorie] = useState("Tous"); 
   const [contactCandidat,  setContactCandidat]  = useState(null);
   const [showEnvoiModal,   setShowEnvoiModal]   = useState(false);
+  const [showMatriculesModal, setShowMatriculesModal] = useState(false);
   const [historiqueCandidat, setHistoriqueCandidat]  = useState(null);
 
-  // ── Filtres dédiés au bloc "Historique — Permis obtenus" ──
-  const [selectedCategorieObtenu, setSelectedCategorieObtenu] = useState("Tous");
+const [selectedCategorieObtenu, setSelectedCategorieObtenu] = useState("Tous");
   const [dateObtentionDebut, setDateObtentionDebut] = useState("");
   const [dateObtentionFin,   setDateObtentionFin]   = useState("");
+  const [nbSeancesMax, setNbSeancesMax] = useState(SESSIONS_NORMALES_MAX); // valeur configurable, défaut 2
 
   const { examensList } = useExamenCtx();
 
   const th = { padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" };
   const td = { padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" };
 
-  // ── FILTRE COMMUN : recherche texte (nom/prénom/tel/statut) ──────────────
   const candidatsBase = candidats.filter((c) => {
     const q = searchQuery.toLowerCase().trim();
     return !q || (
@@ -727,14 +884,12 @@ const Condidats = () => {
     );
   });
 
-  // ── BLOC 1 : Candidats en cours (tout sauf "obtenu") ─────────────────────
   const candidatsEnCours = candidatsBase.filter((c) => {
     if (c.status === "obtenu") return false;
     const matchesCategorie = selectedCategorie === "Tous" || c.categoriePermis === selectedCategorie.toUpperCase();
     return matchesCategorie;
   });
 
-  // ── BLOC 2 : Historique — Permis obtenus, avec filtre catégorie + date ───
   const candidatsObtenus = candidatsBase
     .filter((c) => c.status === "obtenu")
     .map((c) => ({ ...c, dateObtention: getDateObtention(c.id, examensList) }))
@@ -748,60 +903,84 @@ const Condidats = () => {
     })
     .sort((a, b) => new Date(b.dateObtention || 0) - new Date(a.dateObtention || 0));
 
-  const loadCandidats = async () => {
+const loadCandidats = async (maxOverride) => {
+  const max = maxOverride ?? nbSeancesMax;
+  try {
+    const data            = await window.electron.getCandidats();
+    const seances          = await window.electron.getSeances();
+    const inscriptionsCode = await window.electron.getInscriptionsCode();
+
+    const formatted = data.map((c) => {
+      const currentCat = (c.categoriePermis || c.categorie || c.categorie_permis || "B")
+        .toString().trim().toUpperCase();
+
+      // ── Séances de conduite (hors "code") ──────────────────────────────
+      const nbSessionsConduite = seances.filter((s) => {
+        if (!s.candidatsIds) return false;
+        const ids = String(s.candidatsIds).split(",").map((id) => parseInt(id.trim()));
+        const matchCandidat = ids.includes(c.idCandidat);
+        const seanceCat = (s.categoriePermis || "").toString().trim().toUpperCase();
+        const matchCategorie = seanceCat === currentCat;
+
+        const seanceType = (s.type || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const matchType = !seanceType.includes("code");
+
+        // ── On exclut les séances annulées : présente ET absente comptent, annulée non ──
+        const statutNorm = (s.statut || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const matchStatut = statutNorm !== "annulee";
+
+        return matchCandidat && matchCategorie && matchType && matchStatut;
+      }).length;
+
+      // ── Cours de code (table séparée SeanceCode / CandidatSeanceCode) ──
+      const nbSessionsCode = inscriptionsCode.filter((i) => {
+        const cat = (i.categoriePermis || "").toString().trim().toUpperCase();
+        return i.idCandidat === c.idCandidat && cat === currentCat;
+      }).length;
+
+      const nbSessionsTotal = nbSessionsConduite + nbSessionsCode;
+
+      const nbSessions      = Math.min(nbSessionsTotal, max);
+      const nbSessionsSuppl = Math.max(nbSessionsTotal - max, 0);
+
+      return {
+        id: c.idCandidat,
+        nom: c.nom || "",
+        prenom: c.prenom || "",
+        tel: c.telephone || "",
+        categoriePermis: currentCat,
+        inscription: formatDateAr(c.date_inscription),
+        sessions: nbSessions,
+        sessionsSuppl: nbSessionsSuppl,
+        status: c.status || "en cours",
+        _raw: c,
+      };
+    });
+
+    setCandidats(formatted);
+  } catch (e) {
+    console.error("Erreur lors du chargement des candidats:", e);
+  }
+};
+
+useEffect(() => {
+  (async () => {
+    let max = SESSIONS_NORMALES_MAX;
     try {
-      const data    = await window.electron.getCandidats();
-      const seances = await window.electron.getSeances();
-
-      const formatted = data.map((c) => {
-        const currentCat = (c.categoriePermis || c.categorie || c.categorie_permis || "B").toString().trim().toUpperCase();
-
-        const nbSessionsTotal = seances.filter((s) => {
-          if (!s.candidatsIds) return false;
-          const ids = String(s.candidatsIds).split(",").map((id) => parseInt(id.trim()));
-          const matchCandidat = ids.includes(c.idCandidat);
-          const seanceCat = (s.categoriePermis || "").toString().trim().toUpperCase();
-          const matchCategorie = seanceCat === currentCat; 
-          
-          return matchCandidat && matchCategorie;
-        }).length;
-
-        // ✅ On plafonne l'affichage "normal" à 20 sessions. Le surplus
-        //    (séances supplémentaires, créditées via le système d'examens)
-        //    est compté séparément pour ne jamais afficher un ratio illogique
-        //    type "25/20".
-        const nbSessions      = Math.min(nbSessionsTotal, SESSIONS_NORMALES_MAX);
-        const nbSessionsSuppl = Math.max(nbSessionsTotal - SESSIONS_NORMALES_MAX, 0);
-
-        return {
-          id:              c.idCandidat,
-          nom:             c.nom,
-          prenom:          c.prenom,
-          tel:             c.telephone,
-          categoriePermis: currentCat, 
-         inscription: c.date_inscription
-  ? new Date(c.date_inscription).toLocaleDateString("en-CA")
-  : "",
-dob: c.date_naissance
-  ? new Date(c.date_naissance).toLocaleDateString("en-CA")
-  : "",
-          sessions:      nbSessions,
-          sessionsSuppl: nbSessionsSuppl,
-          status:   c.statut, 
-          sexe:     c.sexe,
-          photo:    c.photo || null,
-          _raw:     c,
-        };
-      });
-
-      setCandidats(formatted);
-    } catch (error) {
-      console.error("Erreur lors du chargement des candidats :", error);
-      setCandidats([]);
+      const nb = await window.electron.getNbSeances();
+      max = Number(nb) || SESSIONS_NORMALES_MAX;
+      setNbSeancesMax(max);
+    } catch (e) {
+      console.error("Erreur chargement nombre de séances configuré:", e);
     }
-  };
-
-  useEffect(() => { loadCandidats(); }, []);
+    await loadCandidats(max);
+  })();
+}, []);
+useEffect(() => {
+  const handler = () => loadCandidats(nbSeancesMax);
+  window.addEventListener("seance-updated", handler);
+  return () => window.removeEventListener("seance-updated", handler);
+}, [nbSeancesMax]);
 
   const handleEdit = (candidat) => {
     setIsReinscription(false); 
@@ -832,28 +1011,30 @@ dob: c.date_naissance
     }
   };
 
-  const handleSave = async (data) => {
-    const categorieSelectionnee = data.categoriePermis || data.categorie || data.categorie_permis || "B";
-    const cleanData = {
-      ...data,
-      categoriePermis: categorieSelectionnee.toString().trim().toUpperCase()
-    };
-
-    try {
-      if (data.isReinscription) {
-        await window.electron.reinscrireCandidat(cleanData);
-      } else if (data.idCandidat) {
-        await window.electron.updateCandidat(cleanData);
-      } else {
-        await window.electron.addCandidat(cleanData);
-      }
-      await loadCandidats();
-      setShowModal(false);
-    } catch (error) {
-      console.error("Erreur lors de l'enregistrement :", error);
-      alert("Une erreur est survenue.");
-    }
+const handleSave = async (data) => {
+  const categorieSelectionnee = data.categoriePermis || data.categorie || data.categorie_permis || "B";
+  const cleanData = {
+    ...data,
+    categoriePermis: categorieSelectionnee.toString().trim().toUpperCase()
   };
+
+  try {
+    if (data.isReinscription) {
+      await window.electron.reinscrireCandidat(cleanData);
+    } else if (data.idCandidat) {
+      await window.electron.updateCandidat(cleanData);
+    } else {
+      await window.electron.addCandidat(cleanData);
+      // Nouveau candidat uniquement → message de bienvenue WhatsApp
+      openWhatsAppBienvenue(cleanData.telephone, cleanData.prenom);
+    }
+    await loadCandidats();
+    setShowModal(false);
+  } catch (error) {
+    console.error("Erreur lors de l'enregistrement :", error);
+    alert("Une erreur est survenue.");
+  }
+};
 
   const handleOpenEnvoiModal = () => {
     if (candidats.length === 0) {
@@ -876,9 +1057,6 @@ dob: c.date_naissance
           <p>Gérer les étudiants, les leçons et les examens</p>
         </div>
 
-        {/* ════════════════════════════════════════════════════════════
-            BLOC 1 — CANDIDATS EN COURS
-        ════════════════════════════════════════════════════════════ */}
         <div className="card">
           <div className="card-header">
             <div>
@@ -897,11 +1075,21 @@ dob: c.date_naissance
               >
                 <FileText size={16} /> لائحة الإرسال (نوعي)
               </button>
+              <button
+                onClick={() => setShowMatriculesModal(true)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  background: "#0369a1", color: "#fff", border: "none",
+                  padding: "10px 18px", borderRadius: 10, cursor: "pointer",
+                  fontSize: 14, fontWeight: 600,
+                }}
+              >
+                <FileText size={16} /> Matricules en attente
+              </button>
               <Button text="+ Ajouter candidat" onClick={handleAdd} />
             </div>
           </div>
 
-          {/* ── DESIGN ULTRA COMPACT : RECHERCHE + SELECT SUR UNE SEULE LIGNE ──────────────────────── */}
           <div style={{ 
             display: "flex", 
             gap: "12px", 
@@ -912,7 +1100,6 @@ dob: c.date_naissance
             border: "1px solid #E2E8F0",
             alignItems: "center"
           }}>
-            {/* Input recherche principale */}
             <input
               type="text"
               placeholder="🔍 Rechercher un candidat (Nom, prénom, téléphone...)"
@@ -929,7 +1116,6 @@ dob: c.date_naissance
               }}
             />
 
-            {/* Dropdown de Filtrage Propre pour le permis */}
             <div style={{ display: "flex", alignItems: "center", gap: "8px", position: "relative" }}>
               <Filter size={16} color="#64748b" style={{ marginLeft: "4px" }} />
               <select
@@ -963,7 +1149,6 @@ dob: c.date_naissance
             </div>
           </div>
 
-          {/* TABLEAU — CANDIDATS EN COURS */}
           <div style={{ background: "#fff", borderRadius: "15px", overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)" }}>
             <div style={{ maxHeight: "500px", overflowY: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -1008,10 +1193,10 @@ dob: c.date_naissance
 
                         <td style={td}>
                           <div className="progress-container">
-                            <div className="progress-bar" style={{ width: `${(c.sessions / SESSIONS_NORMALES_MAX) * 100}%` }} />
+                            <div className="progress-bar" style={{ width: `${(c.sessions / nbSeancesMax) * 100}%` }} />
                           </div>
                           <span className="progress-text">
-                            {c.sessions}/{SESSIONS_NORMALES_MAX} sessions
+                            {c.sessions}/{nbSeancesMax} sessions
                             {c.sessionsSuppl > 0 && (
                               <span style={{ color: "#7c3aed", fontWeight: 700, marginLeft: 4 }}>
                                 (+{c.sessionsSuppl} suppl.)
@@ -1065,9 +1250,6 @@ dob: c.date_naissance
           </div>
         </div>
 
-        {/* ════════════════════════════════════════════════════════════
-            BLOC 2 — HISTORIQUE : PERMIS OBTENUS
-        ════════════════════════════════════════════════════════════ */}
         <div className="card" style={{ marginTop: 24 }}>
           <div className="card-header">
             <div>
@@ -1130,7 +1312,6 @@ dob: c.date_naissance
             </div>
           </div>
 
-          {/* TABLEAU — HISTORIQUE PERMIS OBTENUS */}
           <div style={{ background: "#fff", borderRadius: "15px", overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)" }}>
             <div style={{ maxHeight: "500px", overflowY: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -1224,8 +1405,17 @@ dob: c.date_naissance
         <EnvoiCandidatsModal
           candidats={candidats}
           onClose={() => setShowEnvoiModal(false)}
+          onSent={loadCandidats}
         />
       )}
+
+      {showMatriculesModal && (
+        <MatriculesEnAttenteModal
+          onClose={() => setShowMatriculesModal(false)}
+          onSaved={loadCandidats}
+        />
+      )}
+
       {historiqueCandidat && (
         <HistoriqueExamensModal
           candidat={historiqueCandidat}

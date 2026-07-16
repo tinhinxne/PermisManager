@@ -76,6 +76,14 @@ function formatDateFr(iso) {
     day: "2-digit", month: "long", year: "numeric",
   });
 }
+function formatWhatsAppUrl(telephone, message) {
+  if (!telephone) return null;
+  let numero = telephone.replace(/\D/g, "");
+  if (numero.startsWith("0")) numero = "213" + numero.slice(1);
+  return `https://wa.me/${numero}?text=${encodeURIComponent(message)}`;
+}
+
+const TYPE_LABELS_WA = { code: "Code", creneau: "Créneau", circulation: "Circulation" };
 
 function dbRowToSession(row) {
   const rawDate   = toLocalISO(row.date);
@@ -102,6 +110,7 @@ function dbRowToSession(row) {
     dur:     parseFloat(row.duree) || 1,
     notes:   row.statut || "",
     categoriePermis: normCat(row.categoriePermis || row.categorie || row.categorie_permis),
+    presence: row.presence || null,
     _raw:    row,
   };
 }
@@ -283,7 +292,13 @@ function SeanceSupplementaireModal({ candidat, onClose, onConfirm }) {
 }
 
 // ── MODALE GROUPE DE SÉANCES ──────────────────────────────────────────────────
-function GroupModal({ sessions, onClose, onDelete, onEdit }) {
+function GroupModal({
+    sessions,
+    onClose,
+    onDelete,
+    onEdit,
+    loadSeances
+}) {
   if (!sessions || sessions.length === 0) return null;
   const first = sessions[0];
   const endH  = first.startH + first.dur;
@@ -300,32 +315,75 @@ function GroupModal({ sessions, onClose, onDelete, onEdit }) {
           <button onClick={onClose} style={{ background:"#f1f5f9", border:"none", color:"#64748b", width:32, height:32, borderRadius:8, cursor:"pointer", fontSize:14, display:"grid", placeItems:"center" }}>✕</button>
         </div>
         <div style={{ overflowY:"auto", padding:"16px 24px", display:"flex", flexDirection:"column", gap:12 }}>
-          {sessions.map((s) => {
-            const col = COLORS[s.type] || COLORS.code;
-            const sEnd = s.startH + s.dur;
-            return (
-              <div key={s.id} style={{ border:`1px solid ${col.border}`, borderLeft:`4px solid ${col.bg}`, borderRadius:12, padding:"14px 16px", background:col.light, display:"flex", alignItems:"center", gap:16 }}>
-                <div style={{ width:42, height:42, borderRadius:10, background:"white", border:`1px solid ${col.border}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                  <div style={{ width:14, height:14, borderRadius:3, background:col.bg }} />
-                </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-                    <span style={{ fontSize:"0.88rem", fontWeight:700, color:"#1e293b", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{cap(s.name)}</span>
-                    <span style={{ fontSize:"0.68rem", fontWeight:600, padding:"2px 9px", borderRadius:20, background:"white", color:col.text, border:`1px solid ${col.border}`, textTransform:"capitalize", flexShrink:0 }}>{s.type}</span>
-                  </div>
-                  <div style={{ display:"flex", gap:16, fontSize:"0.75rem", color:"#64748b" }}>
-                    <span>👤 <strong style={{ color:"#334155" }}>{s.monitor}</strong></span>
-                    <span>🕐 {floatToHHMM(s.startH)} – {floatToHHMM(sEnd)}</span>
-                    {s.notes && <span>📋 {s.notes}</span>}
-                  </div>
-                </div>
-                <div style={{ display:"flex", gap:8, flexShrink:0 }}>
-                  <button onClick={() => { onEdit(s); onClose(); }} style={{ padding:"7px 14px", borderRadius:8, background:"rgba(59,130,246,0.08)", border:"1px solid rgba(59,130,246,0.25)", color:"#3b82f6", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600, cursor:"pointer" }}>Modifier</button>
-                  <button onClick={() => onDelete(s.id)} style={{ padding:"7px 14px", borderRadius:8, background:"rgba(239,68,68,0.08)", border:"1px solid rgba(239,68,68,0.25)", color:"#ef4444", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600, cursor:"pointer" }}>Supprimer</button>
-                </div>
-              </div>
-            );
-          })}
+         {sessions.map((s) => {
+  const col = COLORS[s.type] || COLORS.code;
+  const sEnd = s.startH + s.dur;
+
+  const handleMarquerPresence = async (presence) => {
+    try {
+      if (window.electron?.updatePresenceSeance) {
+        await window.electron.updatePresenceSeance({ id: s.id, presence });
+        if (loadSeances) await loadSeances();
+        window.dispatchEvent(new CustomEvent("seance-updated"));
+        onClose();
+      }
+    } catch (err) {
+      console.error("Erreur mise à jour présence :", err);
+    }
+  };
+
+  const handleAnnuler = async () => {
+    try {
+      if (window.electron?.updateStatutSeance) {
+        await window.electron.updateStatutSeance({ id: s.id, statut: "annulée" });
+        if (loadSeances) await loadSeances();
+        window.dispatchEvent(new CustomEvent("seance-updated"));
+        onClose();
+      }
+    } catch (err) {
+      console.error("Erreur mise à jour statut :", err);
+    }
+  };
+
+  return (
+    <div key={s.id} style={{ border:`1px solid ${col.border}`, borderLeft:`4px solid ${col.bg}`, borderRadius:12, padding:"14px 16px", background:col.light, display:"flex", flexDirection:"column", gap:10 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:16 }}>
+        <div style={{ width:42, height:42, borderRadius:10, background:"white", border:`1px solid ${col.border}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+          <div style={{ width:14, height:14, borderRadius:3, background:col.bg }} />
+        </div>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+            <span style={{ fontSize:"0.88rem", fontWeight:700, color:"#1e293b", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{cap(s.name)}</span>
+            <span style={{ fontSize:"0.68rem", fontWeight:600, padding:"2px 9px", borderRadius:20, background:"white", color:col.text, border:`1px solid ${col.border}`, textTransform:"capitalize", flexShrink:0 }}>{s.type}</span>
+          </div>
+          <div style={{ display:"flex", gap:16, fontSize:"0.75rem", color:"#64748b" }}>
+            <span>👤 <strong style={{ color:"#334155" }}>{s.monitor}</strong></span>
+            <span>🕐 {floatToHHMM(s.startH)} – {floatToHHMM(sEnd)}</span>
+            {s.notes && <span>📋 {s.notes}</span>}
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:8, flexShrink:0 }}>
+          <button onClick={() => { onEdit(s); onClose(); }} style={{ padding:"7px 14px", borderRadius:8, background:"rgba(59,130,246,0.08)", border:"1px solid rgba(59,130,246,0.25)", color:"#3b82f6", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600, cursor:"pointer" }}>Modifier</button>
+          <button onClick={() => onDelete(s.id)} style={{ padding:"7px 14px", borderRadius:8, background:"rgba(239,68,68,0.08)", border:"1px solid rgba(239,68,68,0.25)", color:"#ef4444", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600, cursor:"pointer" }}>Supprimer</button>
+        </div>
+      </div>
+
+      {/* ── Boutons présence / annulation ── */}
+      <div style={{ display:"flex", gap:6 }}>
+        <button onClick={() => handleMarquerPresence("présente")} style={{ flex:1, padding:"6px", borderRadius:8, background:"rgba(34,197,94,0.1)", border:"1px solid rgba(34,197,94,0.3)", color:"#16a34a", fontSize:"0.72rem", fontWeight:600, cursor:"pointer" }}>
+          ✅ Présent
+        </button>
+        <button onClick={() => handleMarquerPresence("absente")} style={{ flex:1, padding:"6px", borderRadius:8, background:"rgba(245,158,11,0.1)", border:"1px solid rgba(245,158,11,0.3)", color:"#b45309", fontSize:"0.72rem", fontWeight:600, cursor:"pointer" }}>
+          ❌ Absent
+        </button>
+        <button onClick={handleAnnuler} style={{ flex:1, padding:"6px", borderRadius:8, background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.3)", color:"#dc2626", fontSize:"0.72rem", fontWeight:600, cursor:"pointer" }}>
+          🚫 Annulée
+        </button>
+      </div>
+    </div>
+  );
+})}
+
         </div>
         <div style={{ padding:"14px 24px", borderTop:"1px solid #e2e8f0", background:"#f8fafc", display:"flex", justifyContent:"flex-end", flexShrink:0 }}>
           <button onClick={onClose} style={{ padding:"9px 22px", borderRadius:8, background:"#1e293b", border:"none", color:"white", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", fontWeight:600, cursor:"pointer" }}>Fermer</button>
@@ -336,7 +394,14 @@ function GroupModal({ sessions, onClose, onDelete, onEdit }) {
 }
 
 // ── POPUP simple (1 seule séance) ─────────────────────────────────────────────
-function SessionPopup({ session, anchor, onClose, onDelete, onEdit }) {
+function SessionPopup({
+  session,
+  anchor,
+  onClose,
+  onDelete,
+  onEdit,
+  loadSeances,
+}) {
   const ref = useRef();
   useEffect(() => {
     const h = e => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
@@ -347,7 +412,37 @@ function SessionPopup({ session, anchor, onClose, onDelete, onEdit }) {
   if (!session || !anchor) return null;
   const top  = Math.min(anchor.bottom + 8, window.innerHeight - 320);
   const left = Math.min(anchor.left, window.innerWidth - 270);
-  const col  = COLORS[session.type] || COLORS.code;
+ const col  = COLORS[session.type] || COLORS.code;
+
+  const handleMarquerPresence = async (presence) => {
+    try {
+      if (window.electron?.updatePresenceSeance) {
+        await window.electron.updatePresenceSeance({ id: session.id, presence });
+        if (loadSeances) await loadSeances();
+        window.dispatchEvent(new CustomEvent("seance-updated"));
+        onClose();
+      } else {
+        console.warn("window.electron.updatePresenceSeance n'existe pas !");
+      }
+    } catch (err) {
+      console.error("Erreur mise à jour présence :", err);
+    }
+  };
+
+  const handleAnnuler = async () => {
+    try {
+      if (window.electron?.updateStatutSeance) {
+        await window.electron.updateStatutSeance({ id: session.id, statut: "annulée" });
+        if (loadSeances) await loadSeances();
+        window.dispatchEvent(new CustomEvent("seance-updated"));
+        onClose();
+      } else {
+        console.warn("window.electron.updateStatutSeance n'existe pas !");
+      }
+    } catch (err) {
+      console.error("Erreur mise à jour statut :", err);
+    }
+  };
 
   return (
     <div ref={ref} style={{ position:"fixed", zIndex:200, top, left, background:"#fff", border:"1px solid #e2e8f0", borderRadius:14, width:250, boxShadow:"0 20px 60px rgba(0,0,0,0.15)", overflow:"hidden", fontFamily:"'Poppins',sans-serif" }}>
@@ -377,10 +472,66 @@ function SessionPopup({ session, anchor, onClose, onDelete, onEdit }) {
           <div style={{ fontSize:"0.73rem", color:"#64748b", background:"#f8fafc", padding:"6px 9px", borderRadius:7, marginTop:2 }}>{session.notes}</div>
         )}
       </div>
-      <div style={{ display:"flex", gap:8, padding:"10px 13px", borderTop:"1px solid #e2e8f0", background:"#f8fafc" }}>
-        <button onClick={() => { onDelete(session.id); onClose(); }} style={{ flex:1, padding:"7px", borderRadius:8, background:"rgba(239,68,68,0.08)", border:"1px solid rgba(239,68,68,0.25)", color:"#ef4444", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600, cursor:"pointer" }}>Supprimer</button>
-        <button onClick={() => { onEdit(session); onClose(); }} style={{ flex:1, padding:"7px", borderRadius:8, background:"rgba(59,130,246,0.08)", border:"1px solid rgba(59,130,246,0.25)", color:"#3b82f6", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600, cursor:"pointer" }}>Modifier</button>
-      </div>
+     <div
+  style={{
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+    padding: "10px 13px",
+    borderTop: "1px solid #e2e8f0",
+    background: "#f8fafc",
+  }}
+>
+
+  <div style={{ display: "flex", gap: 6 }}>
+ <button onClick={() => handleMarquerPresence("présente")}>✅ Présent</button>
+<button onClick={() => handleMarquerPresence("absente")}>❌ Absent</button>
+<button onClick={handleAnnuler}>🚫 Annulée</button>
+  </div>
+
+  <div style={{ display: "flex", gap: 8 }}>
+    <button
+      onClick={() => {
+        onDelete(session.id);
+        onClose();
+      }}
+      style={{
+        flex: 1,
+        padding: "7px",
+        borderRadius: 8,
+        background: "rgba(239,68,68,0.08)",
+        border: "1px solid rgba(239,68,68,0.25)",
+        color: "#ef4444",
+        fontSize: "0.75rem",
+        fontWeight: 600,
+        cursor: "pointer",
+      }}
+    >
+      Supprimer
+    </button>
+
+    <button
+      onClick={() => {
+        onEdit(session);
+        onClose();
+      }}
+      style={{
+        flex: 1,
+        padding: "7px",
+        borderRadius: 8,
+        background: "rgba(59,130,246,0.08)",
+        border: "1px solid rgba(59,130,246,0.25)",
+        color: "#3b82f6",
+        fontSize: "0.75rem",
+        fontWeight: 600,
+        cursor: "pointer",
+      }}
+    >
+      Modifier
+    </button>
+  </div>
+
+</div>
     </div>
   );
 }
@@ -470,13 +621,13 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
   } : {
     candidat:"", candidatId: prefillCandidatId ? String(prefillCandidatId) : "",
     moniteur:"", moniteur_id:"",
-    type:"code", date:toLocalISO(new Date()),
+    type:"creneau", date:toLocalISO(new Date()),
     heure:"08:00", statut:"planifiée", dur:"1", notes:"",
   });
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
- // ── Examens du candidat ────────────────────────────────────────────────────
+  // ── Examens du candidat ────────────────────────────────────────────────────
   // RÈGLE STRICTE : on ne passe au stade suivant QUE quand l'examen précédent
   // a le statut "Passed" (réussi). Le nombre de séances ou le fait qu'un
   // examen soit simplement "Scheduled" (programmé) ne donne AUCUN accès.
@@ -497,12 +648,10 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
   const currentStage = !aReussiCode ? "code" : !aReussiCreneau ? "creneau" : "circulation";
 
   // Force le type au bon stade (sauf si permis obtenu).
-  // Recalculé aussi quand form.type change pour rattraper le cas où le type
-  // resterait bloqué sur une valeur devenue invalide (ex: chargement async
-  // des examens qui fait reculer currentStage après le premier rendu).
   useEffect(() => {
     if (!form.candidatId) return;
     if (permisObtenu) return;
+    if (currentStage === "code") return; // Le code se planifie désormais via le module dédié
     if (form.type !== currentStage) set("type", currentStage);
   }, [form.candidatId, currentStage, permisObtenu, form.type]);
 
@@ -592,28 +741,38 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
       });
       return;
     }
+
+    // ── Blocage : candidat encore au stade "code" ──────────────────────────
+    if (form.candidatId && !permisObtenu && currentStage === "code") {
+      setAlertInfo({
+        icon:"📘", title:"Cours de Code requis", color:"#3b82f6",
+        message:`${form.candidat || "Ce candidat"} doit d'abord suivre et réussir son examen de Code. Rendez-vous sur la page "Cours de Code" pour planifier ses séances de code.`,
+      });
+      return;
+    }
+
     // après la vérification "moniteur en congé"
-const candidatConflict = (sessions || []).find(s => {
-  if (editing && String(s.id) === String(editing.id)) return false;
-  if (toLocalISO(s._raw?.date) !== form.date) return false;
+    const candidatConflict = (sessions || []).find(s => {
+      if (editing && String(s.id) === String(editing.id)) return false;
+      if (toLocalISO(s._raw?.date) !== form.date) return false;
 
-  const sCandidatIds = s._raw?.candidatsIds
-    ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
-    : [];
-  if (!sCandidatIds.includes(String(form.candidatId))) return false;
+      const sCandidatIds = s._raw?.candidatsIds
+        ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
+        : [];
+      if (!sCandidatIds.includes(String(form.candidatId))) return false;
 
-  const startH = parseInt(form.heure.split(":")[0]) + parseInt(form.heure.split(":")[1] || 0) / 60;
-  const dur    = parseFloat(form.dur) || 1;
-  return startH < s.startH + s.dur && (startH + dur) > s.startH;
-});
+      const startH = parseInt(form.heure.split(":")[0]) + parseInt(form.heure.split(":")[1] || 0) / 60;
+      const dur    = parseFloat(form.dur) || 1;
+      return startH < s.startH + s.dur && (startH + dur) > s.startH;
+    });
 
-if (candidatConflict) {
-  setAlertInfo({
-    icon: "🚫", title: "Candidat déjà occupé", color: "#ef4444",
-    message: `${form.candidat || "Ce candidat"} a déjà une séance prévue de ${floatToHHMM(candidatConflict.startH)} à ${floatToHHMM(candidatConflict.startH + candidatConflict.dur)} ce jour-là. Choisissez un autre créneau.`,
-  });
-  return;
-}
+    if (candidatConflict) {
+      setAlertInfo({
+        icon: "🚫", title: "Candidat déjà occupé", color: "#ef4444",
+        message: `${form.candidat || "Ce candidat"} a déjà une séance prévue de ${floatToHHMM(candidatConflict.startH)} à ${floatToHHMM(candidatConflict.startH + candidatConflict.dur)} ce jour-là. Choisissez un autre créneau.`,
+      });
+      return;
+    }
 
     if (!form.candidatId) { setAlertInfo({ icon:"🧑", title:"Candidat manquant", message:"Veuillez sélectionner un candidat avant d'enregistrer la séance.", color:"#ef4444" }); return; }
     if (!form.moniteur_id) { setAlertInfo({ icon:"🧑‍🏫", title:"Moniteur manquant", message:"Veuillez sélectionner un moniteur avant d'enregistrer la séance.", color:"#ef4444" }); return; }
@@ -656,26 +815,29 @@ if (candidatConflict) {
       return;
     }
 
-    onCreate({
-      id:      editing ? editing.id : Date.now(),
-      name:    form.candidat || "Nouveau Candidat",
-      monitor: form.moniteur || "Moniteur 1",
-      type:    form.type || "code",
-      day:     new Date(form.date + "T12:00:00").getDay(),
-      startH:  parseInt(form.heure.split(":")[0]) + parseInt(form.heure.split(":")[1] || 0) / 60,
-      dur:     parseFloat(form.dur) || 1,
-      notes:   form.statut,
-      _formData: {
-        date:        form.date,
-        heure:       form.heure,
-        type:        form.type,
-        statut:      form.statut,
-        moniteur_id: form.moniteur_id ? parseInt(form.moniteur_id) : null,
-        candidatIds: form.candidatId ? [parseInt(form.candidatId)] : [],
-        duree:       parseFloat(form.dur) || 1,
-        categoriePermis: candidatCat || null,
-      },
-    });
+   onCreate({
+  id:      editing ? editing.id : Date.now(),
+  name:    form.candidat || "Nouveau Candidat",
+  monitor: form.moniteur || "Moniteur 1",
+  type:    form.type || "code",
+  day:     new Date(form.date + "T12:00:00").getDay(),
+  startH:  parseInt(form.heure.split(":")[0]) + parseInt(form.heure.split(":")[1] || 0) / 60,
+  dur:     parseFloat(form.dur) || 1,
+  notes:   form.statut,
+  _formData: {
+    date:        form.date,
+    heure:       form.heure,
+    type:        form.type,
+    statut:      form.statut,
+    moniteur_id: form.moniteur_id ? parseInt(form.moniteur_id) : null,
+    candidatIds: form.candidatId ? [parseInt(form.candidatId)] : [],
+    duree:       parseFloat(form.dur) || 1,
+    categoriePermis: candidatCat || null,
+    // ── AJOUT ──
+    candidatTelephone: selectedCandidatObj?.telephone || null,
+    candidatPrenom:    selectedCandidatObj?.prenom || null,
+  },
+});
   };
 
   const renderHeureOptions = () => {
@@ -685,43 +847,43 @@ if (candidatConflict) {
       allSlots.push(h); allSlots.push(h+0.25); allSlots.push(h+0.5); allSlots.push(h+0.75);
     }
     const occupiedIntervals = (sessions || [])
-  .filter(s => {
-    if (!form.date) return false;
-    const sDate = toLocalISO(s._raw?.date);
-    if (sDate !== form.date) return false;
-    const isOther = editing ? String(s.id) !== String(editing.id) : true;
-    if (!isOther) return false;
+      .filter(s => {
+        if (!form.date) return false;
+        const sDate = toLocalISO(s._raw?.date);
+        if (sDate !== form.date) return false;
+        const isOther = editing ? String(s.id) !== String(editing.id) : true;
+        if (!isOther) return false;
 
-    const sameMoniteur = !!form.moniteur_id && String(s._raw?.moniteur_id) === String(form.moniteur_id);
+        const sameMoniteur = !!form.moniteur_id && String(s._raw?.moniteur_id) === String(form.moniteur_id);
 
-    const sCandidatIds = s._raw?.candidatsIds
-      ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
-      : [];
-    const sameCandidat = !!form.candidatId && sCandidatIds.includes(String(form.candidatId));
+        const sCandidatIds = s._raw?.candidatsIds
+          ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
+          : [];
+        const sameCandidat = !!form.candidatId && sCandidatIds.includes(String(form.candidatId));
 
-    return sameMoniteur || sameCandidat;
-  })
-  .map(s => ({ start: s.startH, end: s.startH + s.dur }));
+        return sameMoniteur || sameCandidat;
+      })
+      .map(s => ({ start: s.startH, end: s.startH + s.dur }));
 
     const formatSlot = slot => {
       const h = Math.floor(slot); const m = Math.round((slot % 1) * 60);
       return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
     };
 
-   return allSlots.map(slot => {
-  const slotEnd = slot + duree;
-  if (slotEnd > 19) return null;
-  const minutes = Math.round((slot % 1) * 60);
-  const isValid = duree === 0.75 ? [0,15,30,45].includes(minutes) : [0,30].includes(minutes);
-  if (!isValid) return null;
-  const conflict = occupiedIntervals.find(i => slot < i.end && slotEnd > i.start);
-  const startStr = formatSlot(slot); const endStr = formatSlot(slotEnd);
-  return (
-    <option key={slot} value={startStr} disabled={!!conflict} style={{ color: conflict ? "#cbd5e1" : "#1e293b" }}>
-      {conflict ? `${startStr} – ${endStr}  ✗` : `${startStr} – ${endStr}  ✓`}
-    </option>
-  );
-});
+    return allSlots.map(slot => {
+      const slotEnd = slot + duree;
+      if (slotEnd > 19) return null;
+      const minutes = Math.round((slot % 1) * 60);
+      const isValid = duree === 0.75 ? [0,15,30,45].includes(minutes) : [0,30].includes(minutes);
+      if (!isValid) return null;
+      const conflict = occupiedIntervals.find(i => slot < i.end && slotEnd > i.start);
+      const startStr = formatSlot(slot); const endStr = formatSlot(slotEnd);
+      return (
+        <option key={slot} value={startStr} disabled={!!conflict} style={{ color: conflict ? "#cbd5e1" : "#1e293b" }}>
+          {conflict ? `${startStr} – ${endStr}  ✗` : `${startStr} – ${endStr}  ✓`}
+        </option>
+      );
+    });
   };
 
   return (
@@ -747,7 +909,20 @@ if (candidatConflict) {
 
         <div style={{ padding:"18px 24px", overflowY:"auto", display:"flex", flexDirection:"column", gap:14 }}>
 
-         {/* Bannière permis obtenu */}
+          {/* Bannière : candidat encore au stade Code */}
+          {form.candidatId && !permisObtenu && currentStage === "code" && (
+            <div style={{ padding:"10px 14px", borderRadius:10, background:"#eff6ff", border:"1.5px solid #bfdbfe", fontSize:"0.78rem", color:"#1d4ed8", fontWeight:600, display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:18 }}>📘</span>
+              <div>
+                <div>Cours de Code requis</div>
+                <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>
+                  Ce candidat doit d'abord suivre et réussir son examen de Code. Les séances de code se planifient désormais depuis la page <strong>Cours de Code</strong>, pas depuis l'Agenda.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Bannière permis obtenu */}
           {permisObtenu && (
             <div style={{ padding:"10px 14px", borderRadius:10, background:"#eef2ff", border:"1.5px solid #c7d2fe", fontSize:"0.78rem", color:"#4338ca", fontWeight:600, display:"flex", alignItems:"center", gap:8 }}>
               <span style={{ fontSize:18 }}>🎓</span>
@@ -807,14 +982,14 @@ if (candidatConflict) {
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Moniteur <span style={{ color:"#ef4444" }}>*</span></label>
-              <select style={inpS} value={form.moniteur_id} disabled={!form.candidatId || dateEnCongeAnnuel} onChange={handleMoniteurChange}>
+              <select style={inpS} value={form.moniteur_id} disabled={!form.candidatId || dateEnCongeAnnuel || currentStage === "code"} onChange={handleMoniteurChange}>
                 <option value="">{form.candidatId ? "Sélectionner moniteur..." : "Choisissez d'abord un candidat"}</option>
                 {moniteursDisponibles.map(m => <option key={m.id} value={m.id}>{m.nom} {m.prenom}</option>)}
               </select>
             </div>
           </div>
 
-          {form.candidatId && !dateEnCongeAnnuel && (
+          {form.candidatId && !dateEnCongeAnnuel && currentStage !== "code" && (
             moniteursDisponibles.length > 0 ? (
               <div style={{ padding:"8px 12px", borderRadius:8, background:"#eff6ff", border:"1px solid #bfdbfe", fontSize:"0.73rem", color:"#1d4ed8", fontWeight:600 }}>
                 🎓 Catégorie {candidatCat} — seuls les moniteurs habilités et disponibles (non en congé) à cette date sont proposés.
@@ -836,22 +1011,20 @@ if (candidatConflict) {
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Type <span style={{ color:"#ef4444" }}>*</span></label>
-              <select style={inpS} value={form.type} disabled={!form.candidatId} onChange={e => set("type", e.target.value)}>
+              <select style={inpS} value={form.type} disabled={!form.candidatId || currentStage === "code"} onChange={e => set("type", e.target.value)}>
                 {permisObtenu ? (
-                  // Permis obtenu → tous les types libres
+                  // Permis obtenu → tous les types (hors code) libres
                   <>
-                    <option value="code">Code</option>
                     <option value="creneau">Créneau</option>
                     <option value="circulation">Circulation</option>
                   </>
+                ) : currentStage === "code" ? (
+                  <option value="creneau" disabled>Cours de Code requis d'abord</option>
                 ) : (
-                  // Progression normale
+                  // Progression normale (Code déjà réussi)
                   <>
-                    <option value="code" disabled={currentStage !== "code"}>
-                      Code {currentStage !== "code" ? "(non disponible)" : ""}
-                    </option>
                     <option value="creneau" disabled={currentStage !== "creneau"}>
-                      Créneau {currentStage !== "creneau" ? (!aReussiCode ? "(Code requis)" : "(non disponible)") : ""}
+                      Créneau {currentStage !== "creneau" ? "(non disponible)" : ""}
                     </option>
                     <option value="circulation" disabled={currentStage !== "circulation"}>
                       Circulation {currentStage !== "circulation" ? "(Créneau requis)" : ""}
@@ -929,6 +1102,7 @@ if (candidatConflict) {
     </div>
   );
 }
+
 // ── MILESTONE MODAL — Fin de formation (20 séances) ──────────────────────────
 function MilestoneModal({ candidatName, onClose, onPayer }) {
   return (
@@ -1082,6 +1256,7 @@ function MilestoneModal({ candidatName, onClose, onPayer }) {
     </div>
   );
 }
+
 // ── SÉANCE SUP PAIEMENT MODAL ─────────────────────────────────────────────────
 function SeanceSupPaiementModal({ candidatName, candidatId, allCandidates, onClose, onConfirm }) {
   const [montant,  setMontant]  = useState("");
@@ -1304,8 +1479,6 @@ function SeanceSupPaiementModal({ candidatName, candidatId, allCandidates, onClo
 function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupClick, onDrop, isMoniteurEnConge, isCongeAnnuel, onCandidatPermisClick, aObtenuPermis }) {
   const [dragging, setDragging] = React.useState(null);
   const [dragOver, setDragOver] = React.useState(null);
-// AJOUTER dans AgendaPage avec les autres useState :
-
   const dragRef = useRef(null);
 
   const handleDragStart = (e, session) => { dragRef.current = session; setDragging(session.id); e.dataTransfer.effectAllowed = "move"; };
@@ -1421,17 +1594,22 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
                   ? String(s._raw.candidatsIds).split(",")[0].trim()
                   : null;
                 const candidatAPermis = candidatId && aObtenuPermis ? aObtenuPermis(candidatId) : false;
-
+                const statutNorm = (s._raw?.statut || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const estAnnulee   = statutNorm === "annulee";
+const estConfirmee = statutNorm === "confirmee";
+const presenceNorm = (s._raw?.presence || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const estPresent = presenceNorm === "presente";
+const estAbsent  = presenceNorm === "absente";
                 return (
                   <div key={s.id}
-                    draggable={!isClosed}
-                    onDragStart={isClosed ? undefined : e => handleDragStart(e, s)}
+                    draggable={!isClosed && !estAnnulee}
+                   onDragStart={isClosed || estAnnulee ? undefined : e => handleDragStart(e, s)}
                     onDragEnd={handleDragEnd}
                     onClick={e => {
                       e.stopPropagation();
                       hasOverlap ? onGroupClick(groupSessions) : onSessionClick(s, e.currentTarget.getBoundingClientRect());
                     }}
-                    title={congeConflict ? `⚠️ ${s.monitor} est en congé ce jour-là` : candidatAPermis ? "🎓 Cliquer sur le nom pour séance supp." : undefined}
+                   title={estAnnulee ? "🚫 Séance annulée" : congeConflict ? `⚠️ ${s.monitor} est en congé ce jour-là` : candidatAPermis ? "🎓 Cliquer sur le nom pour séance supp." : undefined}
                     style={{
                       position:"absolute", left:`calc(${leftPct}% + 2px)`, width:`calc(${widthPct}% - 4px)`,
                       top:topPx + 2, height:s.dur * CELL_H - 4, borderRadius:8, padding:"5px 8px",
@@ -1441,6 +1619,11 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
                       boxShadow:hasOverlap ? `0 0 0 2px ${colData.bg}, 0 2px 8px ${colData.bg}50` : `0 1px 4px ${colData.bg}30`,
                       opacity:isDragging ? 0.4 : 1, transition:"transform 0.15s, box-shadow 0.15s",
                       overflow:"hidden", zIndex:isDragging ? 1 : 2,
+                      background: estAnnulee
+  ? "repeating-linear-gradient(45deg, rgba(148,163,184,0.15), rgba(148,163,184,0.15) 6px, rgba(148,163,184,0.28) 6px, rgba(148,163,184,0.28) 12px)"
+  : colData.light,
+borderLeft: `3px solid ${estAnnulee ? "#94a3b8" : congeConflict ? "#f97316" : colData.bg}`,
+opacity: estAnnulee ? 0.55 : isDragging ? 0.4 : 1,
                     }}
                     onMouseEnter={e => { if (!isDragging) { e.currentTarget.style.transform="translateY(-1px)"; e.currentTarget.style.zIndex=5; }}}
                     onMouseLeave={e => { e.currentTarget.style.transform="scale(1)"; e.currentTarget.style.zIndex=2; }}
@@ -1451,7 +1634,7 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
                         fontSize:"0.72rem", fontWeight:700,
                         color: candidatAPermis ? "#6366f1" : colData.text,
                         whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
-                        textDecoration: candidatAPermis ? "underline dotted" : "none",
+                        textDecoration: estAnnulee ? "line-through" : candidatAPermis ? "underline dotted" : "none",
                         cursor: candidatAPermis ? "pointer" : "inherit",
                       }}
                       onClick={candidatAPermis ? (e) => {
@@ -1480,6 +1663,26 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
                         🌴
                       </div>
                     )}
+                    {estAnnulee && (
+  <div style={{ position:"absolute", bottom:3, left:6, fontSize:"0.58rem", fontWeight:700, color:"#64748b", background:"#fff", border:"1px solid #cbd5e1", borderRadius:5, padding:"1px 6px" }}>
+    🚫 Annulée
+  </div>
+)}
+{!estAnnulee && estConfirmee && (
+  <div style={{ position:"absolute", bottom:3, left:6, fontSize:"0.58rem", fontWeight:700, color:"#16a34a", background:"#fff", border:"1px solid #86efac", borderRadius:5, padding:"1px 6px" }}>
+    ✅ Confirmée
+  </div>
+)}
+{estPresent && (
+  <div style={{ position:"absolute", bottom:3, right:6, fontSize:"0.58rem", fontWeight:700, color:"#16a34a", background:"#fff", border:"1px solid #86efac", borderRadius:5, padding:"1px 6px" }}>
+    ✅ Présent
+  </div>
+)}
+{estAbsent && (
+  <div style={{ position:"absolute", bottom:3, right:6, fontSize:"0.58rem", fontWeight:700, color:"#b45309", background:"#fff", border:"1px solid #fcd34d", borderRadius:5, padding:"1px 6px" }}>
+    ❌ Absent
+  </div>
+)}
                   </div>
                 );
               })}
@@ -1508,9 +1711,9 @@ export default function AgendaPage() {
   const [filterMon,       setFilterMon]       = useState("");
   const [filterCat,       setFilterCat]       = useState("");
   const [seanceSupModal,  setSeanceSupModal]  = useState(null); // { candidat }
- const [prefillCandidatId,  setPrefillCandidatId]  = useState(null);
+  const [prefillCandidatId,  setPrefillCandidatId]  = useState(null);
 
-const [seanceSupPaiement,  setSeanceSupPaiement]   = useState(null); // { candidatId, candidatName }
+  const [seanceSupPaiement,  setSeanceSupPaiement]   = useState(null); // { candidatId, candidatName }
 
   const { isMoniteurEnConge, isCongeAnnuel, congeAnnuel } = useCongeCtx();
   const { examensList } = useExamenCtx();
@@ -1595,17 +1798,21 @@ const [seanceSupPaiement,  setSeanceSupPaiement]   = useState(null); // { candid
     }
   }, [sessions, weekDates, api, isMoniteurEnConge, isCongeAnnuel]);
 
-  const handleDelete = async (id) => {
-    setSessions(p => p.filter(s => s.id !== id));
-    if (groupModal) {
-      const updated = groupModal.filter(s => s.id !== id);
-      updated.length > 0 ? setGroupModal(updated) : setGroupModal(null);
+ const handleDelete = async (id) => {
+  setSessions(p => p.filter(s => s.id !== id));
+  if (groupModal) {
+    const updated = groupModal.filter(s => s.id !== id);
+    updated.length > 0 ? setGroupModal(updated) : setGroupModal(null);
+  }
+  if (api?.deleteSeance) {
+    try {
+      await api.deleteSeance(id);
+      showToast("Séance supprimée.", "success");
+      window.dispatchEvent(new CustomEvent("seance-updated")); // ← AJOUT
     }
-    if (api?.deleteSeance) {
-      try { await api.deleteSeance(id); showToast("Séance supprimée.", "success"); }
-      catch (err) { showToast("Erreur lors de la suppression.", "error"); }
-    } else { showToast("Séance supprimée (mode démo).", "info"); }
-  };
+    catch (err) { showToast("Erreur lors de la suppression.", "error"); }
+  } else { showToast("Séance supprimée (mode démo).", "info"); }
+};
 
   const handleSave = async (sessionObj) => {
     const { _formData } = sessionObj;
@@ -1622,36 +1829,36 @@ const [seanceSupPaiement,  setSeanceSupPaiement]   = useState(null); // { candid
       return;
     }
 
- const conflict = sessions.find(s => {
-  if (editing && String(s.id) === String(editing.id)) return false;
-  if (toLocalISO(s._raw?.date) !== _formData.date) return false;
+    const conflict = sessions.find(s => {
+      if (editing && String(s.id) === String(editing.id)) return false;
+      if (toLocalISO(s._raw?.date) !== _formData.date) return false;
 
-  const sameMoniteur = !!_formData.moniteur_id && !!s._raw?.moniteur_id
-    && String(s._raw?.moniteur_id) === String(_formData.moniteur_id);
+      const sameMoniteur = !!_formData.moniteur_id && !!s._raw?.moniteur_id
+        && String(s._raw?.moniteur_id) === String(_formData.moniteur_id);
 
-  const sCandidatIds = s._raw?.candidatsIds
-    ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
-    : [];
-  const sameCandidat = !!_formData.candidatIds?.[0]
-    && sCandidatIds.includes(String(_formData.candidatIds[0]));
+      const sCandidatIds = s._raw?.candidatsIds
+        ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
+        : [];
+      const sameCandidat = !!_formData.candidatIds?.[0]
+        && sCandidatIds.includes(String(_formData.candidatIds[0]));
 
-  if (!sameMoniteur && !sameCandidat) return false;
-  return newStart < s.startH + s.dur && newEnd > s.startH;
-});
+      if (!sameMoniteur && !sameCandidat) return false;
+      return newStart < s.startH + s.dur && newEnd > s.startH;
+    });
 
-if (conflict) {
-  const conflictCandidatIds = conflict._raw?.candidatsIds
-    ? String(conflict._raw.candidatsIds).split(",").map(x => x.trim())
-    : [];
-  const estCandidat = conflictCandidatIds.includes(String(_formData.candidatIds?.[0]));
-  showToast(
-    estCandidat
-      ? `⚠️ Ce candidat a déjà une séance de ${floatToHHMM(conflict.startH)} à ${floatToHHMM(conflict.startH + conflict.dur)} ce jour-là.`
-      : `⚠️ Ce moniteur est déjà occupé de ${floatToHHMM(conflict.startH)} à ${floatToHHMM(conflict.startH + conflict.dur)} ce jour-là.`,
-    "error"
-  );
-  return;
-}
+    if (conflict) {
+      const conflictCandidatIds = conflict._raw?.candidatsIds
+        ? String(conflict._raw.candidatsIds).split(",").map(x => x.trim())
+        : [];
+      const estCandidat = conflictCandidatIds.includes(String(_formData.candidatIds?.[0]));
+      showToast(
+        estCandidat
+          ? `⚠️ Ce candidat a déjà une séance de ${floatToHHMM(conflict.startH)} à ${floatToHHMM(conflict.startH + conflict.dur)} ce jour-là.`
+          : `⚠️ Ce moniteur est déjà occupé de ${floatToHHMM(conflict.startH)} à ${floatToHHMM(conflict.startH + conflict.dur)} ce jour-là.`,
+        "error"
+      );
+      return;
+    }
 
     setSaving(true);
     try {
@@ -1664,14 +1871,31 @@ if (conflict) {
         });
         await loadSeances();
         showToast("Séance modifiée avec succès.");
+        window.dispatchEvent(new CustomEvent("seance-updated"));
 
       } else if (api?.addSeance && !editing) {
         const result = await api.addSeance(_formData);
         if (result?.success) {
           await loadSeances();
           showToast("Séance créée avec succès.");
+          // ── Notification WhatsApp au candidat ────────────────────────────
+    if (_formData.candidatTelephone) {
+      const typeLabel = TYPE_LABELS_WA[_formData.type] || cap(_formData.type || "");
+      const dureeLabel = (() => {
+        const v = parseFloat(_formData.duree) || 0;
+        const h = Math.floor(v);
+        const m = Math.round((v - h) * 60);
+        return m > 0 ? `${h}h${String(m).padStart(2, "0")}` : `${h}h`;
+      })();
+      const message =
+        `Bonjour ${_formData.candidatPrenom || ""}, une séance de ${typeLabel} ` +
+        `a été programmée pour vous le ${formatDateFr(_formData.date)} à ${_formData.heure} ` +
+        `avec ${sessionObj.monitor}. Durée : ${dureeLabel}.`;
+      const url = formatWhatsAppUrl(_formData.candidatTelephone, message);
+      if (url) window.electron?.openExternal?.(url);
+    }
 
-        const candidatId = _formData.candidatIds?.[0];
+          const candidatId = _formData.candidatIds?.[0];
           if (candidatId) {
             const nomCandidat = sessionObj.name || "Ce candidat";
             if (aObtenuPermis(candidatId)) {
@@ -1704,34 +1928,35 @@ if (conflict) {
       setPrefillCandidatId(null);
     }
   };
-  const handleSeanceSupPaiement = async (paymentData) => {
-  try {
-    if (api?.addPayment) {
-      const result = await api.addPayment(paymentData);
-      if (result?.success) {
-        showToast(`💳 Paiement séance supplémentaire enregistré — ${parseInt(paymentData.montant).toLocaleString("fr-DZ")} DA`, "success");
-      } else {
-        showToast("Erreur lors de l'enregistrement du paiement.", "error");
-      }
-    } else {
-      showToast("Paiement enregistré (mode démo).", "info");
-    }
-  } catch (e) {
-    showToast("Erreur lors de l'enregistrement du paiement.", "error");
-  } finally {
-    setSeanceSupPaiement(null);
-  }
-};
 
- const monitors = [...new Map(
-  sessions
-    .filter(s => s.moniteur_id)
-    .map(s => [s.moniteur_id, s.monitor])
-).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  const handleSeanceSupPaiement = async (paymentData) => {
+    try {
+      if (api?.addPayment) {
+        const result = await api.addPayment(paymentData);
+        if (result?.success) {
+          showToast(`💳 Paiement séance supplémentaire enregistré — ${parseInt(paymentData.montant).toLocaleString("fr-DZ")} DA`, "success");
+        } else {
+          showToast("Erreur lors de l'enregistrement du paiement.", "error");
+        }
+      } else {
+        showToast("Paiement enregistré (mode démo).", "info");
+      }
+    } catch (e) {
+      showToast("Erreur lors de l'enregistrement du paiement.", "error");
+    } finally {
+      setSeanceSupPaiement(null);
+    }
+  };
+
+  const monitors = [...new Map(
+    sessions
+      .filter(s => s.moniteur_id)
+      .map(s => [s.moniteur_id, s.monitor])
+  ).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const semaineClosed = congeAnnuel?.actif && weekDates.some(d => isCongeAnnuel(d));
 
   // ── Ouverture CreateModal depuis SeanceSupplementaireModal ────────────────
- const handleConfirmSeanceSup = () => {
+  const handleConfirmSeanceSup = () => {
     const cid = seanceSupModal?.candidat?.id;
     const candidat = seanceSupModal?.candidat;
     setSeanceSupModal(null);
@@ -1836,7 +2061,7 @@ if (conflict) {
           <select style={{ padding:"7px 10px", borderRadius:8, background:"#f8fafc", border:"1px solid #e2e8f0", color:"#334155", fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", outline:"none", cursor:"pointer" }}
             value={filterMon} onChange={e=>setFilterMon(e.target.value)}>
             <option value="">Tous</option>
-           {monitors.map(([id, nom]) => <option key={id} value={id}>{nom}</option>)}
+            {monitors.map(([id, nom]) => <option key={id} value={id}>{nom}</option>)}
           </select>
           <span style={{ fontSize:"0.75rem", color:"#94a3b8", fontWeight:500 }}>Catégorie :</span>
           <select style={{ padding:"7px 10px", borderRadius:8, background:"#f8fafc", border:"1px solid #e2e8f0", color:"#334155", fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", outline:"none", cursor:"pointer" }}
@@ -1908,6 +2133,7 @@ if (conflict) {
           onClose={() => setPopup({session:null, anchor:null})}
           onDelete={handleDelete}
           onEdit={s => { setEditing(s); setPrefillCandidatId(null); setShowModal(true); setPopup({session:null,anchor:null}); }}
+          loadSeances={loadSeances}
         />
       )}
       {groupModal && (
@@ -1916,6 +2142,7 @@ if (conflict) {
           onClose={() => setGroupModal(null)}
           onDelete={handleDelete}
           onEdit={s => { setEditing(s); setPrefillCandidatId(null); setShowModal(true); setGroupModal(null); }}
+          loadSeances={loadSeances}
         />
       )}
       {showModal && (
@@ -1930,9 +2157,6 @@ if (conflict) {
         />
       )}
 
-   
-     
-
       {/* Séance supplémentaire : candidat permis obtenu */}
       {seanceSupModal && (
         <SeanceSupplementaireModal
@@ -1942,14 +2166,13 @@ if (conflict) {
         />
       )}
       {seanceSupPaiement && (
-  <SeanceSupPaiementModal
-    candidatName={seanceSupPaiement.candidatName}
-    candidatId={seanceSupPaiement.candidatId}
-    onClose={() => setSeanceSupPaiement(null)}
-    onConfirm={handleSeanceSupPaiement}
-  />
-)}
-
+        <SeanceSupPaiementModal
+          candidatName={seanceSupPaiement.candidatName}
+          candidatId={seanceSupPaiement.candidatId}
+          onClose={() => setSeanceSupPaiement(null)}
+          onConfirm={handleSeanceSupPaiement}
+        />
+      )}
 
       {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
     </>

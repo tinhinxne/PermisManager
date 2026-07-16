@@ -3,7 +3,8 @@ import "./Sidebar.css";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   FaThLarge, FaUserFriends, FaUserTie, FaCalendarAlt,
-  FaFileAlt, FaCreditCard, FaSignOutAlt, FaCog, FaChevronRight
+  FaFileAlt, FaCreditCard, FaSignOutAlt, FaCog, FaChevronRight,
+  FaGraduationCap,
 } from "react-icons/fa";
 import SidebarImage from "../../assets/sidebarImage.png";
 
@@ -17,6 +18,7 @@ const Sidebar = () => {
     { name: "Candidats", icon: <FaUserFriends />, path: "/candidats" },
     { name: "Moniteur",  icon: <FaUserTie />,     path: "/moniteur"  },
     { name: "Agenda",    icon: <FaCalendarAlt />, path: "/agenda"    },
+    { name: "Cours Code", icon: <FaGraduationCap />, path: "/cours-code" },
     { name: "Examens",   icon: <FaFileAlt />,     path: "/examens"   },
     { name: "Paiements",  icon: <FaCreditCard />,  path: "/payments"  },
   ];

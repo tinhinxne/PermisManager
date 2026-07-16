@@ -36,6 +36,8 @@ updateStatutCandidat: (data) => ipcRenderer.invoke('update-statut-candidat', dat
   addSeance:  (data) => ipcRenderer.invoke('add-seance', data),
   deleteSeance: (id)   => ipcRenderer.invoke('delete-seance', id),
   updateSeance: (data) => ipcRenderer.invoke('update-seance', data),
+updateStatutSeance: (data) => ipcRenderer.invoke('update-statut-seance', data),
+updatePresenceSeance: (data) => ipcRenderer.invoke('update-presence-seance', data),
   
   // Paiements
   getPayments: () => ipcRenderer.invoke('get-payments'),
@@ -87,7 +89,30 @@ testChargilyConfig: (data) => ipcRenderer.invoke("test-chargily-config", data),
   getCreditSeancesSup: (candidatId) => ipcRenderer.invoke('get-credit-seances-sup', candidatId),
   getPrixFormation: () => ipcRenderer.invoke('get-prix-formation'),
 setPrixFormation: (prix) => ipcRenderer.invoke('set-prix-formation', prix),
+// EXAMENS 
+getExamensCandidat: (candidatId) => ipcRenderer.invoke("get-examens-candidat", candidatId),
+getCandidatsMatricules: () => ipcRenderer.invoke('get-candidats-matricules'),
+updateMatriculeCandidat: (idCandidat, matricule) =>
+  ipcRenderer.invoke('update-matricule-candidat', { idCandidat, matricule }),
+
+// Cours de Code
+getSeancesCode:            (filters) => ipcRenderer.invoke('get-seances-code', filters),
+addSeanceCode:              (data)   => ipcRenderer.invoke('add-seance-code', data),
+addSeanceCodeSerie:         (data)   => ipcRenderer.invoke('add-seance-code-serie', data),
+updateSeanceCode:           (id, data) => ipcRenderer.invoke('update-seance-code', id, data),
+deleteSeanceCode:           (id)     => ipcRenderer.invoke('delete-seance-code', id),
+getSeancesCandidatCode: (idCandidat, categoriePermis, moniteur_id) =>
+ipcRenderer.invoke('get-seances-candidat-code', idCandidat, categoriePermis, moniteur_id),
+openExternal: (url) => ipcRenderer.invoke('open-external', url),
+getInscritsSeanceCode:      (seanceId) => ipcRenderer.invoke('get-inscrits-seance-code', seanceId),
+getCandidatsEligiblesCode:  (categoriePermis, seanceId) => ipcRenderer.invoke('get-candidats-eligibles-code', categoriePermis, seanceId),
+inscrireCandidatCode:       (idCandidat, seanceId) => ipcRenderer.invoke('inscrire-candidat-code', idCandidat, seanceId),
+desinscrireCandidatCode:    (idCandidat, seanceId) => ipcRenderer.invoke('desinscrire-candidat-code', idCandidat, seanceId),
+updatePresenceCode:         (idCandidat, seanceId, statut, updatedBy) => ipcRenderer.invoke('update-presence-code', idCandidat, seanceId, statut, updatedBy),
+getSeancesCodeDisponibles:  (categoriePermis, excludeSeanceId) => ipcRenderer.invoke('get-seances-code-disponibles', categoriePermis, excludeSeanceId),
+replanifierCandidatCode:    (idCandidat, oldSeanceId, newSeanceId) => ipcRenderer.invoke('replanifier-candidat-code', idCandidat, oldSeanceId, newSeanceId),
+getNbSeances: () => ipcRenderer.invoke('get-nb-seances'),
+setNbSeances: (val) => ipcRenderer.invoke('set-nb-seances', val),
+getInscriptionsCode: () => ipcRenderer.invoke('get-inscriptions-code'),
 });
 
-// EXAMENS 
-getExamensCandidat: (candidatId) => ipcRenderer.invoke("get-examens-candidat", candidatId)
