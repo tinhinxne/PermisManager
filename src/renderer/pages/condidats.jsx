@@ -906,29 +906,39 @@ const [selectedCategorieObtenu, setSelectedCategorieObtenu] = useState("Tous");
 const loadCandidats = async (maxOverride) => {
   const max = maxOverride ?? nbSeancesMax;
   try {
-    const data    = await window.electron.getCandidats();
-    const seances = await window.electron.getSeances();
+    const data            = await window.electron.getCandidats();
+    const seances          = await window.electron.getSeances();
+    const inscriptionsCode = await window.electron.getInscriptionsCode();
 
     const formatted = data.map((c) => {
       const currentCat = (c.categoriePermis || c.categorie || c.categorie_permis || "B")
         .toString().trim().toUpperCase();
 
-const nbSessionsTotal = seances.filter((s) => {
-  if (!s.candidatsIds) return false;
-  const ids = String(s.candidatsIds).split(",").map((id) => parseInt(id.trim()));
-  const matchCandidat = ids.includes(c.idCandidat);
-  const seanceCat = (s.categoriePermis || "").toString().trim().toUpperCase();
-  const matchCategorie = seanceCat === currentCat;
+      // ── Séances de conduite (hors "code") ──────────────────────────────
+      const nbSessionsConduite = seances.filter((s) => {
+        if (!s.candidatsIds) return false;
+        const ids = String(s.candidatsIds).split(",").map((id) => parseInt(id.trim()));
+        const matchCandidat = ids.includes(c.idCandidat);
+        const seanceCat = (s.categoriePermis || "").toString().trim().toUpperCase();
+        const matchCategorie = seanceCat === currentCat;
 
-  const seanceType = (s.type || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  const matchType = !seanceType.includes("code");
+        const seanceType = (s.type || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const matchType = !seanceType.includes("code");
 
-  // ── On exclut les séances annulées : présente ET absente comptent, annulée non ──
-  const statutNorm = (s.statut || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  const matchStatut = statutNorm !== "annulee";
+        // ── On exclut les séances annulées : présente ET absente comptent, annulée non ──
+        const statutNorm = (s.statut || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const matchStatut = statutNorm !== "annulee";
 
-  return matchCandidat && matchCategorie && matchType && matchStatut;
-}).length;
+        return matchCandidat && matchCategorie && matchType && matchStatut;
+      }).length;
+
+      // ── Cours de code (table séparée SeanceCode / CandidatSeanceCode) ──
+      const nbSessionsCode = inscriptionsCode.filter((i) => {
+        const cat = (i.categoriePermis || "").toString().trim().toUpperCase();
+        return i.idCandidat === c.idCandidat && cat === currentCat;
+      }).length;
+
+      const nbSessionsTotal = nbSessionsConduite + nbSessionsCode;
 
       const nbSessions      = Math.min(nbSessionsTotal, max);
       const nbSessionsSuppl = Math.max(nbSessionsTotal - max, 0);

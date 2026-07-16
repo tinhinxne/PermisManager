@@ -2328,3 +2328,16 @@ ipcMain.handle('replanifier-candidat-code', async (event, idCandidat, oldSeanceI
     );
   });
 });
+ipcMain.handle('get-inscriptions-code', async () => {
+  return new Promise((resolve) => {
+    const sql = `
+      SELECT csc.idCandidat, sc.categoriePermis
+      FROM CandidatSeanceCode csc
+      JOIN SeanceCode sc ON sc.idSeanceCode = csc.idSeanceCode
+    `;
+    db.query(sql, [], (err, rows) => {
+      if (err) { console.error("get-inscriptions-code:", err); return resolve([]); }
+      resolve(rows);
+    });
+  });
+});

@@ -527,11 +527,14 @@ const envoyerWhatsAppInscription = async (candidat) => {
     setLoading(true);
     Promise.all([loadInscrits(), loadEligibles()]).finally(() => setLoading(false));
   }, [loadInscrits, loadEligibles]);
-
 const handleInscrire = async (idCandidat) => {
+    if (isSeancePassee) {
+      showToast("Impossible d'inscrire un candidat à une séance déjà passée.", "error");
+      return;
+    }
     try {
       const candidat = eligibles.find(c => c.idCandidat === idCandidat);
-      console.log("👤 Candidat trouvé dans eligibles:", candidat); // ← ajoute
+      console.log("👤 Candidat trouvé dans eligibles:", candidat);
       await window.electron.inscrireCandidatCode(idCandidat, seance.id);
       await Promise.all([loadInscrits(), loadEligibles()]);
       onRefreshList();
@@ -539,7 +542,6 @@ const handleInscrire = async (idCandidat) => {
       if (candidat) await envoyerWhatsAppInscription(candidat);
     } catch { showToast("Erreur lors de l'inscription.", "error"); }
   };
-
   const handleDesinscrire = async (idCandidat) => {
     try {
       await window.electron.desinscrireCandidatCode(idCandidat, seance.id);
@@ -581,7 +583,7 @@ const handleInscrire = async (idCandidat) => {
   const filteredEligibles = eligibles.filter(c =>
     `${c.nom} ${c.prenom}`.toLowerCase().includes(searchAdd.toLowerCase())
   );
-
+  const isSeancePassee = new Date(`${seance.date}T${seance.heure || "23:59"}`) < new Date();
   return (
     <div style={{ position:"fixed", inset:0, zIndex:400, background:"rgba(15,23,42,0.55)", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Poppins',sans-serif" }}
       onClick={e => e.target === e.currentTarget && onClose()}>
@@ -688,9 +690,19 @@ const handleInscrire = async (idCandidat) => {
             );
           })}
 
-          {/* Ajout candidat */}
+        {/* Ajout candidat */}
           <div style={{ marginTop:6 }}>
-            {showAdd ? (
+            {isSeancePassee ? (
+              <div style={{
+                display:"flex", alignItems:"center", gap:8, padding:"10px 14px",
+                borderRadius:10, background:"#f1f5f9", border:"1px solid #e2e8f0",
+              }}>
+                <AlertCircle size={14} color="#94a3b8"/>
+                <span style={{ fontSize:"0.75rem", color:"#64748b" }}>
+                  Cette séance est déjà passée — inscription impossible.
+                </span>
+              </div>
+            ) : showAdd ? (
               <div style={{ border:"1px dashed #C4B5FD", borderRadius:12, padding:12, background:"#FAF5FF" }}>
                 <div style={{ position:"relative", marginBottom:8 }}>
                   <Search size={13} color="#94a3b8" style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)" }}/>

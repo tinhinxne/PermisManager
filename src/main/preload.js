@@ -102,7 +102,7 @@ addSeanceCodeSerie:         (data)   => ipcRenderer.invoke('add-seance-code-seri
 updateSeanceCode:           (id, data) => ipcRenderer.invoke('update-seance-code', id, data),
 deleteSeanceCode:           (id)     => ipcRenderer.invoke('delete-seance-code', id),
 getSeancesCandidatCode: (idCandidat, categoriePermis, moniteur_id) =>
-  ipcRenderer.invoke('get-seances-candidat-code', idCandidat, categoriePermis, moniteur_id),
+ipcRenderer.invoke('get-seances-candidat-code', idCandidat, categoriePermis, moniteur_id),
 openExternal: (url) => ipcRenderer.invoke('open-external', url),
 getInscritsSeanceCode:      (seanceId) => ipcRenderer.invoke('get-inscrits-seance-code', seanceId),
 getCandidatsEligiblesCode:  (categoriePermis, seanceId) => ipcRenderer.invoke('get-candidats-eligibles-code', categoriePermis, seanceId),
@@ -113,5 +113,6 @@ getSeancesCodeDisponibles:  (categoriePermis, excludeSeanceId) => ipcRenderer.in
 replanifierCandidatCode:    (idCandidat, oldSeanceId, newSeanceId) => ipcRenderer.invoke('replanifier-candidat-code', idCandidat, oldSeanceId, newSeanceId),
 getNbSeances: () => ipcRenderer.invoke('get-nb-seances'),
 setNbSeances: (val) => ipcRenderer.invoke('set-nb-seances', val),
+getInscriptionsCode: () => ipcRenderer.invoke('get-inscriptions-code'),
 });
 
