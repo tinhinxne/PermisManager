@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   FaThLarge, FaUserFriends, FaCalendarAlt,
   FaMoneyBillWave, FaClipboardList, FaSignOutAlt,
-  FaCog, FaUmbrellaBeach,
+  FaCog, FaUmbrellaBeach,FaGraduationCap,
 } from "react-icons/fa";
 import SidebarImage from "../../assets/sidebarImage.png";
 
@@ -16,6 +16,7 @@ const SidebarMoniteur = () => {
   const menu = [
     { name: "Dashboard",     icon: <FaThLarge />,       path: "/moniteur/dashboard" },
     { name: "Mes Candidats", icon: <FaUserFriends />,   path: "/moniteur/candidat"  },
+      { name: "Cours Code",    icon: <FaGraduationCap />, path: "/moniteur/cours-code" }, 
     { name: "Mes Séances",   icon: <FaCalendarAlt />,   path: "/moniteur/agenda"    },
     { name: "Mes Congés",    icon: <FaUmbrellaBeach />, path: "/moniteur/conges"    },
     { name: "Paiements",     icon: <FaMoneyBillWave />, path: "/moniteur/paiements" },

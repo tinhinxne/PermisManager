@@ -263,6 +263,18 @@ const AVATAR_COLORS = [
   { color: "#fbeaf0", textColor: "#993556" },
   { color: "#eeedfe", textColor: "#534ab7" },
 ];
+function openWhatsAppBienvenue(telephone, prenom) {
+  if (!telephone) return;
+  // Garde uniquement les chiffres
+  let numero = telephone.replace(/\D/g, "");
+  // Ajoute l'indicatif Algérie (213) si le numéro commence par 0
+  if (numero.startsWith("0")) {
+    numero = "213" + numero.slice(1);
+  }
+  const message = `Bonjour ${prenom}, bienvenue à l'auto-école ! 🚗 Nous sommes ravis de vous compter parmi nos candidats.`;
+  const url = `https://wa.me/${numero}?text=${encodeURIComponent(message)}`;
+  window.open(url, "_blank");
+}
 
 // ─────────────────────────────────────────────
 // Composant principal
@@ -282,19 +294,21 @@ const MesCandidats = () => {
   const [showModal,      setShowModal]      = useState(false);
   const [editCandidat,   setEditCandidat]   = useState(null);
   const [showEnvoiModal, setShowEnvoiModal] = useState(false);
+    const [nbSeancesMax,   setNbSeancesMax]   = useState(SESSIONS_NORMALES_MAX);
 
   // ── Chargement ───────────────────────────────────────────────────────────────
-  const loadData = async () => {
+const loadData = async (maxOverride) => {
+    const max = maxOverride ?? nbSeancesMax;
     try {
       setLoading(true);
-      const [rawCandidats, rawSeances] = await Promise.all([
+      const [rawCandidats, rawSeances, inscriptionsCode] = await Promise.all([
         window.electron.getCandidats(),
         window.electron.getSeances(),
+        window.electron.getInscriptionsCode(),
       ]);
 
       const moniteurId = currentUser?.id;
 
-      // Candidats liés à une séance de CE moniteur
       const mesSeances = moniteurId
         ? rawSeances.filter((s) => s.moniteur_id === moniteurId)
         : [];
@@ -306,41 +320,51 @@ const MesCandidats = () => {
           .forEach((id) => mesCandidatIdSet.add(parseInt(id.trim())));
       });
 
-      // ── Candidats créés directement par ce moniteur (sans séance encore) ──
       const mesCreationSet = new Set(
         rawCandidats
           .filter((c) => c.created_by_moniteur_id != null && c.created_by_moniteur_id === moniteurId)
           .map((c) => c.idCandidat)
       );
 
-      // Séances pour le calcul des sessions/prochaine séance
       const seancesPourCalcul = CAN_VIEW_ALL_CANDIDATES ? rawSeances : mesSeances;
 
       const todayMidnight = new Date();
       todayMidnight.setHours(0, 0, 0, 0);
 
       const formatted = rawCandidats
-        // ── FILTRE : séance OU créateur ──
         .filter((c) =>
           CAN_VIEW_ALL_CANDIDATES ||
           mesCandidatIdSet.has(c.idCandidat) ||
           mesCreationSet.has(c.idCandidat)
         )
         .map((c, index) => {
+          const currentCat = (
+            c.categoriePermis || c.categorie || c.categorie_permis || "B"
+          ).toString().trim().toUpperCase();
+
           const seancesDuCandidat = seancesPourCalcul.filter((s) => {
             if (!s.candidatsIds) return false;
-            return String(s.candidatsIds).split(",")
+            const matchCandidat = String(s.candidatsIds).split(",")
               .map((id) => parseInt(id.trim()))
               .includes(c.idCandidat);
+            if (!matchCandidat) return false;
+
+            const typeNorm = (s.type || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            if (typeNorm.includes("code")) return false; // compté à part
+
+            const statutNorm = (s.statut || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            return statutNorm !== "annulee";
           });
 
-          const nbSessionsTotal = seancesDuCandidat.length;
+          const nbSessionsCode = (inscriptionsCode || []).filter((i) => {
+            const cat = (i.categoriePermis || "").toString().trim().toUpperCase();
+            return i.idCandidat === c.idCandidat && cat === currentCat;
+          }).length;
 
-          // ✅ On plafonne l'affichage "normal" à 20 sessions. Le surplus
-          //    (séances supplémentaires) est compté séparément pour ne
-          //    jamais afficher un ratio illogique type "25/20".
-          const nbSessions      = Math.min(nbSessionsTotal, SESSIONS_NORMALES_MAX);
-          const nbSessionsSuppl = Math.max(nbSessionsTotal - SESSIONS_NORMALES_MAX, 0);
+          const nbSessionsTotal = seancesDuCandidat.length + nbSessionsCode;
+
+          const nbSessions      = Math.min(nbSessionsTotal, max);
+          const nbSessionsSuppl = Math.max(nbSessionsTotal - max, 0);
 
           const nextSeance = seancesDuCandidat
             .map((s) => {
@@ -364,13 +388,7 @@ const MesCandidats = () => {
             ? `${new Date(nextSeance._dt).toLocaleDateString("fr-FR")} ${nextSeance.heure}`
             : "—";
 
-          const currentCat = (
-            c.categoriePermis || c.categorie || c.categorie_permis || "B"
-          ).toString().trim().toUpperCase();
-
-          // ── isMien = séance OU créateur ──
           const isMien = mesCandidatIdSet.has(c.idCandidat) || mesCreationSet.has(c.idCandidat);
-          // ── pas encore de séance mais créé par moi ──
           const isNouveauInscrit = mesCreationSet.has(c.idCandidat) && !mesCandidatIdSet.has(c.idCandidat);
 
           return {
@@ -381,7 +399,7 @@ const MesCandidats = () => {
             categoriePermis: currentCat,
             sessions:        nbSessions,
             sessionsSuppl:   nbSessionsSuppl,
-            total:           SESSIONS_NORMALES_MAX,
+            total:           max,
             nextSession,
             status:          c.statut,
             isMien,
@@ -400,7 +418,41 @@ const MesCandidats = () => {
     }
   };
 
-  useEffect(() => { loadData(); }, [currentUser?.id, CAN_VIEW_ALL_CANDIDATES]);
+ useEffect(() => {
+  (async () => {
+    let max = SESSIONS_NORMALES_MAX;
+    try {
+      const nb = await window.electron.getNbSeances();
+      max = Number(nb) || SESSIONS_NORMALES_MAX;
+      setNbSeancesMax(max);
+    } catch (e) {
+      console.error("Erreur chargement nombre de séances configuré:", e);
+    }
+    await loadData(max);
+  })();
+}, [currentUser?.id, CAN_VIEW_ALL_CANDIDATES]);
+
+  // ── Rafraîchit dès qu'une séance est créée/modifiée/annulée (Agenda) ──
+  useEffect(() => {
+    const handlerSeance = () => loadData();
+    const handlerNbSeances = async () => {
+      try {
+        const nb = await window.electron.getNbSeances();
+        const max = Number(nb) || SESSIONS_NORMALES_MAX;
+        setNbSeancesMax(max);
+        await loadData(max);
+      } catch (e) {
+        console.error("Erreur rechargement nombre de séances:", e);
+      }
+    };
+    window.addEventListener("seance-updated", handlerSeance);
+    window.addEventListener("nb-seances-updated", handlerNbSeances);
+    return () => {
+      window.removeEventListener("seance-updated", handlerSeance);
+      window.removeEventListener("nb-seances-updated", handlerNbSeances);
+    };
+  }, [nbSeancesMax]);
+
 
   // ── Ajouter ──────────────────────────────────────────────────────────────────
   const handleAdd = () => {
@@ -408,21 +460,22 @@ const MesCandidats = () => {
     setEditCandidat(null);
     setShowModal(true);
   };
-
-  const handleSave = async (data) => {
-    if (!CAN_ADD_CANDIDAT) return;
-    if (data.idCandidat) {
-      await window.electron.updateCandidat(data);
-    } else {
-      // ── On passe l'id du moniteur connecté comme créateur ──
-      await window.electron.addCandidat({
-        ...data,
-        created_by_moniteur_id: currentUser?.id ?? null,
-      });
-    }
-    await loadData();
-    setShowModal(false);
-  };
+const handleSave = async (data) => {
+  if (!CAN_ADD_CANDIDAT) return;
+  if (data.idCandidat) {
+    await window.electron.updateCandidat(data);
+  } else {
+    // ── On passe l'id du moniteur connecté comme créateur ──
+    await window.electron.addCandidat({
+      ...data,
+      created_by_moniteur_id: currentUser?.id ?? null,
+    });
+    // Nouveau candidat uniquement → message de bienvenue WhatsApp
+    openWhatsAppBienvenue(data.telephone, data.prenom);
+  }
+  await loadData();
+  setShowModal(false);
+};
 
   // ── Supprimer ────────────────────────────────────────────────────────────────
   const handleDelete = async (id) => {
