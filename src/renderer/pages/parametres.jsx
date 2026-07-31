@@ -401,8 +401,8 @@ const ModalMoniteurs = ({ onClose }) => {
 const ModalExamens = ({ onClose }) => {
   const { examRules, saveExamRules } = useExamenRulesCtx();
   const [rules, setRules] = useState([
-    { id:1, icon:"🕐", label:"Délai après échec",        value:String(examRules.delaiApresEchec), unit:"Jours", color:"#a78bfa", type:"select", rulesKey:"delaiApresEchec" },
-    { id:2, icon:"🔴", label:"Tentatives max",           value:String(examRules.tentativesMax),   unit:null,    color:"#f87171", type:"select", rulesKey:"tentativesMax"   },
+    { id:1, icon:"🕐", label:"Délai après échec",        value:String(examRules.delaiApresEchec), unit:"Jours", color:"#a78bfa", type:"number", rulesKey:"delaiApresEchec" },
+    { id:2, icon:"🔴", label:"Tentatives max",           value:String(examRules.tentativesMax),   unit:null,    color:"#f87171", type:"number", rulesKey:"tentativesMax"   },
     { id:4, icon:"📅", label:"Jours d'examen autorisés", selectedDays:examRules.joursAutorises,   color:"#60a5fa", type:"days", rulesKey:"joursAutorises"  },
   ]);
   const daysOptions = ["Dim","Lun","Mar","Mer","Jeu","Ven","Sam"];
@@ -414,8 +414,8 @@ const ModalExamens = ({ onClose }) => {
   }));
   const handleSave = () => {
     saveExamRules({
-      delaiApresEchec: Number(rules.find(r=>r.rulesKey==="delaiApresEchec")?.value||14),
-      tentativesMax:   Number(rules.find(r=>r.rulesKey==="tentativesMax")?.value||3),
+      delaiApresEchec: Math.max(1, Number(rules.find(r=>r.rulesKey==="delaiApresEchec")?.value||14)),
+      tentativesMax:   Math.max(1, Number(rules.find(r=>r.rulesKey==="tentativesMax")?.value||3)),
       blocageImpaye:   examRules.blocageImpaye??true,
       joursAutorises:  rules.find(r=>r.rulesKey==="joursAutorises")?.selectedDays||["Lun","Mer","Ven"],
       congeActif:     examRules.congeActif,
@@ -435,16 +435,31 @@ const ModalExamens = ({ onClose }) => {
               <div style={{ display:"flex", alignItems:"center", width:"100%" }}>
                 <span className="rule-icon" style={{ marginRight:10 }}>{r.icon}</span>
                 <span className="rule-label" style={{ fontWeight:600, flex:1 }}>{r.label}</span>
-                <div style={{ marginLeft:"auto" }}>
-                  {r.type==="select" && (
-                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                      <select value={r.value} onChange={e=>updateRule(r.id,"value",e.target.value)} style={{ padding:"4px 8px", borderRadius:8, border:"1px solid #ccc", fontSize:13, background:"#f8faff", cursor:"pointer" }}>
-                        {["1","2","3","5","7","14","30"].map(o=><option key={o} value={o}>{o}</option>)}
-                      </select>
-                      {r.unit && <span style={{ fontSize:12, color:"#666" }}>{r.unit}</span>}
-                    </div>
-                  )}
-                </div>
+           <div style={{ marginLeft:"auto" }}>
+  {r.type==="select" && (
+    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+      <select value={r.value} onChange={e=>updateRule(r.id,"value",e.target.value)} style={{ padding:"4px 8px", borderRadius:8, border:"1px solid #ccc", fontSize:13, background:"#f8faff", cursor:"pointer" }}>
+        {["1","2","3","5","7","14","30"].map(o=><option key={o} value={o}>{o}</option>)}
+      </select>
+      {r.unit && <span style={{ fontSize:12, color:"#666" }}>{r.unit}</span>}
+    </div>
+  )}
+  {r.type==="number" && (
+    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+      <input
+        type="number"
+        min={1}
+        value={r.value}
+        onChange={e=>updateRule(r.id,"value",e.target.value)}
+        style={{
+          width:70, padding:"4px 8px", borderRadius:8, border:"1px solid #ccc",
+          fontSize:13, background:"#f8faff", textAlign:"center",
+        }}
+      />
+      {r.unit && <span style={{ fontSize:12, color:"#666" }}>{r.unit}</span>}
+    </div>
+  )}
+</div>
               </div>
               {r.type==="days" && (
                 <div style={{ display:"flex", gap:6, flexWrap:"wrap", width:"100%", marginTop:8 }}>

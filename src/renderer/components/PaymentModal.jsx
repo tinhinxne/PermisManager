@@ -3,7 +3,6 @@ import Button from "./Button";
 import Input from "./Input";
 import Select from "./Select";
 
-const PRIX_PERMIS  = 30000;
 const SERVEUR_URL  = "https://lesser-flashcard-unfazed.ngrok-free.dev"; // ← remplace après déploiement Render
 const CHARGILY_MODE = "test"; // ← passe à "live" quand tu as les vraies clés
 
@@ -18,6 +17,9 @@ const PaymentModal = ({ candidate, allCandidates, onClose, onAddPayment, moniteu
   const [loading, setLoading]                     = useState(false);
   const [searchQuery, setSearchQuery]             = useState("");
 
+  // ── Prix de la formation (configurable dans Paramètres) ───────────────────
+  const [prixFormation, setPrixFormation] = useState(30000); // valeur par défaut le temps du chargement
+
   // ── États SATIM ────────────────────────────────────────────────────────────
   const [satimLoading,  setSatimLoading]  = useState(false); // appel en cours
   const [satimStatus,   setSatimStatus]   = useState(null);  // "waiting" | "success" | "failed"
@@ -31,6 +33,13 @@ const PaymentModal = ({ candidate, allCandidates, onClose, onAddPayment, moniteu
   useEffect(() => {
     return () => { if (pollingRef) clearInterval(pollingRef); };
   }, [pollingRef]);
+
+  // ── Chargement du prix de la formation configuré dans Paramètres ──────────
+  useEffect(() => {
+    window.electron.getPrixFormation()
+      .then(p => setPrixFormation(Number(p) || 30000))
+      .catch(() => {});
+  }, []);
 
   const filteredCandidates = candidatesList.filter(c =>
     `${c.prenom} ${c.nom}`.toLowerCase().includes(searchQuery.toLowerCase())
@@ -59,7 +68,7 @@ const PaymentModal = ({ candidate, allCandidates, onClose, onAddPayment, moniteu
             nom:            c.nom,
             prenom:         c.prenom,
             telephone:      c.telephone || c.tel,
-            montantRestant: c.montantRestant ?? PRIX_PERMIS,
+            montantRestant: c.montantRestant ?? prixFormation,
             statutPaiement: c.statutPaiement || "en_attente",
           }));
           setCandidatesList(normalises);
@@ -72,14 +81,14 @@ const PaymentModal = ({ candidate, allCandidates, onClose, onAddPayment, moniteu
       }
     };
     if (!candidate) loadCandidates();
-  }, [moniteurId]);
+  }, [moniteurId, prixFormation]);
 
   const currentRemaining = selectedCandidate
-    ? parseFloat(selectedCandidate.montantRestant ?? PRIX_PERMIS)
+    ? parseFloat(selectedCandidate.montantRestant ?? prixFormation)
     : 0;
   const liveRemaining = Math.max(0, currentRemaining - (parseFloat(amount) || 0));
-  const pctPaye       = PRIX_PERMIS > 0
-    ? Math.round(((PRIX_PERMIS - currentRemaining) / PRIX_PERMIS) * 100)
+  const pctPaye       = prixFormation > 0
+    ? Math.round(((prixFormation - currentRemaining) / prixFormation) * 100)
     : 0;
 
   const paymentMethods = [
@@ -268,7 +277,7 @@ const stat = await window.electron.statutChargily(checkoutId);
                         onMouseLeave={e => e.currentTarget.style.background = "transparent"}
                       >
                         <span style={{ fontWeight: "500" }}>{c.prenom} {c.nom}</span>
-                        <span style={{ fontSize: "11px", color: "#b91c1c" }}>Reste : {parseFloat(c.montantRestant ?? PRIX_PERMIS).toLocaleString("fr-DZ")} DA</span>
+                        <span style={{ fontSize: "11px", color: "#b91c1c" }}>Reste : {parseFloat(c.montantRestant ?? prixFormation).toLocaleString("fr-DZ")} DA</span>
                       </div>
                     ))
                   )}
@@ -291,7 +300,7 @@ const stat = await window.electron.statutChargily(checkoutId);
                     Reste actuel :&nbsp;
                     <strong style={{ color: "#b91c1c" }}>{currentRemaining.toLocaleString("fr-DZ")} DA</strong>
                     &nbsp;/&nbsp;
-                    <span style={{ color: "#64748b" }}>Total : {PRIX_PERMIS.toLocaleString("fr-DZ")} DA</span>
+                    <span style={{ color: "#64748b" }}>Total : {prixFormation.toLocaleString("fr-DZ")} DA</span>
                   </div>
                 </div>
                 {amount && parseFloat(amount) > 0 && (
@@ -307,7 +316,7 @@ const stat = await window.electron.statutChargily(checkoutId);
                   <div style={{ height: "100%", width: `${pctPaye}%`, background: pctPaye >= 100 ? "#166534" : "#4E96E1", borderRadius: "4px", transition: "width 0.3s ease" }} />
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#94A3B8", marginTop: "4px" }}>
-                  <span>Déjà payé : {(PRIX_PERMIS - currentRemaining).toLocaleString("fr-DZ")} DA</span>
+                  <span>Déjà payé : {(prixFormation - currentRemaining).toLocaleString("fr-DZ")} DA</span>
                   <span>{pctPaye}%</span>
                 </div>
               </div>
