@@ -50,7 +50,7 @@ function consumeCredit(candidatId) {
   setCredit(candidatId, current - 1);
   return current - 1;
 }
-
+  
 function dbRowToSession(row) {
   const rawDate   = toLocalISO(row.date);
   const dateObj   = new Date(rawDate + "T12:00:00");
