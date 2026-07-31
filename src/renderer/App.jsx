@@ -22,6 +22,7 @@ import Layout              from "./layout/Layout";
 import LayoutMoniteur      from "./layout/LayoutMoniteur";
 import DashboardMoniteur   from "./pages/DashboardMoniteur";
 import MesCandidats        from "./pages/MesCandidats";
+import CoursCodeMoniteur from "./pages/CoursCodeMoniteur";
 import AgendaMoniteur      from "./pages/AgendaMoniteur";
 import ExamensMoniteur     from "./pages/ExamenMoniteur";
 import PaiementsMoniteur   from "./pages/PaiementMoniteur";
@@ -57,6 +58,7 @@ const App = () => {
                     <Route element={<LayoutMoniteur />}>
                       <Route path="/moniteur/dashboard"  element={<DashboardMoniteur />} />
                       <Route path="/moniteur/candidat"   element={<MesCandidats />} />
+                      <Route path="/moniteur/cours-code" element={<CoursCodeMoniteur />} />
                       <Route path="/moniteur/agenda"     element={<AgendaMoniteur />} />
                       <Route path="/moniteur/conges" element={<MesConges/>} />
                       <Route path="/moniteur/paiements"  element={<PaiementsMoniteur />} />

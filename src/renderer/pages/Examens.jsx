@@ -1082,12 +1082,13 @@ const handleConfirm = async () => {
       )}
 
       {showAddExamenModal && (
-        <AjoutExamenModal
-          candidats={candidatsFullList}
-          onClose={() => setShowAddExamenModal(false)}
-          onConfirm={ajouterExamenManuel}
-        />
-      )}
+  <AjoutExamenModal
+    candidats={candidatsFullList}
+    examensList={examensList}
+    onClose={() => setShowAddExamenModal(false)}
+    onConfirm={ajouterExamenManuel}
+  />
+)}
 
       {/* ── Modal export PDF ── */}
       {showExportModal && (
@@ -1134,7 +1135,7 @@ const handleConfirm = async () => {
 // ─────────────────────────────────────────────
 // AjoutExamenModal
 // ─────────────────────────────────────────────
-function AjoutExamenModal({ candidats, onClose, onConfirm }) {
+function AjoutExamenModal({ candidats, examensList = [], onClose, onConfirm }) {
   const [candidatId, setCandidatId] = useState("");
   const [type, setType]             = useState("Code");
   const [date, setDate]             = useState("");
@@ -1143,10 +1144,31 @@ function AjoutExamenModal({ candidats, onClose, onConfirm }) {
   const [saving, setSaving]         = useState(false);
   const [error, setError]           = useState("");
 
+  const TOUS_TYPES = ["Code", "Créneau", "Circulation"];
+
   const candidatSelectionne = candidats.find(c => String(c.id) === String(candidatId));
+
+  const typesReussis = examensList
+    .filter(e => String(e.candidatId) === String(candidatId) && e.status === "Passed")
+    .map(e => e.type);
+
+  const typesDisponibles = TOUS_TYPES.filter(t => !typesReussis.includes(t));
+
+  useEffect(() => {
+    if (typesDisponibles.length > 0 && !typesDisponibles.includes(type)) {
+      setType(typesDisponibles[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidatId]);
+
+  const permisDejaComplet = candidatId && typesDisponibles.length === 0;
 
   const handleConfirm = async () => {
     if (!candidatId)   { setError("Veuillez sélectionner un candidat."); return; }
+    if (typesReussis.includes(type)) {
+      setError(`Ce candidat a déjà réussi l'examen "${type}". Impossible d'en ajouter un nouveau.`);
+      return;
+    }
     if (!date)         { setError("Veuillez choisir une date."); return; }
     if (!heure)        { setError("Veuillez choisir une heure."); return; }
     if (!lieu.trim())  { setError("Veuillez indiquer un lieu."); return; }
@@ -1221,20 +1243,29 @@ function AjoutExamenModal({ candidats, onClose, onConfirm }) {
             </select>
           </div>
 
-          <div>
+     <div>
             <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
               Type d'examen <span style={{ color: "#dc2626" }}>*</span>
             </label>
             <select
               value={type}
               onChange={e => setType(e.target.value)}
-              style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13.5, color: "#1F2937", outline: "none", background: "#fff" }}
+              disabled={permisDejaComplet}
+              style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13.5, color: "#1F2937", outline: "none", background: permisDejaComplet ? "#f1f5f9" : "#fff" }}
             >
-              <option value="Code">Code</option>
-              <option value="Créneau">Créneau</option>
-              <option value="Circulation">Circulation</option>
+              {TOUS_TYPES.map(t => (
+                <option key={t} value={t} disabled={typesReussis.includes(t)}>
+                  {t}{typesReussis.includes(t) ? " — déjà réussi ✅" : ""}
+                </option>
+              ))}
             </select>
           </div>
+
+          {permisDejaComplet && (
+            <div style={{ padding: "9px 13px", borderRadius: 9, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", fontSize: 12, fontWeight: 500 }}>
+              🎓 Ce candidat a déjà réussi les 3 examens (Code, Créneau, Circulation).
+            </div>
+          )}
 
           <FormField label="Date"  value={date}  onChange={setDate}  type="date" required />
           <FormField label="Heure" value={heure} onChange={setHeure} type="time" required />
@@ -1251,7 +1282,7 @@ function AjoutExamenModal({ candidats, onClose, onConfirm }) {
           <button onClick={() => !saving && onClose()} disabled={saving} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>
             Annuler
           </button>
-          <button onClick={handleConfirm} disabled={saving} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#16a34a", color: "#fff", cursor: saving ? "not-allowed" : "pointer", fontWeight: 600, fontSize: 13.5, opacity: saving ? 0.7 : 1 }}>
+         <button onClick={handleConfirm} disabled={saving || permisDejaComplet} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: (saving || permisDejaComplet) ? "#94a3b8" : "#16a34a", color: "#fff", cursor: (saving || permisDejaComplet) ? "not-allowed" : "pointer", fontWeight: 600, fontSize: 13.5, opacity: saving ? 0.7 : 1 }}>
             {saving ? "Ajout..." : "Ajouter l'examen"}
           </button>
         </div>

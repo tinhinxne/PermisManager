@@ -48,7 +48,6 @@
     "@fortawesome/fontawesome-free": "^7.2.0",
     "@mui/material": "^7.3.9",
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.8.0",
     "electron-squirrel-startup": "^1.0.1",
     "framer-motion": "^12.38.0",
     "jspdf": "^4.2.1",

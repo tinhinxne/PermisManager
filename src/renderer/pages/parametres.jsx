@@ -9,7 +9,7 @@ import {
   Users, Calendar, CreditCard, ClipboardCheck, Umbrella,
   Eye as EyeIcon, UserPlus, Trash2, CalendarPlus,
   Receipt, PenLine, CalendarX, Lock, LockOpen, FileSpreadsheet,
-  Wallet, Search,
+  Wallet, Search, GraduationCap,
 } from "lucide-react";
 import { useRulesCtx }       from "../context/RulesContext";
 import { usePermissionsCtx } from "../context/PermissionsContext";
@@ -85,6 +85,18 @@ const PERM_GROUPS = [
     { key: "CAN_EXPORT_LISTE_CANDIDATS", Icon: FileSpreadsheet, label: "Générer قائمة المترشحين (PDF)" },
   ],
 },
+{
+    id: "coursCode",
+    Icon: GraduationCap,
+    label: "Cours de code",
+    desc: "Gestion des cours collectifs de code",
+    color: "#7C3AED", bg: "#F3E8FF", textColor: "#5B21B6", border: "#C4B5FD",
+    perms: [
+      { key: "CAN_MANAGE_COURS_CODE",   Icon: CalendarPlus,    label: "Créer / modifier mes cours de code" },
+      { key: "CAN_MARK_PRESENCE_CODE",  Icon: ClipboardCheck,  label: "Marquer la présence des candidats"  },
+      { key: "CAN_VIEW_ALL_COURS_CODE", Icon: EyeIcon,         label: "Voir les cours des autres moniteurs" },
+    ],
+  },
   {
     id: "rh",
     Icon: Umbrella,
@@ -639,7 +651,7 @@ const ModalPrixFormation = ({ onClose }) => {
     setEditing(false);
   };
 
-  const handleSave = async () => {
+const handleSave = async () => {
     const val = parseFloat(prix);
     if (isNaN(val) || val <= 0) {
       setError("Veuillez saisir un montant valide.");
@@ -838,7 +850,7 @@ const ModalNbSeances = ({ onClose }) => {
     setEditing(false);
   };
 
-  const handleSave = async () => {
+const handleSave = async () => {
     const val = parseInt(nbSeances, 10);
     if (isNaN(val) || val <= 0) {
       setError("Veuillez saisir un nombre valide.");
@@ -849,6 +861,7 @@ const ModalNbSeances = ({ onClose }) => {
     setSaving(false);
     if (r.success) {
       setSaved(true);
+      window.dispatchEvent(new Event("nb-seances-updated")); // ← ajout
       setTimeout(() => onClose(), 900);
     } else {
       setError("Erreur lors de la sauvegarde. Réessayez.");

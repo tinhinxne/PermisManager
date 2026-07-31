@@ -62,6 +62,12 @@ function parseExamDate(dateStr) {
   const d = new Date(normalized + "T00:00:00");
   return isNaN(d) ? null : d;
 }
+function formatWhatsAppUrl(telephone, message) {
+  if (!telephone) return null;
+  let numero = telephone.replace(/\D/g, "");
+  if (numero.startsWith("0")) numero = "213" + numero.slice(1);
+  return `https://wa.me/${numero}?text=${encodeURIComponent(message)}`;
+}
 
 // ─────────────────────────────────────────────
 // Badge J-X
@@ -504,9 +510,10 @@ function ExamenTableMoniteur({
 // Composant principal - Version Moniteur
 // ─────────────────────────────────────────────
 const ExamensMoniteur = () => {
-  const {
+const {
     examensList, generateExamens, setExamenResult,
     retirerCandidat, candidatsReportes, EXAM_THRESHOLDS,
+    ajouterExamenManuel,
   } = useExamenCtx();
   const { examRules }    = useExamenRulesCtx();
   const { currentUser }  = useAuth();
@@ -531,6 +538,8 @@ const ExamensMoniteur = () => {
 
   const [showExportModal, setShowExportModal] = useState(false);
   const [pdfLoading,      setPdfLoading]      = useState(false);
+  const [showAddExamenModal, setShowAddExamenModal] = useState(false);
+  const [candidatsFullList,  setCandidatsFullList]  = useState([]);
   const [exportForm, setExportForm] = useState({
     nomEcole: "", wilaya: "", centreExamen: "", morkaba: "", dateDepot: "", dateExamen: "",
   });
@@ -551,7 +560,7 @@ const ExamensMoniteur = () => {
         window.electron.getCandidats(),
       ]);
 
-      const map = {};
+ const map = {};
       candidats.forEach(c => {
         map[String(c.idCandidat)] = {
           nom: c.nom ?? "", prenom: c.prenom ?? "",
@@ -561,6 +570,16 @@ const ExamensMoniteur = () => {
         };
       });
       setCandidatsMap(map);
+
+      setCandidatsFullList(candidats.map(c => ({
+        id: c.idCandidat,
+        nom: c.nom ?? "",
+        prenom: c.prenom ?? "",
+        email: c.email ?? "",
+        telephone: c.telephone ?? "",
+        categoriePermis: c.categoriePermis ?? "",
+        dateNaissance: c.date_naissance ?? "",
+      })));
 
       if (currentUser?.id) {
         const mesSeances = seances.filter(
@@ -779,20 +798,31 @@ const ExamensMoniteur = () => {
               {lastGenerated && <span style={{ color: "#94a3b8", marginLeft: 12, fontSize: 12 }}>Actualisé le : {lastGenerated}</span>}
             </p>
           </div>
-          <button
-            onClick={openExportModal}
-            disabled={!CAN_EXPORT_LISTE_CANDIDATS}
-            title={CAN_EXPORT_LISTE_CANDIDATS ? "" : "Permission requise — contactez l'admin"}
-            style={{
-              display: "flex", alignItems: "center", gap: 8,
-              background: CAN_EXPORT_LISTE_CANDIDATS ? "#2b537e" : "#cbd5e1",
-              color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10,
-              cursor: CAN_EXPORT_LISTE_CANDIDATS ? "pointer" : "not-allowed",
-              fontSize: 14, fontWeight: 600, opacity: CAN_EXPORT_LISTE_CANDIDATS ? 1 : 0.7,
-            }}
-          >
-            {CAN_EXPORT_LISTE_CANDIDATS ? <FaFilePdf /> : <FaLock size={12} />} قائمة المترشحين
-          </button>
+         <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={openExportModal}
+              disabled={!CAN_EXPORT_LISTE_CANDIDATS}
+              title={CAN_EXPORT_LISTE_CANDIDATS ? "" : "Permission requise — contactez l'admin"}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                background: CAN_EXPORT_LISTE_CANDIDATS ? "#2b537e" : "#cbd5e1",
+                color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10,
+                cursor: CAN_EXPORT_LISTE_CANDIDATS ? "pointer" : "not-allowed",
+                fontSize: 14, fontWeight: 600, opacity: CAN_EXPORT_LISTE_CANDIDATS ? 1 : 0.7,
+              }}
+            >
+              {CAN_EXPORT_LISTE_CANDIDATS ? <FaFilePdf /> : <FaLock size={12} />} قائمة المترشحين
+            </button>
+
+            {CAN_TOGGLE_STATUS && (
+              <button
+                onClick={() => setShowAddExamenModal(true)}
+                style={{ display: "flex", alignItems: "center", gap: 8, background: "#16a34a", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600 }}
+              >
+                <FaCalendarPlus /> Ajouter un examen
+              </button>
+            )}
+          </div>
         </div>
 
         {/* ── Règles actives ── */}
@@ -1112,8 +1142,17 @@ const ExamensMoniteur = () => {
         }}
       />
 
-      {permisObtenuInfo && (
+   {permisObtenuInfo && (
         <PermisObtenuModal candidatName={permisObtenuInfo.candidat} onClose={() => setPermisObtenuInfo(null)} />
+      )}
+
+      {showAddExamenModal && (
+        <AjoutExamenModal
+          candidats={candidatsFullList}
+          examensList={examensList}
+          onClose={() => setShowAddExamenModal(false)}
+          onConfirm={ajouterExamenManuel}
+        />
       )}
 
       {/* ── Modal export PDF ── */}
@@ -1154,6 +1193,165 @@ const ExamensMoniteur = () => {
     </div>
   );
 };
+
+// ─────────────────────────────────────────────
+// AjoutExamenModal
+// ─────────────────────────────────────────────
+function AjoutExamenModal({ candidats, examensList = [], onClose, onConfirm }) {
+  const [candidatId, setCandidatId] = useState("");
+  const [type, setType]             = useState("Code");
+  const [date, setDate]             = useState("");
+  const [heure, setHeure]           = useState("08:00");
+  const [lieu, setLieu]             = useState("");
+  const [saving, setSaving]         = useState(false);
+  const [error, setError]           = useState("");
+
+  const TOUS_TYPES = ["Code", "Créneau", "Circulation"];
+
+  const candidatSelectionne = candidats.find(c => String(c.id) === String(candidatId));
+
+  const typesReussis = examensList
+    .filter(e => String(e.candidatId) === String(candidatId) && e.status === "Passed")
+    .map(e => e.type);
+
+  const typesDisponibles = TOUS_TYPES.filter(t => !typesReussis.includes(t));
+
+  useEffect(() => {
+    if (typesDisponibles.length > 0 && !typesDisponibles.includes(type)) {
+      setType(typesDisponibles[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidatId]);
+
+  const permisDejaComplet = candidatId && typesDisponibles.length === 0;
+
+  const handleConfirm = async () => {
+    if (!candidatId)   { setError("Veuillez sélectionner un candidat."); return; }
+    if (typesReussis.includes(type)) {
+      setError(`Ce candidat a déjà réussi l'examen "${type}". Impossible d'en ajouter un nouveau.`);
+      return;
+    }
+    if (!date)         { setError("Veuillez choisir une date."); return; }
+    if (!heure)        { setError("Veuillez choisir une heure."); return; }
+    if (!lieu.trim())  { setError("Veuillez indiquer un lieu."); return; }
+
+    setSaving(true);
+    setError("");
+    try {
+      await onConfirm({
+        candidatId,
+        candidat: candidatSelectionne
+          ? `${candidatSelectionne.prenom} ${candidatSelectionne.nom}`
+          : `Candidat #${candidatId}`,
+        email: candidatSelectionne?.email,
+        type, date, heure, lieu: lieu.trim(),
+        dateNaissance: candidatSelectionne?.dateNaissance,
+        categoriePermis: candidatSelectionne?.categoriePermis,
+      });
+
+      // ── Notification WhatsApp au candidat ────────────────────────────
+      if (candidatSelectionne?.telephone) {
+        const dateFormatee = new Date(date + "T12:00:00").toLocaleDateString("fr-FR", {
+          weekday: "long", day: "numeric", month: "long", year: "numeric",
+        });
+        const message =
+          `Bonjour ${candidatSelectionne.prenom}, votre examen de ${type} a été programmé ` +
+          `le ${dateFormatee} à ${heure}, au lieu suivant : ${lieu.trim()}. ` +
+          `Merci de vous présenter 15 minutes avant l'heure indiquée avec votre pièce d'identité.`;
+        const url = formatWhatsAppUrl(candidatSelectionne.telephone, message);
+        if (url) window.electron?.openExternal?.(url);
+      }
+
+      onClose();
+    } catch (e) {
+      console.error(e);
+      setError("Erreur lors de la création de l'examen.");
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      onClick={() => !saving && onClose()}
+    >
+      <div style={{ background: "#fff", borderRadius: 14, padding: 24, width: 440, maxWidth: "90vw", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: 17, color: "#1F2937" }}>Ajouter un examen manuellement</h3>
+          <button onClick={() => !saving && onClose()} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16 }}>
+            <FaTimes />
+          </button>
+        </div>
+        <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>
+          Cet examen est ajouté directement, sans passer par les seuils automatiques.
+        </p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
+              Candidat(e) <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <select
+              value={candidatId}
+              onChange={e => setCandidatId(e.target.value)}
+              style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13.5, color: "#1F2937", outline: "none", background: "#fff" }}
+            >
+              <option value="">— Sélectionner —</option>
+              {candidats.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.prenom} {c.nom} {c.categoriePermis ? `(${c.categoriePermis})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+        <div>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
+              Type d'examen <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <select
+              value={type}
+              onChange={e => setType(e.target.value)}
+              disabled={permisDejaComplet}
+              style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13.5, color: "#1F2937", outline: "none", background: permisDejaComplet ? "#f1f5f9" : "#fff" }}
+            >
+              {TOUS_TYPES.map(t => (
+                <option key={t} value={t} disabled={typesReussis.includes(t)}>
+                  {t}{typesReussis.includes(t) ? " — déjà réussi ✅" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {permisDejaComplet && (
+            <div style={{ padding: "9px 13px", borderRadius: 9, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", fontSize: 12, fontWeight: 500 }}>
+              🎓 Ce candidat a déjà réussi les 3 examens (Code, Créneau, Circulation).
+            </div>
+          )}
+
+          <FormField label="Date"  value={date}  onChange={setDate}  type="date" required />
+          <FormField label="Heure" value={heure} onChange={setHeure} type="time" required />
+          <FormField label="Lieu"  value={lieu}  onChange={setLieu}  placeholder="Ex : Centre d'examen" required />
+        </div>
+
+        {error && (
+          <div style={{ marginTop: 12, padding: "9px 13px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontSize: 12, fontWeight: 500 }}>
+            ⚠ {error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button onClick={() => !saving && onClose()} disabled={saving} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>
+            Annuler
+          </button>
+         <button onClick={handleConfirm} disabled={saving || permisDejaComplet} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: (saving || permisDejaComplet) ? "#94a3b8" : "#16a34a", color: "#fff", cursor: (saving || permisDejaComplet) ? "not-allowed" : "pointer", fontWeight: 600, fontSize: 13.5, opacity: saving ? 0.7 : 1 }}>
+            {saving ? "Ajout..." : "Ajouter l'examen"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────
 // FormField
