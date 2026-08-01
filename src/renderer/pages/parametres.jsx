@@ -403,21 +403,14 @@ const ModalExamens = ({ onClose }) => {
   const [rules, setRules] = useState([
     { id:1, icon:"🕐", label:"Délai après échec",        value:String(examRules.delaiApresEchec), unit:"Jours", color:"#a78bfa", type:"number", rulesKey:"delaiApresEchec" },
     { id:2, icon:"🔴", label:"Tentatives max",           value:String(examRules.tentativesMax),   unit:null,    color:"#f87171", type:"number", rulesKey:"tentativesMax"   },
-    { id:4, icon:"📅", label:"Jours d'examen autorisés", selectedDays:examRules.joursAutorises,   color:"#60a5fa", type:"days", rulesKey:"joursAutorises"  },
   ]);
-  const daysOptions = ["Dim","Lun","Mar","Mer","Jeu","Ven","Sam"];
   const updateRule  = (id, key, val) => setRules(p => p.map(r => r.id===id ? {...r,[key]:val} : r));
-  const toggleDay   = (ruleId, day)  => setRules(p => p.map(r => {
-    if(r.id!==ruleId) return r;
-    const nd = r.selectedDays.includes(day) ? r.selectedDays.filter(d=>d!==day) : [...r.selectedDays,day];
-    return {...r, selectedDays:nd};
-  }));
   const handleSave = () => {
     saveExamRules({
       delaiApresEchec: Math.max(1, Number(rules.find(r=>r.rulesKey==="delaiApresEchec")?.value||14)),
       tentativesMax:   Math.max(1, Number(rules.find(r=>r.rulesKey==="tentativesMax")?.value||3)),
       blocageImpaye:   examRules.blocageImpaye??true,
-      joursAutorises:  rules.find(r=>r.rulesKey==="joursAutorises")?.selectedDays||["Lun","Mer","Ven"],
+      joursAutorises:  examRules.joursAutorises,
       congeActif:     examRules.congeActif,
       congeMoisDebut: examRules.congeMoisDebut,
       congeMoisFin:   examRules.congeMoisFin,
@@ -431,7 +424,7 @@ const ModalExamens = ({ onClose }) => {
         <hr/>
         <div className="new-rules-list">
           {rules.map(r => (
-            <div className="new-rule-row" key={r.id} style={{ background:r.color+"15", borderLeft:`4px solid ${r.color}`, flexDirection:r.type==="days"?"column":"row", alignItems:r.type==="days"?"flex-start":"center", padding:12, marginBottom:8 }}>
+            <div className="new-rule-row" key={r.id} style={{ background:r.color+"15", borderLeft:`4px solid ${r.color}`, alignItems:"center", padding:12, marginBottom:8 }}>
               <div style={{ display:"flex", alignItems:"center", width:"100%" }}>
                 <span className="rule-icon" style={{ marginRight:10 }}>{r.icon}</span>
                 <span className="rule-label" style={{ fontWeight:600, flex:1 }}>{r.label}</span>
@@ -461,14 +454,6 @@ const ModalExamens = ({ onClose }) => {
   )}
 </div>
               </div>
-              {r.type==="days" && (
-                <div style={{ display:"flex", gap:6, flexWrap:"wrap", width:"100%", marginTop:8 }}>
-                  {daysOptions.map(day => {
-                    const isSel=r.selectedDays.includes(day);
-                    return <button key={day} onClick={()=>toggleDay(r.id,day)} style={{ padding:"4px 10px", borderRadius:15, fontSize:11, cursor:"pointer", border:"1px solid", borderColor:isSel?r.color:"#ccc", background:isSel?r.color:"white", color:isSel?"white":"#666", transition:"0.2s" }}>{day}</button>;
-                  })}
-                </div>
-              )}
             </div>
           ))}
         </div>
@@ -1032,7 +1017,7 @@ const Parametres = () => {
 
   const sections = [
     { id:"inscription",   icon:<ClipboardList size={20}/>,              title:"Règles d'inscriptions",      description:"Conditions d'âge et documents requis",              accentColor:"#6c63ff" },
-    { id:"examens",       icon:<BookOpen size={20}/>,                   title:"Règles des examens",          description:"Délais, tentatives max et jours autorisés",         accentColor:"#3b82f6" },
+    { id:"examens",       icon:<BookOpen size={20}/>,                   title:"Règles des examens",          description:"Délais et tentatives max",                          accentColor:"#3b82f6" },
     { id:"conges",        icon:<CalendarOff size={20}/>,                title:"Gestion des congés",          description:"Congé annuel auto-école & congés moniteurs",        accentColor:"#f97316" },
     { id:"moniteurs",     icon:<UserCog size={20}/>,                    title:"Permissions des moniteurs",   description:"Accès aux fonctionnalités par moniteur",            accentColor:"#8b5cf6" },
     { id:"prixFormation", icon:<Wallet size={20}/>,                     title:"Prix de la formation",        description:"Montant total du permis facturé aux candidats",     accentColor:"#0F6E56" },

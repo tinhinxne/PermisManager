@@ -5,6 +5,7 @@ import {
   FaClock, FaTrashAlt, FaExchangeAlt, FaUser,
   FaInfoCircle, FaCalendarPlus, FaFilePdf, FaTimes,
   FaLock, FaUserSlash, FaHistory, FaFilter,
+  FaBell, FaThumbsUp, FaThumbsDown,
 } from "react-icons/fa";
 
 import SelectFilter from "../components/SelectFilter";
@@ -293,6 +294,471 @@ function AlertModal({ icon, title, message, color = "#ef4444", onClose }) {
 }
 
 // ─────────────────────────────────────────────
+// PropositionsSection — propositions générées automatiquement,
+// affichées directement dans la page (Valider / Rejeter ligne par ligne).
+// Visible uniquement quand le composant appelant a la permission (canReview
+// contrôle aussi les actions ; le rendu global du bloc est déjà conditionné
+// par la permission côté page).
+// ─────────────────────────────────────────────
+function PropositionsSection({ propositions, canReview, onValider, onRejeter, onValiderTout, onRejeterTout }) {
+  const [busyId, setBusyId]   = useState(null);
+  const [busyAll, setBusyAll] = useState(false);
+
+  if (!propositions || propositions.length === 0) return null;
+
+  const handleValider = async (id) => {
+    setBusyId(id);
+    try { await onValider(id); } finally { setBusyId(null); }
+  };
+
+  const handleValiderTout = async () => {
+    if (!window.confirm(`Valider les ${propositions.length} proposition(s) ? Elles rejoindront la liste des examens programmés et les candidats seront notifiés.`)) return;
+    setBusyAll(true);
+    try { await onValiderTout(); } finally { setBusyAll(false); }
+  };
+
+  const handleRejeterTout = () => {
+    if (!window.confirm(`Rejeter les ${propositions.length} proposition(s) ? Elles seront re-proposées automatiquement après le délai configuré.`)) return;
+    onRejeterTout();
+  };
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ background: "#fff7ed", color: "#c2410c", width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <FaBell />
+          </div>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#1e293b" }}>Propositions à valider</h3>
+            <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>{propositions.length} candidat(s) éligible(s) — accepte ou refuse directement ici</p>
+          </div>
+        </div>
+
+        {canReview && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleRejeterTout} disabled={busyAll} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #fca5a5", background: "#fff", color: "#b91c1c", cursor: "pointer", fontWeight: 600, fontSize: 12.5 }}>
+              Tout rejeter
+            </button>
+            <button onClick={handleValiderTout} disabled={busyAll} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#16a34a", color: "#fff", cursor: "pointer", fontWeight: 600, fontSize: 12.5, opacity: busyAll ? 0.7 : 1 }}>
+              {busyAll ? "Validation..." : "Tout valider"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)", border: "1px solid #fed7aa" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: "#c2410c" }}>
+              <th style={{ padding: "12px 16px", textAlign: "left", color: "#fff", fontWeight: 600, fontSize: 13 }}>Candidat(e)</th>
+              <th style={{ padding: "12px 16px", textAlign: "left", color: "#fff", fontWeight: 600, fontSize: 13 }}>Type</th>
+              <th style={{ padding: "12px 16px", textAlign: "left", color: "#fff", fontWeight: 600, fontSize: 13 }}>Date proposée</th>
+              <th style={{ padding: "12px 16px", textAlign: "left", color: "#fff", fontWeight: 600, fontSize: 13 }}>Lieu</th>
+              <th style={{ padding: "12px 16px", textAlign: "left", color: "#fff", fontWeight: 600, fontSize: 13 }}>Séances</th>
+              <th style={{ padding: "12px 16px", textAlign: "left", color: "#fff", fontWeight: 600, fontSize: 13 }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <AnimatePresence mode="popLayout">
+              {propositions.map((p, i) => (
+                <motion.tr
+                  layout
+                  key={p.id}
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, x: 40, scale: 0.97, transition: { duration: 0.25 } }}
+                  style={{ background: i % 2 === 0 ? "#fff" : "#FFFBF5" }}
+                >
+                  <td style={{ padding: "11px 16px", borderBottom: "1px solid #fed7aa55", fontSize: 13, fontWeight: 600, color: "#1F2937" }}>{p.candidat}</td>
+                  <td style={{ padding: "11px 16px", borderBottom: "1px solid #fed7aa55", fontSize: 13, color: "#1F2937" }}>{p.type}</td>
+                  <td style={{ padding: "11px 16px", borderBottom: "1px solid #fed7aa55", fontSize: 13, color: "#1F2937" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <FaCalendarDay style={{ color: "#c2410c", fontSize: 12 }} />
+                      {p.date} <span style={{ color: "#64748b", fontSize: 12 }}>{p.heure}</span>
+                    </div>
+                  </td>
+                  <td style={{ padding: "11px 16px", borderBottom: "1px solid #fed7aa55", fontSize: 13, color: "#1F2937" }}>{p.lieu}</td>
+                  <td style={{ padding: "11px 16px", borderBottom: "1px solid #fed7aa55", fontSize: 13, color: "#1F2937" }}>
+                    <span style={{ background: "#fff7ed", color: "#c2410c", padding: "2px 8px", borderRadius: 10, fontSize: 12, fontWeight: 600 }}>
+                      {p.nbSeances ?? "—"} séances
+                    </span>
+                  </td>
+                  <td style={{ padding: "11px 16px", borderBottom: "1px solid #fed7aa55" }}>
+                    {canReview ? (
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <button
+                          onClick={() => handleValider(p.id)}
+                          disabled={busyId === p.id || busyAll}
+                          style={{ display: "flex", alignItems: "center", gap: 6, background: "#dcfce7", color: "#166534", border: "1px solid #86efac", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+                        >
+                          <FaThumbsUp style={{ fontSize: 11 }} /> Valider
+                        </button>
+                        <button
+                          onClick={() => onRejeter(p.id)}
+                          disabled={busyId === p.id || busyAll}
+                          style={{ display: "flex", alignItems: "center", gap: 6, background: "#fee2e2", color: "#991b1b", border: "1px solid #fca5a5", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+                        >
+                          <FaThumbsDown style={{ fontSize: 11 }} /> Rejeter
+                        </button>
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: 11.5, color: "#94a3b8", fontStyle: "italic" }}>Lecture seule</span>
+                    )}
+                  </td>
+                </motion.tr>
+              ))}
+            </AnimatePresence>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// CreerSessionModal — date/heure/lieu, création immédiate d'un jour d'examen
+// ─────────────────────────────────────────────
+function CreerSessionModal({ onClose, onConfirm }) {
+  const [date, setDate]   = useState("");
+  const [heure, setHeure] = useState("08:00");
+  const [lieu, setLieu]   = useState("");
+  const [error, setError] = useState("");
+
+  const handleConfirm = () => {
+    if (!date)        { setError("Veuillez choisir une date.");  return; }
+    if (!heure)       { setError("Veuillez choisir une heure."); return; }
+    if (!lieu.trim()) { setError("Veuillez indiquer un lieu.");  return; }
+    onConfirm({ date, heure, lieu: lieu.trim() });
+    onClose();
+  };
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      onClick={onClose}
+    >
+      <div style={{ background: "#fff", borderRadius: 14, padding: 24, width: 420, maxWidth: "90vw", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: 17, color: "#1F2937" }}>Créer un jour d'examen</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16 }}><FaTimes /></button>
+        </div>
+        <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>
+          Cette session apparaîtra dans la liste ci-dessous. Vous pourrez y ajouter des candidats à tout moment.
+        </p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+          <FormField label="Date"  value={date}  onChange={setDate}  type="date" required />
+          <FormField label="Heure" value={heure} onChange={setHeure} type="time" required />
+          <FormField label="Lieu"  value={lieu}  onChange={setLieu}  placeholder="Ex : Centre d'examen" required />
+        </div>
+
+        {error && (
+          <div style={{ marginTop: 12, padding: "9px 13px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontSize: 12, fontWeight: 500 }}>
+            ⚠ {error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>
+            Annuler
+          </button>
+          <button onClick={handleConfirm} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#16a34a", color: "#fff", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>
+            Créer la session
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// SessionsExamenList — liste des sessions créées, avec bouton par ligne
+// ─────────────────────────────────────────────
+function SessionsExamenList({ sessions, examensList, onAjouterCandidats, onSupprimer, canManage }) {
+  if (!sessions || sessions.length === 0) return null;
+
+  const sorted = [...sessions].sort((a, b) => (a.date + a.heure).localeCompare(b.date + b.heure));
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+        <div style={{ background: "#dbeafe", color: "#1d4ed8", width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <FaCalendarPlus />
+        </div>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#1e293b" }}>Jours d'examen créés</h3>
+          <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>{sessions.length} session(s) — ajoutez des candidats quand vous voulez</p>
+        </div>
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)", border: "1px solid #e2e8f0" }}>
+        {sorted.map(s => {
+          const nb = examensList.filter(e => e.sessionId === s.id).length;
+          return (
+            <div key={s.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 16px", borderBottom: "1px solid #f1f5f9" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <FaCalendarDay style={{ color: "#4E96E1", fontSize: 13 }} />
+                <div>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: "#1e293b" }}>
+                    {s.date} <span style={{ color: "#64748b", fontWeight: 500 }}>à {s.heure}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#64748b" }}>{s.lieu}</div>
+                </div>
+                <span style={{ background: "#f1f5f9", color: "#475569", padding: "2px 9px", borderRadius: 10, fontSize: 12, fontWeight: 600, marginLeft: 6 }}>
+                  {nb} candidat{nb > 1 ? "s" : ""}
+                </span>
+              </div>
+
+              {canManage && (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => onAjouterCandidats(s)}
+                    style={{ display: "flex", alignItems: "center", gap: 7, background: "#dbeafe", color: "#1d4ed8", border: "1px solid #93c5fd", padding: "7px 13px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, fontWeight: 700 }}
+                  >
+                    <FaCalendarPlus style={{ fontSize: 11 }} /> Ajouter des candidats
+                  </button>
+                  <button
+                    onClick={() => onSupprimer(s.id)}
+                    title="Supprimer cette session (les examens déjà créés restent)"
+                    style={{ background: "#FEF2F2", color: "#b91c1c", border: "1px solid #fca5a5", padding: "7px 10px", borderRadius: 8, cursor: "pointer", fontSize: 12 }}
+                  >
+                    <FaTrashAlt />
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// AjouterCandidatsModal — sélection candidats + type, pour UNE session donnée
+// ─────────────────────────────────────────────
+function AjouterCandidatsModal({ session, candidats, examensList = [], onClose, onConfirm }) {
+  const [selectedMap, setSelectedMap] = useState({}); // { [candidatId]: type }
+  const [search, setSearch]           = useState("");
+  const [saving, setSaving]           = useState(false);
+  const [progress, setProgress]       = useState({ done: 0, total: 0 });
+  const [error, setError]             = useState("");
+
+  const TOUS_TYPES = ["Code", "Créneau", "Circulation"];
+
+  const getTypesDisponibles = (cid) => {
+    const reussis = examensList
+      .filter(e => String(e.candidatId) === String(cid) && e.status === "Passed")
+      .map(e => e.type);
+    const programmes = examensList
+      .filter(e => String(e.candidatId) === String(cid) && e.status === "Scheduled")
+      .map(e => e.type);
+
+    const aReussiCode    = reussis.includes("Code");
+    const aReussiCreneau = reussis.includes("Créneau");
+
+    let dispo = TOUS_TYPES.filter(t => !reussis.includes(t) && !programmes.includes(t));
+
+    // ── Ordre obligatoire : Code → Créneau → Circulation ──
+    if (!aReussiCode) {
+      dispo = dispo.filter(t => t === "Code");
+    } else if (!aReussiCreneau) {
+      dispo = dispo.filter(t => t !== "Circulation");
+    }
+
+    return dispo;
+  };
+
+  const getRaisonIndisponible = (cid) => {
+    const reussis = examensList
+      .filter(e => String(e.candidatId) === String(cid) && e.status === "Passed")
+      .map(e => e.type);
+    const programmes = examensList
+      .filter(e => String(e.candidatId) === String(cid) && e.status === "Scheduled")
+      .map(e => e.type);
+
+    if (["Code", "Créneau", "Circulation"].every(t => reussis.includes(t))) {
+      return "Les 3 examens sont déjà réussis 🎓";
+    }
+    if (programmes.length > 0 && TOUS_TYPES.every(t => reussis.includes(t) || programmes.includes(t))) {
+      return "Déjà programmé pour tous les types restants";
+    }
+    return "Aucun type disponible pour le moment";
+  };
+
+  const candidatsFiltres = candidats.filter(c => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return `${c.prenom} ${c.nom}`.toLowerCase().includes(q);
+  });
+
+  const eligibles    = candidatsFiltres.filter(c => getTypesDisponibles(c.id).length > 0);
+  const nonEligibles = candidatsFiltres.filter(c => getTypesDisponibles(c.id).length === 0);
+
+  const toggleCandidat = (c) => {
+    setSelectedMap(prev => {
+      const next = { ...prev };
+      if (next[c.id]) delete next[c.id];
+      else next[c.id] = getTypesDisponibles(c.id)[0];
+      return next;
+    });
+  };
+  const changerType = (cid, type) => setSelectedMap(prev => ({ ...prev, [cid]: type }));
+  const nbSelectionnes = Object.keys(selectedMap).length;
+
+  const handleConfirm = async () => {
+    if (nbSelectionnes === 0) { setError("Sélectionnez au moins un candidat."); return; }
+    setSaving(true);
+    setError("");
+    const entries = Object.entries(selectedMap);
+    setProgress({ done: 0, total: entries.length });
+
+    for (const [cid, type] of entries) {
+      const c = candidats.find(x => String(x.id) === String(cid));
+      if (!c) continue;
+      try {
+        await onConfirm({
+          candidatId: cid,
+          candidat: `${c.prenom} ${c.nom}`,
+          email: c.email,
+          type, date: session.date, heure: session.heure, lieu: session.lieu,
+          dateNaissance: c.dateNaissance,
+          categoriePermis: c.categoriePermis,
+          sessionId: session.id,
+        });
+
+        if (c.telephone) {
+          const dateFormatee = new Date(session.date + "T12:00:00").toLocaleDateString("fr-FR", {
+            weekday: "long", day: "numeric", month: "long", year: "numeric",
+          });
+          const message =
+            `Bonjour ${c.prenom}, votre examen de ${type} a été programmé ` +
+            `le ${dateFormatee} à ${session.heure}, au lieu suivant : ${session.lieu}. ` +
+            `Merci de vous présenter 15 minutes avant l'heure indiquée avec votre pièce d'identité.`;
+          const url = formatWhatsAppUrl(c.telephone, message);
+          if (url) window.electron?.openExternal?.(url);
+        }
+      } catch (e) {
+        console.error("Erreur ajout candidat à la session", cid, e);
+      }
+      setProgress(p => ({ ...p, done: p.done + 1 }));
+    }
+
+    setSaving(false);
+    onClose();
+  };
+
+  const closeIfPossible = () => { if (!saving) onClose(); };
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      onClick={closeIfPossible}
+    >
+      <div
+        style={{ background: "#fff", borderRadius: 14, padding: 24, width: 540, maxWidth: "92vw", maxHeight: "88vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: 17, color: "#1F2937" }}>Ajouter des candidats</h3>
+          <button onClick={closeIfPossible} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16 }}><FaTimes /></button>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12.5, color: "#166534" }}>
+          <FaCalendarDay style={{ fontSize: 12 }} />
+          {session.date} à {session.heure} · {session.lieu}
+        </div>
+
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Rechercher un candidat..."
+          style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13, outline: "none", marginBottom: 8 }}
+        />
+
+        <div style={{ fontSize: 12, color: "#64748b", marginBottom: 6 }}>
+          {nbSelectionnes} candidat(s) sélectionné(s) — choisissez le type pour chacun
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10, minHeight: 220, maxHeight: 340 }}>
+          {eligibles.length === 0 && nonEligibles.length === 0 && (
+            <div style={{ padding: 30, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>Aucun candidat trouvé.</div>
+          )}
+
+          {eligibles.map(c => {
+            const dispo = getTypesDisponibles(c.id);
+            const checked = !!selectedMap[c.id];
+            return (
+              <div
+                key={c.id}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "1px solid #f1f5f9", background: checked ? "#f0fdf4" : "#fff" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleCandidat(c)}
+                  style={{ width: 15, height: 15, cursor: "pointer" }}
+                />
+                <div style={{ flex: 1, cursor: "pointer" }} onClick={() => toggleCandidat(c)}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b" }}>{c.prenom} {c.nom}</div>
+                  {c.categoriePermis && <div style={{ fontSize: 11, color: "#94a3b8" }}>{c.categoriePermis}</div>}
+                </div>
+                <select
+                  value={selectedMap[c.id] || dispo[0]}
+                  onChange={e => changerType(c.id, e.target.value)}
+                  disabled={!checked}
+                  style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 12.5, color: "#1F2937", background: checked ? "#fff" : "#f1f5f9", outline: "none" }}
+                >
+                  {dispo.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+            );
+          })}
+
+          {nonEligibles.length > 0 && (
+            <>
+              <div style={{ padding: "6px 14px", fontSize: 11, fontWeight: 700, color: "#94a3b8", background: "#f8fafc" }}>
+                Aucun type disponible
+              </div>
+              {nonEligibles.map(c => (
+                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "1px solid #f1f5f9", opacity: 0.55 }}>
+                  <input type="checkbox" disabled style={{ width: 15, height: 15 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b" }}>{c.prenom} {c.nom}</div>
+                    <div style={{ fontSize: 11, color: "#94a3b8" }}>{getRaisonIndisponible(c.id)}</div>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+
+        {error && (
+          <div style={{ marginTop: 12, padding: "9px 13px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontSize: 12, fontWeight: 500 }}>
+            ⚠ {error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button onClick={closeIfPossible} disabled={saving} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: saving ? "not-allowed" : "pointer", fontWeight: 600, fontSize: 13.5 }}>
+            Annuler
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={saving || nbSelectionnes === 0}
+            style={{ flex: 1.4, padding: "10px 0", borderRadius: 8, border: "none", background: (saving || nbSelectionnes === 0) ? "#94a3b8" : "#16a34a", color: "#fff", cursor: (saving || nbSelectionnes === 0) ? "not-allowed" : "pointer", fontWeight: 600, fontSize: 13.5 }}
+          >
+            {saving ? `Ajout... (${progress.done}/${progress.total})` : `Ajouter ${nbSelectionnes || ""} candidat(s)`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // Boutons styles
 // ─────────────────────────────────────────────
 const btnBase      = { flex: 1, padding: "12px 0", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 13.5, textAlign: "center" };
@@ -514,10 +980,16 @@ const {
     examensList, generateExamens, setExamenResult,
     retirerCandidat, candidatsReportes, EXAM_THRESHOLDS,
     ajouterExamenManuel,
+    propositions, validerProposition, rejeterProposition,
+    validerToutesPropositions, rejeterToutesPropositions,
+    sessionsExamens, creerSessionExamen, supprimerSessionExamen,
   } = useExamenCtx();
   const { examRules }    = useExamenRulesCtx();
   const { currentUser }  = useAuth();
   const { CAN_VIEW_ALL_CANDIDATES, CAN_REMOVE_CANDIDAT, CAN_TOGGLE_STATUS, CAN_EXPORT_LISTE_CANDIDATS } = useMyPermissions();
+
+  // Seuls les moniteurs avec CAN_TOGGLE_STATUS gèrent les résultats / propositions / sessions
+  const canManageExamens = CAN_TOGGLE_STATUS;
 
   // ── state ──
   const [selectedExamen,      setSelectedExamen]      = useState(null);
@@ -538,7 +1010,11 @@ const {
 
   const [showExportModal, setShowExportModal] = useState(false);
   const [pdfLoading,      setPdfLoading]      = useState(false);
-  const [showAddExamenModal, setShowAddExamenModal] = useState(false);
+
+  // ── sessions d'examen (visibles seulement avec la permission) ──
+  const [showCreerSessionModal, setShowCreerSessionModal] = useState(false);
+  const [sessionPourAjout,      setSessionPourAjout]      = useState(null);
+
   const [candidatsFullList,  setCandidatsFullList]  = useState([]);
   const [exportForm, setExportForm] = useState({
     nomEcole: "", wilaya: "", centreExamen: "", morkaba: "", dateDepot: "", dateExamen: "",
@@ -708,6 +1184,13 @@ const {
     return full || `Candidat #${id}`;
   };
 
+  // ── propositions visibles uniquement pour ceux qui ont la permission ──
+  const propositionsVisibles = canManageExamens
+    ? propositions.filter(p =>
+        CAN_VIEW_ALL_CANDIDATES ? true : mesCandidatIds.includes(String(p.candidatId))
+      )
+    : [];
+
   // ── export PDF ──
   const openExportModal = () => {
     if (!CAN_EXPORT_LISTE_CANDIDATS) return;
@@ -789,7 +1272,7 @@ const {
           {CAN_VIEW_ALL_CANDIDATES ? "👥 Accès complet — vous voyez tous les candidats aux examens" : "🔒 Vue restreinte — vos candidats uniquement"}
         </div>
 
-        {/* ── Header + bouton export ── */}
+        {/* ── Header + boutons ── */}
         <div className="examens-page-header">
           <div>
             <h2 className="examens-page-title">{CAN_VIEW_ALL_CANDIDATES ? "Sessions d'examens" : "Mes Sessions d'examens"}</h2>
@@ -814,12 +1297,41 @@ const {
               {CAN_EXPORT_LISTE_CANDIDATS ? <FaFilePdf /> : <FaLock size={12} />} قائمة المترشحين
             </button>
 
-            {CAN_TOGGLE_STATUS && (
+            {/* Créer un jour d'examen — seulement avec la permission */}
+            {canManageExamens && (
               <button
-                onClick={() => setShowAddExamenModal(true)}
+                onClick={() => setShowCreerSessionModal(true)}
                 style={{ display: "flex", alignItems: "center", gap: 8, background: "#16a34a", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600 }}
               >
                 <FaCalendarPlus /> Ajouter un examen
+              </button>
+            )}
+
+            {/* Badge propositions — visible seulement avec la permission */}
+            {canManageExamens && (
+              <button
+                onClick={() => document.getElementById("propositions-section")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                disabled={propositionsVisibles.length === 0}
+                style={{
+                  position: "relative", display: "flex", alignItems: "center", gap: 8,
+                  background: propositionsVisibles.length > 0 ? "#fff7ed" : "#f1f5f9",
+                  color: propositionsVisibles.length > 0 ? "#c2410c" : "#94a3b8",
+                  border: `1px solid ${propositionsVisibles.length > 0 ? "#fed7aa" : "#e2e8f0"}`,
+                  padding: "10px 18px", borderRadius: 10, cursor: propositionsVisibles.length > 0 ? "pointer" : "default",
+                  fontSize: 14, fontWeight: 600,
+                }}
+              >
+                <FaBell />
+                Propositions
+                {propositionsVisibles.length > 0 && (
+                  <span style={{
+                    background: "#ea580c", color: "#fff", borderRadius: 20,
+                    minWidth: 20, height: 20, display: "flex", alignItems: "center",
+                    justifyContent: "center", fontSize: 11, fontWeight: 700, padding: "0 5px",
+                  }}>
+                    {propositionsVisibles.length}
+                  </span>
+                )}
               </button>
             )}
           </div>
@@ -915,6 +1427,30 @@ const {
             </div>
           )}
         </div>
+
+        {/* ── Jours d'examen créés + Propositions — visibles uniquement avec la permission ── */}
+        {canManageExamens && (
+          <>
+            <SessionsExamenList
+              sessions={sessionsExamens}
+              examensList={examensList}
+              onAjouterCandidats={(s) => setSessionPourAjout(s)}
+              onSupprimer={supprimerSessionExamen}
+              canManage={canManageExamens}
+            />
+
+            <div id="propositions-section">
+              <PropositionsSection
+                propositions={propositionsVisibles}
+                canReview={canManageExamens}
+                onValider={validerProposition}
+                onRejeter={rejeterProposition}
+                onValiderTout={validerToutesPropositions}
+                onRejeterTout={rejeterToutesPropositions}
+              />
+            </div>
+          </>
+        )}
 
         {/* ══════════════════════════════════════════════
             TABLE 1 — PROGRAMMÉS
@@ -1146,11 +1682,21 @@ const {
         <PermisObtenuModal candidatName={permisObtenuInfo.candidat} onClose={() => setPermisObtenuInfo(null)} />
       )}
 
-      {showAddExamenModal && (
-        <AjoutExamenModal
+      {/* ── Créer une session (date/heure/lieu) — seulement avec la permission ── */}
+      {canManageExamens && showCreerSessionModal && (
+        <CreerSessionModal
+          onClose={() => setShowCreerSessionModal(false)}
+          onConfirm={creerSessionExamen}
+        />
+      )}
+
+      {/* ── Ajouter des candidats à une session existante — seulement avec la permission ── */}
+      {canManageExamens && sessionPourAjout && (
+        <AjouterCandidatsModal
+          session={sessionPourAjout}
           candidats={candidatsFullList}
           examensList={examensList}
-          onClose={() => setShowAddExamenModal(false)}
+          onClose={() => setSessionPourAjout(null)}
           onConfirm={ajouterExamenManuel}
         />
       )}
@@ -1193,165 +1739,6 @@ const {
     </div>
   );
 };
-
-// ─────────────────────────────────────────────
-// AjoutExamenModal
-// ─────────────────────────────────────────────
-function AjoutExamenModal({ candidats, examensList = [], onClose, onConfirm }) {
-  const [candidatId, setCandidatId] = useState("");
-  const [type, setType]             = useState("Code");
-  const [date, setDate]             = useState("");
-  const [heure, setHeure]           = useState("08:00");
-  const [lieu, setLieu]             = useState("");
-  const [saving, setSaving]         = useState(false);
-  const [error, setError]           = useState("");
-
-  const TOUS_TYPES = ["Code", "Créneau", "Circulation"];
-
-  const candidatSelectionne = candidats.find(c => String(c.id) === String(candidatId));
-
-  const typesReussis = examensList
-    .filter(e => String(e.candidatId) === String(candidatId) && e.status === "Passed")
-    .map(e => e.type);
-
-  const typesDisponibles = TOUS_TYPES.filter(t => !typesReussis.includes(t));
-
-  useEffect(() => {
-    if (typesDisponibles.length > 0 && !typesDisponibles.includes(type)) {
-      setType(typesDisponibles[0]);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidatId]);
-
-  const permisDejaComplet = candidatId && typesDisponibles.length === 0;
-
-  const handleConfirm = async () => {
-    if (!candidatId)   { setError("Veuillez sélectionner un candidat."); return; }
-    if (typesReussis.includes(type)) {
-      setError(`Ce candidat a déjà réussi l'examen "${type}". Impossible d'en ajouter un nouveau.`);
-      return;
-    }
-    if (!date)         { setError("Veuillez choisir une date."); return; }
-    if (!heure)        { setError("Veuillez choisir une heure."); return; }
-    if (!lieu.trim())  { setError("Veuillez indiquer un lieu."); return; }
-
-    setSaving(true);
-    setError("");
-    try {
-      await onConfirm({
-        candidatId,
-        candidat: candidatSelectionne
-          ? `${candidatSelectionne.prenom} ${candidatSelectionne.nom}`
-          : `Candidat #${candidatId}`,
-        email: candidatSelectionne?.email,
-        type, date, heure, lieu: lieu.trim(),
-        dateNaissance: candidatSelectionne?.dateNaissance,
-        categoriePermis: candidatSelectionne?.categoriePermis,
-      });
-
-      // ── Notification WhatsApp au candidat ────────────────────────────
-      if (candidatSelectionne?.telephone) {
-        const dateFormatee = new Date(date + "T12:00:00").toLocaleDateString("fr-FR", {
-          weekday: "long", day: "numeric", month: "long", year: "numeric",
-        });
-        const message =
-          `Bonjour ${candidatSelectionne.prenom}, votre examen de ${type} a été programmé ` +
-          `le ${dateFormatee} à ${heure}, au lieu suivant : ${lieu.trim()}. ` +
-          `Merci de vous présenter 15 minutes avant l'heure indiquée avec votre pièce d'identité.`;
-        const url = formatWhatsAppUrl(candidatSelectionne.telephone, message);
-        if (url) window.electron?.openExternal?.(url);
-      }
-
-      onClose();
-    } catch (e) {
-      console.error(e);
-      setError("Erreur lors de la création de l'examen.");
-    }
-    setSaving(false);
-  };
-
-  return (
-    <div
-      style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
-      onClick={() => !saving && onClose()}
-    >
-      <div style={{ background: "#fff", borderRadius: 14, padding: 24, width: 440, maxWidth: "90vw", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <h3 style={{ margin: 0, fontSize: 17, color: "#1F2937" }}>Ajouter un examen manuellement</h3>
-          <button onClick={() => !saving && onClose()} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16 }}>
-            <FaTimes />
-          </button>
-        </div>
-        <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>
-          Cet examen est ajouté directement, sans passer par les seuils automatiques.
-        </p>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-          <div>
-            <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
-              Candidat(e) <span style={{ color: "#dc2626" }}>*</span>
-            </label>
-            <select
-              value={candidatId}
-              onChange={e => setCandidatId(e.target.value)}
-              style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13.5, color: "#1F2937", outline: "none", background: "#fff" }}
-            >
-              <option value="">— Sélectionner —</option>
-              {candidats.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.prenom} {c.nom} {c.categoriePermis ? `(${c.categoriePermis})` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
-        <div>
-            <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
-              Type d'examen <span style={{ color: "#dc2626" }}>*</span>
-            </label>
-            <select
-              value={type}
-              onChange={e => setType(e.target.value)}
-              disabled={permisDejaComplet}
-              style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13.5, color: "#1F2937", outline: "none", background: permisDejaComplet ? "#f1f5f9" : "#fff" }}
-            >
-              {TOUS_TYPES.map(t => (
-                <option key={t} value={t} disabled={typesReussis.includes(t)}>
-                  {t}{typesReussis.includes(t) ? " — déjà réussi ✅" : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {permisDejaComplet && (
-            <div style={{ padding: "9px 13px", borderRadius: 9, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", fontSize: 12, fontWeight: 500 }}>
-              🎓 Ce candidat a déjà réussi les 3 examens (Code, Créneau, Circulation).
-            </div>
-          )}
-
-          <FormField label="Date"  value={date}  onChange={setDate}  type="date" required />
-          <FormField label="Heure" value={heure} onChange={setHeure} type="time" required />
-          <FormField label="Lieu"  value={lieu}  onChange={setLieu}  placeholder="Ex : Centre d'examen" required />
-        </div>
-
-        {error && (
-          <div style={{ marginTop: 12, padding: "9px 13px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontSize: 12, fontWeight: 500 }}>
-            ⚠ {error}
-          </div>
-        )}
-
-        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-          <button onClick={() => !saving && onClose()} disabled={saving} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>
-            Annuler
-          </button>
-         <button onClick={handleConfirm} disabled={saving || permisDejaComplet} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: (saving || permisDejaComplet) ? "#94a3b8" : "#16a34a", color: "#fff", cursor: (saving || permisDejaComplet) ? "not-allowed" : "pointer", fontWeight: 600, fontSize: 13.5, opacity: saving ? 0.7 : 1 }}>
-            {saving ? "Ajout..." : "Ajouter l'examen"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────────
 // FormField
