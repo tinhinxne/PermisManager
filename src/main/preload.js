@@ -114,5 +114,8 @@ replanifierCandidatCode:    (idCandidat, oldSeanceId, newSeanceId) => ipcRendere
 getNbSeances: () => ipcRenderer.invoke('get-nb-seances'),
 setNbSeances: (val) => ipcRenderer.invoke('set-nb-seances', val),
 getInscriptionsCode: () => ipcRenderer.invoke('get-inscriptions-code'),
+addCandidatExterne: (data) => ipcRenderer.invoke("add-candidat-externe", data),
+updateCandidatExterne: (data) => ipcRenderer.invoke("update-candidat-externe", data),
+deleteCandidatExterne: (idCandidat) => ipcRenderer.invoke("delete-candidat-externe", idCandidat),
 });
 

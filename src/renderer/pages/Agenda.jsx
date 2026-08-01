@@ -627,6 +627,13 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
+  // Candidat sélectionné — calculé en premier car il faut savoir si c'est une
+  // personne externe (permis obtenu hors de notre auto-école) avant de statuer
+  // sur le stade de formation.
+  const selectedCandidatObj = candidats.find(c => String(c.idCandidat) === String(form.candidatId));
+  const candidatCat  = selectedCandidatObj ? candidatCategorie(selectedCandidatObj) : "";
+  const estExterne   = !!selectedCandidatObj?.externe;
+
   // ── Examens du candidat ────────────────────────────────────────────────────
   // RÈGLE STRICTE : on ne passe au stade suivant QUE quand l'examen précédent
   // a le statut "Passed" (réussi). Le nombre de séances ou le fait qu'un
@@ -638,14 +645,17 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
   const aReussiCreneau = examsCandidat.some(e => e.type === "Créneau"     && e.status === "Passed");
   const aReussiCirc    = examsCandidat.some(e => e.type === "Circulation" && e.status === "Passed");
 
-  // Permis complètement obtenu → tous les types sont libres
-  const permisObtenu = aReussiCode && aReussiCreneau && aReussiCirc;
+  // Permis complètement obtenu → tous les types sont libres.
+  // Une personne externe n'a jamais d'examens enregistrés chez nous : on la
+  // considère malgré tout comme ayant déjà le permis, sinon elle se
+  // retrouvait bloquée au stade "Code" par erreur.
+  const permisObtenu = estExterne || (aReussiCode && aReussiCreneau && aReussiCirc);
 
-  // Stade actuel pour les candidats en cours de formation :
+  // Stade actuel pour les candidats en cours de formation (permis pas encore obtenu) :
   // - "code"        : par défaut, ou si Code pas encore réussi
   // - "creneau"     : accessible UNIQUEMENT si Code est "Passed"
   // - "circulation" : accessible UNIQUEMENT si Créneau est "Passed" (donc Code aussi)
-  const currentStage = !aReussiCode ? "code" : !aReussiCreneau ? "creneau" : "circulation";
+  const currentStage = permisObtenu ? null : (!aReussiCode ? "code" : !aReussiCreneau ? "creneau" : "circulation");
 
   // Force le type au bon stade (sauf si permis obtenu).
   useEffect(() => {
@@ -662,8 +672,6 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
     if (c) set("candidat", `${c.nom} ${c.prenom}`);
   }, [prefillCandidatId, candidats]);
 
-  const selectedCandidatObj = candidats.find(c => String(c.idCandidat) === String(form.candidatId));
-  const candidatCat  = selectedCandidatObj ? candidatCategorie(selectedCandidatObj) : "";
   const seanceDateObj = form.date ? new Date(form.date + "T12:00:00") : null;
 
   const dateEnCongeAnnuel = !!(seanceDateObj && isCongeAnnuel(seanceDateObj));

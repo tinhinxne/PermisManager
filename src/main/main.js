@@ -2341,3 +2341,125 @@ ipcMain.handle('get-inscriptions-code', async () => {
     });
   });
 });
+
+
+
+
+
+// À insérer dans main.js, JUSTE À CÔTÉ (au même niveau, dans le même fichier)
+// que ton handler "add-candidat" existant.
+// Mirroir exact des colonnes utilisées par add-candidat, avec le flag externe en plus.
+
+ipcMain.handle("add-candidat-externe", async (event, data) => {
+  const { nom, prenom, telephone, date_naissance, sexe, categoriePermis, email } = data;
+
+  if (!nom || !prenom || !date_naissance || !sexe) {
+    console.error("add-candidat-externe: champs requis manquants");
+    return false;
+  }
+
+  let categorie = "B";
+  if (categoriePermis && categoriePermis.trim() !== "") {
+    categorie = categoriePermis.trim().toUpperCase();
+  }
+
+  const sql = `
+    INSERT INTO Candidat (nom, prenom, telephone, date_naissance, date_inscription, sexe, statut, email, categoriePermis, externe)
+    VALUES (?, ?, ?, ?, CURDATE(), ?, 'actif', ?, ?, 1)
+  `;
+
+  return new Promise((resolve) => {
+    db.query(sql, [nom, prenom, telephone || null, date_naissance, sexe, email || null, categorie], (err, res) => {
+      if (err) {
+        console.error("add-candidat-externe error:", err);
+        return resolve(false);
+      }
+      const newCandidatId = res.insertId;
+
+      // Un candidat externe n'a pas de formation à payer chez nous — on lui
+      // crée quand même un dossier Paiement soldé (0 DA), car le flux de
+      // paiement (onAddPayment) exige qu'un dossier existe pour le candidat.
+      db.query(
+        `INSERT INTO Paiement (montantTotal, montantRestant, typePaiement, statutPaiement, idCandidat)
+         VALUES (0, 0, 'complet', 'complet', ?)`,
+        [newCandidatId],
+        (errPaiement) => {
+          if (errPaiement) {
+            console.error("add-candidat-externe: erreur création dossier Paiement:", errPaiement.message);
+            return resolve(false);
+          }
+          db.query(`SELECT * FROM Candidat WHERE idCandidat = ?`, [newCandidatId], (err2, rows) => {
+            if (err2) {
+              console.error("add-candidat-externe select error:", err2);
+              return resolve(false);
+            }
+            resolve(rows[0]);
+          });
+        }
+      );
+    });
+  });
+});
+
+// ── Modifier une personne externe ──────────────────────────────────────────
+// Restreint volontairement aux candidats externe=1, pour ne jamais pouvoir
+// modifier un vrai candidat inscrit via cette modale.
+ipcMain.handle("update-candidat-externe", async (event, data) => {
+  const { idCandidat, nom, prenom, telephone, date_naissance, sexe, categoriePermis, email } = data;
+
+  if (!idCandidat || !nom || !prenom || !date_naissance || !sexe) {
+    console.error("update-candidat-externe: champs requis manquants");
+    return false;
+  }
+
+  let categorie = "B";
+  if (categoriePermis && categoriePermis.trim() !== "") {
+    categorie = categoriePermis.trim().toUpperCase();
+  }
+
+  const sql = `
+    UPDATE Candidat
+    SET nom = ?, prenom = ?, telephone = ?, date_naissance = ?, sexe = ?, email = ?, categoriePermis = ?
+    WHERE idCandidat = ? AND externe = 1
+  `;
+
+  return new Promise((resolve) => {
+    db.query(sql, [nom, prenom, telephone || null, date_naissance, sexe, email || null, categorie, idCandidat], (err, res) => {
+      if (err) {
+        console.error("update-candidat-externe error:", err);
+        return resolve(false);
+      }
+      if (res.affectedRows === 0) {
+        console.error("update-candidat-externe: candidat introuvable ou pas externe");
+        return resolve(false);
+      }
+      db.query(`SELECT * FROM Candidat WHERE idCandidat = ?`, [idCandidat], (err2, rows) => {
+        if (err2) {
+          console.error("update-candidat-externe select error:", err2);
+          return resolve(false);
+        }
+        resolve(rows[0]);
+      });
+    });
+  });
+});
+
+// ── Supprimer (soft delete) une personne externe ───────────────────────────
+// Utilise deleted_at plutôt qu'un vrai DELETE : plus sûr (pas de contrainte
+// FK à gérer avec Paiement/Versement), et cohérent avec le reste du schéma
+// qui prévoit déjà deleted_at sur Candidat.
+ipcMain.handle("delete-candidat-externe", async (event, idCandidat) => {
+  if (!idCandidat) return false;
+
+  const sql = `UPDATE Candidat SET deleted_at = NOW() WHERE idCandidat = ? AND externe = 1`;
+
+  return new Promise((resolve) => {
+    db.query(sql, [idCandidat], (err, res) => {
+      if (err) {
+        console.error("delete-candidat-externe error:", err);
+        return resolve(false);
+      }
+      resolve(res.affectedRows > 0);
+    });
+  });
+});
