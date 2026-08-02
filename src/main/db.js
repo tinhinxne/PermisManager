@@ -6,6 +6,7 @@ const db = mysql.createConnection({
   password: 'Fitmanager@2026',
   database: 'auto_ecole_db',
   charset: 'utf8mb4',
+   dateStrings: true,
 });
 
 db.connect((err) => {

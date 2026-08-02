@@ -26,6 +26,15 @@ db.query(`
     console.log("✅ Colonne 'created_by_moniteur_id' ajoutée à la table Candidat !");
   }
 });
+db.query(`
+  ALTER TABLE Candidat ADD COLUMN est_auditeur_libre TINYINT(1) NOT NULL DEFAULT 0
+`, (err) => {
+  if (err) {
+    console.log("ℹ️ Colonne 'est_auditeur_libre' déjà présente sur Candidat (ou erreur ignorée) :", err.code || err.message);
+  } else {
+    console.log("✅ Colonne 'est_auditeur_libre' ajoutée avec succès à la table Candidat !");
+  }
+});
 // ── SÉCURISATION FORCE DE LA BASE DE DONNÉES ───────────────────────────────
 db.query(`
   ALTER TABLE Candidat 
@@ -513,7 +522,7 @@ ipcMain.handle("get-candidats", async () => {
       LEFT JOIN Paiement p ON c.idCandidat = p.idCandidat
       LEFT JOIN CandidatSeance cs ON c.idCandidat = cs.idCandidat
       LEFT JOIN Seance s ON cs.idSeance = s.idSeance
-      WHERE c.deleted_at IS NULL
+      WHERE c.deleted_at IS NULL AND c.est_auditeur_libre = 0
       GROUP BY c.idCandidat
       ORDER BY c.idCandidat DESC`;
 
@@ -574,7 +583,34 @@ ipcMain.handle("add-candidat", async (event, data) => {
     });
   });
 });
+ipcMain.handle('add-candidat-auditeur-libre', async (event, data) => {
+  const { nom, prenom, telephone, dateNaissance, sexe, categoriePermis } = data;
+  if (!nom || !prenom || !dateNaissance || !sexe) return null;
 
+  const categorie = (categoriePermis && categoriePermis.trim() !== "")
+    ? categoriePermis.trim().toUpperCase()
+    : 'B';
+
+  const sql = `
+    INSERT INTO Candidat (nom, prenom, telephone, date_naissance, date_inscription, sexe, statut, categoriePermis, est_auditeur_libre)
+    VALUES (?, ?, ?, ?, CURDATE(), ?, 'actif', ?, 1)
+  `;
+
+  return new Promise((resolve) => {
+    db.query(sql, [nom, prenom, telephone || null, dateNaissance, sexe, categorie], (err, res) => {
+      if (err) { console.error('add-candidat-auditeur-libre error:', err.message); return resolve(null); }
+      resolve({
+        idCandidat: res.insertId,
+        nom, prenom,
+        telephone: telephone || null,
+        date_naissance: dateNaissance,
+        sexe,
+        categoriePermis: categorie,
+        estAuditeurLibre: true,
+      });
+    });
+  });
+});
 ipcMain.handle("update-candidat", async (event, c) => {
   console.log("📝 update-candidat reçu:", c);
   return new Promise((resolve) => {
@@ -776,7 +812,7 @@ ipcMain.handle("delete-moniteur", async (event, id) => {
 ipcMain.handle("get-dashboard-stats", async () => {
   return new Promise((resolve) => {
     db.query(
-      "SELECT COUNT(*) AS total FROM Candidat WHERE deleted_at IS NULL",
+      "SELECT COUNT(*) AS total FROM Candidat WHERE deleted_at IS NULL AND est_auditeur_libre = 0",
       (err1, res1) => {
         if (err1) return resolve({ totalCandidats: 0, sessionsToday: 0, revenuMois: 0 });
 
@@ -2183,11 +2219,10 @@ ipcMain.handle('delete-seance-code', async (event, id) => {
     });
   });
 });
-
 ipcMain.handle('get-inscrits-seance-code', async (event, seanceId) => {
   return new Promise((resolve) => {
     const sql = `
-      SELECT c.idCandidat, c.nom, c.prenom, csc.statutPresence
+      SELECT c.idCandidat, c.nom, c.prenom, c.est_auditeur_libre AS estAuditeurLibre, csc.statutPresence
       FROM CandidatSeanceCode csc
       JOIN Candidat c ON c.idCandidat = csc.idCandidat
       WHERE csc.idSeanceCode = ?
@@ -2214,6 +2249,8 @@ ipcMain.handle('get-candidats-eligibles-code', async (event, categoriePermis, se
       SELECT c.idCandidat, c.nom, c.prenom, c.telephone
       FROM Candidat c
       WHERE UPPER(TRIM(c.categoriePermis)) = ?
+        AND (c.externe IS NULL OR c.externe = 0)
+        AND c.deleted_at IS NULL
         AND c.idCandidat NOT IN (
           SELECT idCandidat FROM CandidatSeanceCode WHERE idSeanceCode = ?
         )

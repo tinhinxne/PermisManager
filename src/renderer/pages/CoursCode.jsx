@@ -8,7 +8,7 @@ import {
   GraduationCap, Plus, X, Check, Users, Calendar, Clock,
   ChevronLeft, ChevronRight, Trash2, PenLine, UserPlus,
   Search, RotateCcw, AlertCircle, CheckCircle2, XCircle,
-  HelpCircle, CalendarDays, Repeat,
+  HelpCircle, CalendarDays, Repeat, UserCog,
 } from "lucide-react";
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -478,6 +478,13 @@ function ManageCoursModal({ seance, onClose, onRefreshList, canMarkPresence }) {
   const [seancesDispo, setSeancesDispo] = useState([]);
   const [toast, setToast] = useState(null);
 
+  // ── Ajout d'une personne "auditeur libre" (vient juste suivre le cours de code,
+  // sans être inscrite comme candidat de l'auto-école) ──────────────────────────
+  const [showAddLibre, setShowAddLibre] = useState(false);
+  const [libreForm, setLibreForm] = useState({ nom: "", prenom: "", telephone: "", dateNaissance: "", sexe: "M" });
+  const [savingLibre, setSavingLibre] = useState(false);
+  const [errorLibre, setErrorLibre] = useState("");
+
   const showToast = (message, type="success") => setToast({ message, type });
 const envoyerWhatsAppInscription = async (candidat) => {
   console.log("📱 Candidat pour WhatsApp:", candidat); // ← ajoute
@@ -580,6 +587,65 @@ const handleInscrire = async (idCandidat) => {
     } catch { showToast("Erreur lors de la replanification.", "error"); }
   };
 
+  // ── Ajout d'un auditeur libre : on crée une fiche minimale, puis on l'inscrit
+  // directement à ce cours. Pensé pour les personnes qui viennent juste "voir"
+  // le cours de code sans être inscrites comme candidates de l'auto-école. ────
+  const resetLibreForm = () => {
+    setShowAddLibre(false);
+    setLibreForm({ nom: "", prenom: "", telephone: "", dateNaissance: "", sexe: "M" });
+    setErrorLibre("");
+  };
+
+  const handleAjouterAuditeurLibre = async () => {
+    if (isSeancePassee) {
+      showToast("Impossible d'inscrire un candidat à une séance déjà passée.", "error");
+      return;
+    }
+    if (!libreForm.nom.trim() || !libreForm.prenom.trim()) {
+      setErrorLibre("Nom et prénom requis.");
+      return;
+    }
+    if (!libreForm.dateNaissance) {
+      setErrorLibre("Date de naissance requise.");
+      return;
+    }
+    if (!libreForm.sexe) {
+      setErrorLibre("Sexe requis.");
+      return;
+    }
+    if (!window.electron?.addCandidatAuditeurLibre) {
+      setErrorLibre("Fonctionnalité indisponible — IPC addCandidatAuditeurLibre manquant côté app.");
+      return;
+    }
+    setSavingLibre(true);
+    setErrorLibre("");
+    try {
+      const candidat = await window.electron.addCandidatAuditeurLibre({
+        nom: libreForm.nom.trim(),
+        prenom: libreForm.prenom.trim(),
+        telephone: libreForm.telephone.trim() || null,
+        dateNaissance: libreForm.dateNaissance,
+        sexe: libreForm.sexe,
+        categoriePermis: seance.categoriePermis,
+      });
+      if (!candidat?.idCandidat) {
+        setErrorLibre("Erreur lors de l'enregistrement — vérifie la console de l'app.");
+        return;
+      }
+      await window.electron.inscrireCandidatCode(candidat.idCandidat, seance.id);
+      await Promise.all([loadInscrits(), loadEligibles()]);
+      onRefreshList();
+      showToast("Personne ajoutée et inscrite au cours.");
+      if (candidat.telephone) await envoyerWhatsAppInscription(candidat);
+      resetLibreForm();
+    } catch (e) {
+      console.error("Erreur ajout auditeur libre:", e);
+      setErrorLibre("Erreur lors de l'enregistrement, réessayez.");
+    } finally {
+      setSavingLibre(false);
+    }
+  };
+
   const filteredEligibles = eligibles.filter(c =>
     `${c.nom} ${c.prenom}`.toLowerCase().includes(searchAdd.toLowerCase())
   );
@@ -614,6 +680,7 @@ const handleInscrire = async (idCandidat) => {
 
           {inscrits.map(c => {
             const meta = STATUT_PRESENCE_META[c.statutPresence];
+            const estAuditeurLibre = !!c.estAuditeurLibre;
             return (
               <div key={c.idCandidat} style={{ border:"1px solid #e2e8f0", borderRadius:12, padding:"12px 14px", background: meta ? meta.bg : "#f8fafc" }}>
                 <div style={{ display:"flex", alignItems:"center", gap:12 }}>
@@ -621,7 +688,17 @@ const handleInscrire = async (idCandidat) => {
                     {(c.prenom?.[0]||"")+(c.nom?.[0]||"")}
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:"0.85rem", fontWeight:700, color:"#1e293b" }}>{cap(`${c.nom} ${c.prenom}`)}</div>
+                    <div style={{ display:"flex", alignItems:"center", gap:7, flexWrap:"wrap" }}>
+                      <div style={{ fontSize:"0.85rem", fontWeight:700, color:"#1e293b" }}>{cap(`${c.nom} ${c.prenom}`)}</div>
+                      {estAuditeurLibre && (
+                        <span style={{
+                          fontSize:"0.62rem", fontWeight:700, padding:"1px 8px", borderRadius:20,
+                          background:"#FFF7ED", color:"#c2410c", border:"1px solid #fdba74",
+                        }}>
+                          Auditeur libre
+                        </span>
+                      )}
+                    </div>
                     {meta && (
                       <div style={{ fontSize:"0.7rem", color: meta.color, fontWeight:600, marginTop:2, display:"flex", alignItems:"center", gap:4 }}>
                         <meta.Icon size={11}/> {meta.label}
@@ -730,7 +807,78 @@ const handleInscrire = async (idCandidat) => {
                     ))
                   )}
                 </div>
-                <button onClick={() => setShowAdd(false)} style={{ marginTop:8, background:"none", border:"none", color:"#94a3b8", fontSize:"0.72rem", cursor:"pointer" }}>Fermer la recherche</button>
+
+                {/* ── Séparateur + bouton pour ajouter un auditeur libre ── */}
+                <div style={{ borderTop:"1px solid #E9D5FF", marginTop:10, paddingTop:10 }}>
+                  {showAddLibre ? (
+                    <div style={{ background:"#fff", border:"1.5px solid #C4B5FD", borderRadius:10, padding:12 }}>
+                      <div style={{ fontSize:"0.72rem", fontWeight:700, color:"#5B21B6", marginBottom:8, display:"flex", alignItems:"center", gap:6 }}>
+                        <UserCog size={13}/> Personne non inscrite (juste pour ce cours)
+                      </div>
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
+                        <input
+                          type="text" placeholder="Prénom *" value={libreForm.prenom}
+                          onChange={e => setLibreForm(p => ({ ...p, prenom: e.target.value }))}
+                          style={{ width:"100%", boxSizing:"border-box", padding:"7px 9px", borderRadius:7, border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.78rem", outline:"none" }}
+                        />
+                        <input
+                          type="text" placeholder="Nom *" value={libreForm.nom}
+                          onChange={e => setLibreForm(p => ({ ...p, nom: e.target.value }))}
+                          style={{ width:"100%", boxSizing:"border-box", padding:"7px 9px", borderRadius:7, border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.78rem", outline:"none" }}
+                        />
+                      </div>
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
+                        <div>
+                          <label style={{ fontSize:"0.62rem", fontWeight:600, color:"#94a3b8", display:"block", marginBottom:3 }}>Date de naissance *</label>
+                          <input
+                            type="date" value={libreForm.dateNaissance}
+                            onChange={e => setLibreForm(p => ({ ...p, dateNaissance: e.target.value }))}
+                            style={{ width:"100%", boxSizing:"border-box", padding:"7px 9px", borderRadius:7, border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.78rem", outline:"none" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize:"0.62rem", fontWeight:600, color:"#94a3b8", display:"block", marginBottom:3 }}>Sexe *</label>
+                          <select
+                            value={libreForm.sexe}
+                            onChange={e => setLibreForm(p => ({ ...p, sexe: e.target.value }))}
+                            style={{ width:"100%", boxSizing:"border-box", padding:"7px 9px", borderRadius:7, border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.78rem", outline:"none" }}
+                          >
+                            <option value="M">Masculin</option>
+                            <option value="F">Féminin</option>
+                          </select>
+                        </div>
+                      </div>
+                      <input
+                        type="text" placeholder="Téléphone (optionnel)" value={libreForm.telephone}
+                        onChange={e => setLibreForm(p => ({ ...p, telephone: e.target.value }))}
+                        style={{ width:"100%", boxSizing:"border-box", padding:"7px 9px", borderRadius:7, border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.78rem", outline:"none", marginBottom:8 }}
+                      />
+                      {errorLibre && <div style={{ fontSize:"0.7rem", color:"#dc2626", fontWeight:600, marginBottom:8 }}>{errorLibre}</div>}
+                      <div style={{ display:"flex", gap:8 }}>
+                        <button onClick={resetLibreForm} disabled={savingLibre} style={{
+                          flex:1, padding:"8px 0", borderRadius:8, border:"1px solid #e2e8f0", background:"#fff",
+                          color:"#64748b", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600, cursor:"pointer",
+                        }}>Annuler</button>
+                        <button onClick={handleAjouterAuditeurLibre} disabled={savingLibre} style={{
+                          flex:2, padding:"8px 0", borderRadius:8, border:"none",
+                          background: savingLibre ? "#c4b5fd" : "#7C3AED",
+                          color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:700,
+                          cursor: savingLibre ? "not-allowed" : "pointer",
+                        }}>{savingLibre ? "Ajout..." : "Ajouter et inscrire"}</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setShowAddLibre(true)} style={{
+                      width:"100%", padding:"8px 0", borderRadius:8, border:"1px dashed #C4B5FD",
+                      background:"#fff", color:"#7C3AED", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem",
+                      fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+                    }}>
+                      <UserCog size={13}/> Ajouter une personne non inscrite (juste pour le code)
+                    </button>
+                  )}
+                </div>
+
+                <button onClick={() => { setShowAdd(false); resetLibreForm(); }} style={{ marginTop:8, background:"none", border:"none", color:"#94a3b8", fontSize:"0.72rem", cursor:"pointer" }}>Fermer la recherche</button>
               </div>
             ) : (
               <button onClick={() => setShowAdd(true)} style={{

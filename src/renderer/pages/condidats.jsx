@@ -838,6 +838,7 @@ function MatriculesEnAttenteModal({ onClose, onSaved }) {
     </div>
   );
 }
+
 function openWhatsAppBienvenue(telephone, prenom) {
   if (!telephone) return;
   // Garde uniquement les chiffres
@@ -852,6 +853,121 @@ function openWhatsAppBienvenue(telephone, prenom) {
   window.open(url, "_blank");
 }
 
+// ── MODAL D'ÉDITION — personne externe (perfectionnement) ──────────────────
+function EditExterneModal({ candidat, onClose, onSave }) {
+  const [form, setForm] = useState({
+    idCandidat: candidat.idCandidat,
+    prenom: candidat.prenom || "",
+    nom: candidat.nom || "",
+    telephone: candidat.telephone || "",
+    date_naissance: candidat.date_naissance ? String(candidat.date_naissance).slice(0, 10) : "",
+    sexe: candidat.sexe || "M",
+    categoriePermis: candidat.categoriePermis || "B",
+    email: candidat.email || "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  const inp = {
+    width: "100%", boxSizing: "border-box", padding: "9px 12px",
+    border: "1.5px solid #e2e8f0", borderRadius: 8, fontSize: 13,
+    outline: "none", color: "#1e293b",
+  };
+  const lbl = { fontSize: 11.5, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 4 };
+
+  const handleSubmit = async () => {
+    if (!form.prenom.trim() || !form.nom.trim() || !form.date_naissance) {
+      setError("Prénom, nom et date de naissance sont requis.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await onSave(form);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{ background: "#fff", borderRadius: 16, width: 460, maxWidth: "94vw", padding: 22, boxShadow: "0 25px 60px rgba(0,0,0,0.2)" }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 16 }}>
+          Modifier — personne externe (perfectionnement)
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div>
+            <label style={lbl}>Prénom *</label>
+            <input style={inp} value={form.prenom} onChange={(e) => set("prenom", e.target.value)} />
+          </div>
+          <div>
+            <label style={lbl}>Nom *</label>
+            <input style={inp} value={form.nom} onChange={(e) => set("nom", e.target.value)} />
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div>
+            <label style={lbl}>Date de naissance *</label>
+            <input type="date" style={inp} value={form.date_naissance} onChange={(e) => set("date_naissance", e.target.value)} />
+          </div>
+          <div>
+            <label style={lbl}>Sexe *</label>
+            <select style={inp} value={form.sexe} onChange={(e) => set("sexe", e.target.value)}>
+              <option value="M">Masculin</option>
+              <option value="F">Féminin</option>
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div>
+            <label style={lbl}>Catégorie</label>
+            <select style={inp} value={form.categoriePermis} onChange={(e) => set("categoriePermis", e.target.value)}>
+              {TOUTES_CATEGORIES.filter((c) => c !== "Tous").map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>Téléphone</label>
+            <input style={inp} value={form.telephone} onChange={(e) => set("telephone", e.target.value)} />
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={lbl}>Email</label>
+          <input type="email" style={inp} value={form.email} onChange={(e) => set("email", e.target.value)} />
+        </div>
+
+        {error && (
+          <div style={{ marginBottom: 12, fontSize: 12, color: "#dc2626", fontWeight: 600 }}>{error}</div>
+        )}
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={onClose}
+            disabled={saving}
+            style={{ flex: 1, padding: "10px 0", borderRadius: 9, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", cursor: "pointer", fontWeight: 600 }}
+          >
+            Annuler
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={saving}
+            style={{ flex: 2, padding: "10px 0", borderRadius: 9, border: "none", background: saving ? "#94a3b8" : "#0369a1", color: "#fff", cursor: saving ? "not-allowed" : "pointer", fontWeight: 700 }}
+          >
+            {saving ? "Enregistrement…" : "Enregistrer"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const Condidats = () => {
   const [candidats,         setCandidats]        = useState([]);
   const [showModal,         setShowModal]        = useState(false);
@@ -864,10 +980,15 @@ const Condidats = () => {
   const [showMatriculesModal, setShowMatriculesModal] = useState(false);
   const [historiqueCandidat, setHistoriqueCandidat]  = useState(null);
 
-const [selectedCategorieObtenu, setSelectedCategorieObtenu] = useState("Tous");
+  const [selectedCategorieObtenu, setSelectedCategorieObtenu] = useState("Tous");
   const [dateObtentionDebut, setDateObtentionDebut] = useState("");
   const [dateObtentionFin,   setDateObtentionFin]   = useState("");
   const [nbSeancesMax, setNbSeancesMax] = useState(SESSIONS_NORMALES_MAX); // valeur configurable, défaut 2
+
+  // ── Table "Perfectionnement — Externes" ──────────────────────────────────
+  const [selectedCategorieExterne, setSelectedCategorieExterne] = useState("Tous");
+  const [editingExterne, setEditingExterne] = useState(null);
+  const [deletingExterneId, setDeletingExterneId] = useState(null);
 
   const { examensList } = useExamenCtx();
 
@@ -884,14 +1005,17 @@ const [selectedCategorieObtenu, setSelectedCategorieObtenu] = useState("Tous");
     );
   });
 
+  // Candidats "en cours" : on exclut désormais aussi les externes (perfectionnement uniquement)
   const candidatsEnCours = candidatsBase.filter((c) => {
     if (c.status === "obtenu") return false;
+    if (c.externe) return false;
     const matchesCategorie = selectedCategorie === "Tous" || c.categoriePermis === selectedCategorie.toUpperCase();
     return matchesCategorie;
   });
 
+  // Candidats "obtenu" (vrais candidats de l'auto-école) : externes exclus aussi
   const candidatsObtenus = candidatsBase
-    .filter((c) => c.status === "obtenu")
+    .filter((c) => c.status === "obtenu" && !c.externe)
     .map((c) => ({ ...c, dateObtention: getDateObtention(c.id, examensList) }))
     .filter((c) => {
       const matchesCategorie = selectedCategorieObtenu === "Tous" || c.categoriePermis === selectedCategorieObtenu.toUpperCase();
@@ -903,84 +1027,93 @@ const [selectedCategorieObtenu, setSelectedCategorieObtenu] = useState("Tous");
     })
     .sort((a, b) => new Date(b.dateObtention || 0) - new Date(a.dateObtention || 0));
 
-const loadCandidats = async (maxOverride) => {
-  const max = maxOverride ?? nbSeancesMax;
-  try {
-    const data            = await window.electron.getCandidats();
-    const seances          = await window.electron.getSeances();
-    const inscriptionsCode = await window.electron.getInscriptionsCode();
+  // Personnes externes (perfectionnement uniquement — permis déjà obtenu ailleurs)
+  const candidatsExternes = candidatsBase.filter((c) => {
+    if (!c.externe) return false;
+    const matchesCategorie = selectedCategorieExterne === "Tous" || c.categoriePermis === selectedCategorieExterne.toUpperCase();
+    return matchesCategorie;
+  });
 
-    const formatted = data.map((c) => {
-      const currentCat = (c.categoriePermis || c.categorie || c.categorie_permis || "B")
-        .toString().trim().toUpperCase();
-
-      // ── Séances de conduite (hors "code") ──────────────────────────────
-      const nbSessionsConduite = seances.filter((s) => {
-        if (!s.candidatsIds) return false;
-        const ids = String(s.candidatsIds).split(",").map((id) => parseInt(id.trim()));
-        const matchCandidat = ids.includes(c.idCandidat);
-        const seanceCat = (s.categoriePermis || "").toString().trim().toUpperCase();
-        const matchCategorie = seanceCat === currentCat;
-
-        const seanceType = (s.type || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        const matchType = !seanceType.includes("code");
-
-        // ── On exclut les séances annulées : présente ET absente comptent, annulée non ──
-        const statutNorm = (s.statut || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        const matchStatut = statutNorm !== "annulee";
-
-        return matchCandidat && matchCategorie && matchType && matchStatut;
-      }).length;
-
-      // ── Cours de code (table séparée SeanceCode / CandidatSeanceCode) ──
-      const nbSessionsCode = inscriptionsCode.filter((i) => {
-        const cat = (i.categoriePermis || "").toString().trim().toUpperCase();
-        return i.idCandidat === c.idCandidat && cat === currentCat;
-      }).length;
-
-      const nbSessionsTotal = nbSessionsConduite + nbSessionsCode;
-
-      const nbSessions      = Math.min(nbSessionsTotal, max);
-      const nbSessionsSuppl = Math.max(nbSessionsTotal - max, 0);
-
-      return {
-        id: c.idCandidat,
-        nom: c.nom || "",
-        prenom: c.prenom || "",
-        tel: c.telephone || "",
-        categoriePermis: currentCat,
-        inscription: formatDateAr(c.date_inscription),
-        sessions: nbSessions,
-        sessionsSuppl: nbSessionsSuppl,
-        status: c.status || "en cours",
-        _raw: c,
-      };
-    });
-
-    setCandidats(formatted);
-  } catch (e) {
-    console.error("Erreur lors du chargement des candidats:", e);
-  }
-};
-
-useEffect(() => {
-  (async () => {
-    let max = SESSIONS_NORMALES_MAX;
+  const loadCandidats = async (maxOverride) => {
+    const max = maxOverride ?? nbSeancesMax;
     try {
-      const nb = await window.electron.getNbSeances();
-      max = Number(nb) || SESSIONS_NORMALES_MAX;
-      setNbSeancesMax(max);
+      const data            = await window.electron.getCandidats();
+      const seances          = await window.electron.getSeances();
+      const inscriptionsCode = await window.electron.getInscriptionsCode();
+
+      const formatted = data.map((c) => {
+        const currentCat = (c.categoriePermis || c.categorie || c.categorie_permis || "B")
+          .toString().trim().toUpperCase();
+
+        // ── Séances de conduite (hors "code") ──────────────────────────────
+        const nbSessionsConduite = seances.filter((s) => {
+          if (!s.candidatsIds) return false;
+          const ids = String(s.candidatsIds).split(",").map((id) => parseInt(id.trim()));
+          const matchCandidat = ids.includes(c.idCandidat);
+          const seanceCat = (s.categoriePermis || "").toString().trim().toUpperCase();
+          const matchCategorie = seanceCat === currentCat;
+
+          const seanceType = (s.type || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          const matchType = !seanceType.includes("code");
+
+          // ── On exclut les séances annulées : présente ET absente comptent, annulée non ──
+          const statutNorm = (s.statut || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          const matchStatut = statutNorm !== "annulee";
+
+          return matchCandidat && matchCategorie && matchType && matchStatut;
+        }).length;
+
+        // ── Cours de code (table séparée SeanceCode / CandidatSeanceCode) ──
+        const nbSessionsCode = inscriptionsCode.filter((i) => {
+          const cat = (i.categoriePermis || "").toString().trim().toUpperCase();
+          return i.idCandidat === c.idCandidat && cat === currentCat;
+        }).length;
+
+        const nbSessionsTotal = nbSessionsConduite + nbSessionsCode;
+
+        const nbSessions      = Math.min(nbSessionsTotal, max);
+        const nbSessionsSuppl = Math.max(nbSessionsTotal - max, 0);
+
+        return {
+          id: c.idCandidat,
+          nom: c.nom || "",
+          prenom: c.prenom || "",
+          tel: c.telephone || "",
+          categoriePermis: currentCat,
+          inscription: formatDateAr(c.date_inscription),
+          sessions: nbSessions,
+          sessionsSuppl: nbSessionsSuppl,
+          status: c.status || "en cours",
+          externe: !!c.externe,
+          _raw: c,
+        };
+      });
+
+      setCandidats(formatted);
     } catch (e) {
-      console.error("Erreur chargement nombre de séances configuré:", e);
+      console.error("Erreur lors du chargement des candidats:", e);
     }
-    await loadCandidats(max);
-  })();
-}, []);
-useEffect(() => {
-  const handler = () => loadCandidats(nbSeancesMax);
-  window.addEventListener("seance-updated", handler);
-  return () => window.removeEventListener("seance-updated", handler);
-}, [nbSeancesMax]);
+  };
+
+  useEffect(() => {
+    (async () => {
+      let max = SESSIONS_NORMALES_MAX;
+      try {
+        const nb = await window.electron.getNbSeances();
+        max = Number(nb) || SESSIONS_NORMALES_MAX;
+        setNbSeancesMax(max);
+      } catch (e) {
+        console.error("Erreur chargement nombre de séances configuré:", e);
+      }
+      await loadCandidats(max);
+    })();
+  }, []);
+
+  useEffect(() => {
+    const handler = () => loadCandidats(nbSeancesMax);
+    window.addEventListener("seance-updated", handler);
+    return () => window.removeEventListener("seance-updated", handler);
+  }, [nbSeancesMax]);
 
   const handleEdit = (candidat) => {
     setIsReinscription(false); 
@@ -1011,30 +1144,30 @@ useEffect(() => {
     }
   };
 
-const handleSave = async (data) => {
-  const categorieSelectionnee = data.categoriePermis || data.categorie || data.categorie_permis || "B";
-  const cleanData = {
-    ...data,
-    categoriePermis: categorieSelectionnee.toString().trim().toUpperCase()
-  };
+  const handleSave = async (data) => {
+    const categorieSelectionnee = data.categoriePermis || data.categorie || data.categorie_permis || "B";
+    const cleanData = {
+      ...data,
+      categoriePermis: categorieSelectionnee.toString().trim().toUpperCase()
+    };
 
-  try {
-    if (data.isReinscription) {
-      await window.electron.reinscrireCandidat(cleanData);
-    } else if (data.idCandidat) {
-      await window.electron.updateCandidat(cleanData);
-    } else {
-      await window.electron.addCandidat(cleanData);
-      // Nouveau candidat uniquement → message de bienvenue WhatsApp
-      openWhatsAppBienvenue(cleanData.telephone, cleanData.prenom);
+    try {
+      if (data.isReinscription) {
+        await window.electron.reinscrireCandidat(cleanData);
+      } else if (data.idCandidat) {
+        await window.electron.updateCandidat(cleanData);
+      } else {
+        await window.electron.addCandidat(cleanData);
+        // Nouveau candidat uniquement → message de bienvenue WhatsApp
+        openWhatsAppBienvenue(cleanData.telephone, cleanData.prenom);
+      }
+      await loadCandidats();
+      setShowModal(false);
+    } catch (error) {
+      console.error("Erreur lors de l'enregistrement :", error);
+      alert("Une erreur est survenue.");
     }
-    await loadCandidats();
-    setShowModal(false);
-  } catch (error) {
-    console.error("Erreur lors de l'enregistrement :", error);
-    alert("Une erreur est survenue.");
-  }
-};
+  };
 
   const handleOpenEnvoiModal = () => {
     if (candidats.length === 0) {
@@ -1042,6 +1175,40 @@ const handleSave = async (data) => {
       return;
     }
     setShowEnvoiModal(true);
+  };
+
+  // ── Actions pour la table Externes ───────────────────────────────────────
+  const handleDeleteExterne = async (id) => {
+    if (!window.confirm("Supprimer cette personne externe ?")) return;
+    setDeletingExterneId(id);
+    try {
+      const ok = await window.electron.deleteCandidatExterne(id);
+      if (ok) {
+        await loadCandidats();
+      } else {
+        alert("Erreur lors de la suppression.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Erreur lors de la suppression.");
+    } finally {
+      setDeletingExterneId(null);
+    }
+  };
+
+  const handleSaveExterne = async (payload) => {
+    try {
+      const result = await window.electron.updateCandidatExterne(payload);
+      if (result) {
+        await loadCandidats();
+        setEditingExterne(null);
+      } else {
+        alert("Erreur lors de la mise à jour.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Une erreur est survenue.");
+    }
   };
 
   return (
@@ -1384,6 +1551,122 @@ const handleSave = async (data) => {
           </div>
         </div>
 
+        {/* ── NOUVELLE TABLE : Perfectionnement — Externes ────────────────── */}
+        <div className="card" style={{ marginTop: 24 }}>
+          <div className="card-header">
+            <div>
+              <h2>🚗 Perfectionnement — Externes</h2>
+              <p>{candidatsExternes.length} personne(s) — permis déjà obtenu hors auto-école</p>
+            </div>
+          </div>
+
+          <div style={{
+            display: "flex", gap: 12, marginBottom: 20,
+            background: "#fff", padding: "10px 14px", borderRadius: 12,
+            border: "1px solid #E2E8F0", alignItems: "center",
+          }}>
+            <Filter size={16} color="#64748b" />
+            <select
+              value={selectedCategorieExterne}
+              onChange={(e) => setSelectedCategorieExterne(e.target.value)}
+              style={{
+                padding: "10px 32px 10px 14px",
+                fontSize: "14px",
+                fontWeight: "600",
+                color: "#1e293b",
+                background: "#F1F5F9",
+                border: "1px solid #E2E8F0",
+                borderRadius: "8px",
+                cursor: "pointer",
+                outline: "none",
+                minWidth: "160px",
+                appearance: "none",
+                backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                backgroundRepeat: "no-repeat",
+                backgroundPosition: "right 12px center",
+                backgroundSize: "14px",
+              }}
+            >
+              {TOUTES_CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat === "Tous" ? "Toutes catégories" : `Permis ${cat}`}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ background: "#fff", borderRadius: "15px", overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)" }}>
+            <div style={{ maxHeight: "500px", overflowY: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
+                  <tr style={{ background: "#0369a1" }}>
+                    <th style={th}>Personne</th>
+                    <th style={th}>Contact</th>
+                    <th style={th}>Catégorie</th>
+                    <th style={th}>Séances de perfectionnement</th>
+                    <th style={th}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {candidatsExternes.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: "center", padding: "40px", color: "#A0AEC0" }}>
+                        Aucune personne externe pour l'instant.
+                      </td>
+                    </tr>
+                  ) : (
+                    candidatsExternes.map((c, index) => (
+                      <tr key={c.id} style={{ background: index % 2 === 0 ? "#fff" : "#F8FAFC" }}>
+                        <td style={td}>
+                          <div style={{ fontWeight: 600 }}>{c.nom} {c.prenom}</div>
+                          <span style={{ fontSize: "11px", background: "#e0e7ff", color: "#3730a3", padding: "2px 6px", borderRadius: "4px", fontWeight: "bold", display: "inline-block", marginTop: 4 }}>
+                            🆕 Externe
+                          </span>
+                        </td>
+                        <td style={td}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <Phone size={15} /> {c.tel || "—"}
+                          </div>
+                        </td>
+                        <td style={td}>
+                          <span style={{ fontSize: "11px", background: "#e0f2fe", color: "#0369a1", padding: "2px 8px", borderRadius: "4px", fontWeight: "bold" }}>
+                            {c.categoriePermis}
+                          </span>
+                        </td>
+                        <td style={td}>
+                          {c.sessions}{c.sessionsSuppl > 0 ? ` (+${c.sessionsSuppl})` : ""}
+                        </td>
+                        <td style={td}>
+                          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                            <SquarePen
+                              size={17} color="blue"
+                              style={{ cursor: "pointer" }}
+                              title="Modifier"
+                              onClick={() => setEditingExterne(c._raw)}
+                            />
+                            <Mail
+                              size={17}
+                              color={c._raw?.email ? "#2b537e" : "#cbd5e1"}
+                              style={{ cursor: c._raw?.email ? "pointer" : "default" }}
+                              title={c._raw?.email ? `Envoyer un email à ${c.prenom} ${c.nom}` : "Pas d'email enregistré"}
+                              onClick={() => { if (c._raw?.email) setContactCandidat(c); }}
+                            />
+                            <Trash
+                              size={17} color="red"
+                              style={{ cursor: deletingExterneId === c.id ? "not-allowed" : "pointer" }}
+                              onClick={() => { if (deletingExterneId !== c.id) handleDeleteExterne(c.id); }}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
       </div>
 
       <AddCandidatModal
@@ -1421,6 +1704,14 @@ const handleSave = async (data) => {
           candidat={historiqueCandidat}
           examensList={examensList}
           onClose={() => setHistoriqueCandidat(null)}
+        />
+      )}
+
+      {editingExterne && (
+        <EditExterneModal
+          candidat={editingExterne}
+          onClose={() => setEditingExterne(null)}
+          onSave={handleSaveExterne}
         />
       )}
     </div>

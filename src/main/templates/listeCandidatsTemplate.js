@@ -5,6 +5,41 @@ function escapeHtml(str = "") {
     .replace(/>/g, "&gt;");
 }
 
+/**
+ * Formate une date peu importe sa forme :
+ *  - Objet Date JavaScript (retourné par MySQL)
+ *  - String ISO "2005-09-25T23:00:00.000Z"
+ *  - String simple "2005-09-25"
+ * → Retourne "2005/09/25"
+ */
+function formatDate(rawDate) {
+  if (!rawDate) return "";
+
+  // CAS 1 : Objet Date (ce que MySQL retourne nativement)
+  if (rawDate instanceof Date) {
+    if (isNaN(rawDate.getTime())) return "";
+    const y = rawDate.getFullYear();
+    const m = String(rawDate.getMonth() + 1).padStart(2, "0");
+    const d = String(rawDate.getDate()).padStart(2, "0");
+    return `${y}/${m}/${d}`;
+  }
+
+  // CAS 2 : String quelconque
+  const str = String(rawDate).trim();
+  if (!str) return "";
+
+  // Sous-cas : ISO string "2005-09-25T..." ou "2005-09-25"
+  const isoMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}/${isoMatch[2]}/${isoMatch[3]}`;
+  }
+
+  // Sous-cas : déjà formatée "2005/09/25"
+  if (/^\d{4}\/\d{2}\/\d{2}$/.test(str)) return str;
+
+  return str; // fallback
+}
+
 const CATEGORIE_AR = { A: "أ", A1: "أ1", B: "ب", C: "ج", D: "د", E: "هـ" };
 function categorieToArabic(cat) {
   if (!cat) return "";
@@ -35,20 +70,22 @@ function buildRowsHTML(candidats, minRows = 15) {
       const hasAr  = c.nomPrenomAr && String(c.nomPrenomAr).trim() !== "";
       const nomAff = hasAr ? c.nomPrenomAr : c.nomPrenom;
       const dir    = hasAr ? "rtl" : "ltr";
+      const matricule = (c.matricule && String(c.matricule).trim()) ? c.matricule : "";
       rows.push(`<tr>
         <td>${rang}</td>
         <td>${escapeHtml(c.numDossier ?? "")}</td>
+        <td class="matricule-cell">${escapeHtml(matricule)}</td>
         <td class="name-cell" style="direction:${dir};">${escapeHtml(nomAff ?? "")}</td>
-        <td>${escapeHtml(c.dateNaissance ?? "")}</td>
+        <td>${escapeHtml(formatDate(c.dateNaissance))}</td>
         <td>${escapeHtml(categorieToArabic(c.categorie))}</td>
         <td>${escapeHtml(typeExamenToArabic(c.typeExamen ?? c.type ?? ""))}</td>
-        <td>${escapeHtml(c.dateDepot ?? "")}</td>
-        <td>${escapeHtml(c.dateExamenRapport ?? "")}</td>
+        <td>${escapeHtml(formatDate(c.dateDepot))}</td>
+        <td>${escapeHtml(formatDate(c.dateExamenRapport))}</td>
         <td></td>
       </tr>`);
     } else {
       rows.push(`<tr>
-        <td>${rang}</td><td></td><td class="name-cell"></td><td></td><td></td><td></td><td></td><td></td><td></td>
+        <td>${rang}</td><td></td><td class="matricule-cell"></td><td class="name-cell"></td><td></td><td></td><td></td><td></td><td></td><td></td>
       </tr>`);
     }
   }
@@ -160,6 +197,7 @@ function buildListeCandidatsHTML({
   }
   table.main-table tbody tr:nth-child(even) { background: #f8fafc; }
   .name-cell { text-align: right !important; padding-right: 5px !important; font-weight: 600; }
+  .matricule-cell { font-weight: 600; color: #1f3b5c; }
 
   /* ── PIED ── */
   .footer-wrap {
@@ -259,15 +297,16 @@ function buildListeCandidatsHTML({
 <table class="main-table">
   <thead>
     <tr>
-      <th style="width:5%">الرقم</th>
-      <th style="width:8%">رقم الملف</th>
-      <th style="width:20%">اللقب والاسم</th>
-      <th style="width:10%">تاريخ الميلاد</th>
+      <th style="width:4%">الرقم</th>
+      <th style="width:7%">رقم الملف</th>
+      <th style="width:9%">رقم التسجيل</th>
+      <th style="width:18%">اللقب والاسم</th>
+      <th style="width:9%">تاريخ الميلاد</th>
       <th style="width:5%">الصنف</th>
-      <th style="width:10%">طبيعة الامتحان</th>
-      <th style="width:10%">تاريخ إيداع الملف</th>
-      <th style="width:10%">تاريخ تقرير الامتحان</th>
-      <th style="width:22%">الملاحظات</th>
+      <th style="width:9%">طبيعة الامتحان</th>
+      <th style="width:9%">تاريخ إيداع الملف</th>
+      <th style="width:9%">تاريخ تقرير الامتحان</th>
+      <th style="width:21%">الملاحظات</th>
     </tr>
   </thead>
   <tbody>

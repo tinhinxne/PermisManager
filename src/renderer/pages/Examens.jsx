@@ -972,48 +972,51 @@ const Examens = () => {
   // → dans ce cas, si des propositions sont trouvées, on ouvre la modal
   // automatiquement. Au chargement initial de la page (userTriggered=false),
   // on ne fait que rafraîchir le badge, sans ouvrir de popup intrusive.
-  const handleGenerate = async (userTriggered = false) => {
-    setLoading(true);
-    try {
-      const [seances, candidats] = await Promise.all([
-        window.electron.getSeances(),
-        window.electron.getCandidats(),
-      ]);
-      const map = {};
-      candidats.forEach(c => {
-        map[String(c.idCandidat)] = {
-          nom: c.nom ?? "", prenom: c.prenom ?? "",
-          nom_ar: c.nom_ar ?? "", prenom_ar: c.prenom_ar ?? "",
-          dateNaissance: c.date_naissance ?? "",
-          categoriePermis: c.categoriePermis ?? "",
-        };
-      });
-      setCandidatsMap(map);
+ const handleGenerate = async (userTriggered = false) => {
+  setLoading(true);
+  try {
+    const [seances, candidats] = await Promise.all([
+      window.electron.getSeances(),
+      window.electron.getCandidats(),
+    ]);
 
-      setCandidatsFullList(candidats.map(c => ({
-        id: c.idCandidat,
-        nom: c.nom ?? "",
-        prenom: c.prenom ?? "",
-        email: c.email ?? "",
-         telephone: c.telephone ?? "",
-        categoriePermis: c.categoriePermis ?? "",
+    // ── Exclure les candidats externes (déjà titulaires du permis, séances supp uniquement) ──
+    const candidatsInternes = candidats.filter(c => Number(c.externe) !== 1);
+
+    const map = {};
+    candidatsInternes.forEach(c => {
+      map[String(c.idCandidat)] = {
+        nom: c.nom ?? "", prenom: c.prenom ?? "",
+        nom_ar: c.nom_ar ?? "", prenom_ar: c.prenom_ar ?? "",
         dateNaissance: c.date_naissance ?? "",
-      })));
+        categoriePermis: c.categoriePermis ?? "",
+      };
+    });
+    setCandidatsMap(map);
 
-      const nouvellesPropositions = await generateExamens(seances, candidats);
-      setLastGenerated(new Date().toLocaleString("fr-FR"));
+    setCandidatsFullList(candidatsInternes.map(c => ({
+      id: c.idCandidat,
+      nom: c.nom ?? "",
+      prenom: c.prenom ?? "",
+      email: c.email ?? "",
+      telephone: c.telephone ?? "",
+      categoriePermis: c.categoriePermis ?? "",
+      dateNaissance: c.date_naissance ?? "",
+    })));
 
-      if (userTriggered && nouvellesPropositions && nouvellesPropositions.length > 0) {
-        setTimeout(() => {
-          document.getElementById("propositions-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-        }, 100);
-      }
-    } catch (e) {
-      console.error("Erreur génération examens:", e);
+    const nouvellesPropositions = await generateExamens(seances, candidatsInternes); // ← ici aussi
+    setLastGenerated(new Date().toLocaleString("fr-FR"));
+
+    if (userTriggered && nouvellesPropositions && nouvellesPropositions.length > 0) {
+      setTimeout(() => {
+        document.getElementById("propositions-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
     }
-    setLoading(false);
-  };
-
+  } catch (e) {
+    console.error("Erreur génération examens:", e);
+  }
+  setLoading(false);
+};
   useEffect(() => { handleGenerate(false); }, []);
 
   // ── filtre par plage de dates ──
@@ -1115,18 +1118,35 @@ const Examens = () => {
   };
   const handleExportFormChange = (field, value) => setExportForm(f => ({ ...f, [field]: value }));
 
-  const handleConfirmExport = async () => {
+  // ── Génération du bordereau PDF, avec récupération + fusion des matricules ──
+const handleConfirmExport = async () => {
     setPdfLoading(true);
+
+    // 1) Récupère les matricules — mais si ça plante, on continue sans bloquer
+    let matriculesMap = {};
     try {
-      const candidatsPourExport = allFiltered.map(e => ({
-        nom: e.candidat,
-        type: e.type,
-        date: e.date,
-        heure: e.heure,
-        lieu: e.lieu,
-        dateNaissance: e.dateNaissance,
-        categoriePermis: e.categoriePermis,
-      }));
+      const rows = await window.electron.getCandidatsMatricules();
+      (rows || []).forEach((c) => {
+        matriculesMap[String(c.idCandidat)] = c.matricule || "";
+      });
+    } catch (err) {
+      console.error("Erreur chargement matricules (on continue sans) :", err);
+    }
+
+    // 2) Construit la liste des candidats pour le PDF
+    const candidatsPourExport = allFiltered.map(e => ({
+      numDossier:        e.candidatId,
+      nomPrenom:         e.candidat,
+      matricule:         matriculesMap[String(e.candidatId)] || "",
+      dateNaissance:     e.dateNaissance,
+      categorie:         e.categoriePermis,
+      typeExamen:        e.type,
+      dateDepot:         exportForm.dateDepot || "",
+      dateExamenRapport: e.date,
+    }));
+
+    // 3) Génère le PDF — cette partie seule peut faire échouer, on isole l'erreur
+    try {
       await window.electron.generateListeCandidatsPdf({
         ...exportForm,
         candidats: candidatsPourExport,
@@ -1139,11 +1159,11 @@ const Examens = () => {
       setShowExportModal(false);
     } catch (e) {
       console.error("Erreur export PDF:", e);
-      alert("Erreur lors de la génération du PDF.");
+      alert("Erreur lors de la génération du PDF :\n\n" + (e?.message || e));
     }
+
     setPdfLoading(false);
   };
-
   // ─────────────────────────────────────────────
   // Rendu
   // ─────────────────────────────────────────────

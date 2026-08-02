@@ -69,8 +69,9 @@ sendMessageAdmin: (data) => ipcRenderer.invoke("send-message-admin", data),
   setCongeAnnuel: (data) => ipcRenderer.invoke("set-conge-annuel", data),
 
   sendRappelPaiement: (data) => ipcRenderer.invoke("send-rappel-paiement", data),
-   generateListeCandidatsPDF: (data) =>
+    generateListeCandidatsPdf: (data) =>
     ipcRenderer.invoke("generate-liste-candidats-pdf", data),
+   
 
   generateListeEnvoiPDF: (data) =>
     ipcRenderer.invoke("generate-liste-envoi-pdf", data),
@@ -92,6 +93,7 @@ setPrixFormation: (prix) => ipcRenderer.invoke('set-prix-formation', prix),
 // EXAMENS 
 getExamensCandidat: (candidatId) => ipcRenderer.invoke("get-examens-candidat", candidatId),
 getCandidatsMatricules: () => ipcRenderer.invoke('get-candidats-matricules'),
+
 updateMatriculeCandidat: (idCandidat, matricule) =>
   ipcRenderer.invoke('update-matricule-candidat', { idCandidat, matricule }),
 
@@ -117,5 +119,6 @@ getInscriptionsCode: () => ipcRenderer.invoke('get-inscriptions-code'),
 addCandidatExterne: (data) => ipcRenderer.invoke("add-candidat-externe", data),
 updateCandidatExterne: (data) => ipcRenderer.invoke("update-candidat-externe", data),
 deleteCandidatExterne: (idCandidat) => ipcRenderer.invoke("delete-candidat-externe", idCandidat),
+addCandidatAuditeurLibre: (data) => ipcRenderer.invoke('add-candidat-auditeur-libre', data),
 });
 
