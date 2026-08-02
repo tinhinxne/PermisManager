@@ -651,16 +651,22 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
   // retrouvait bloquée au stade "Code" par erreur.
   const permisObtenu = estExterne || (aReussiCode && aReussiCreneau && aReussiCirc);
 
-  // Stade actuel pour les candidats en cours de formation (permis pas encore obtenu) :
+  // Stade actuel pour les candidats en cours (permis pas encore obtenu) :
   // - "code"        : par défaut, ou si Code pas encore réussi
   // - "creneau"     : accessible UNIQUEMENT si Code est "Passed"
   // - "circulation" : accessible UNIQUEMENT si Créneau est "Passed" (donc Code aussi)
   const currentStage = permisObtenu ? null : (!aReussiCode ? "code" : !aReussiCreneau ? "creneau" : "circulation");
 
-  // Force le type au bon stade (sauf si permis obtenu).
+  // Force le type au bon stade.
+  // Permis obtenu (ou candidat externe) → une seule séance générique "conduite",
+  // représentée en interne par le type "circulation" (qui inclut déjà le créneau
+  // puisqu'il n'y a plus rien à distinguer pour ce candidat).
   useEffect(() => {
     if (!form.candidatId) return;
-    if (permisObtenu) return;
+    if (permisObtenu) {
+      if (form.type !== "circulation") set("type", "circulation");
+      return;
+    }
     if (currentStage === "code") return; // Le code se planifie désormais via le module dédié
     if (form.type !== currentStage) set("type", currentStage);
   }, [form.candidatId, currentStage, permisObtenu, form.type]);
@@ -937,7 +943,7 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
               <div>
                 <div>Permis obtenu — séance hors forfait</div>
                 <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>
-                  Tous les types de séance sont disponibles.
+                  Séance de conduite disponible (créneau et circulation confondus).
                 </div>
                 {form.candidatId && (() => {
                   const credit = getCredit(form.candidatId);
@@ -1021,11 +1027,9 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Type <span style={{ color:"#ef4444" }}>*</span></label>
               <select style={inpS} value={form.type} disabled={!form.candidatId || currentStage === "code"} onChange={e => set("type", e.target.value)}>
                 {permisObtenu ? (
-                  // Permis obtenu → tous les types (hors code) libres
-                  <>
-                    <option value="creneau">Créneau</option>
-                    <option value="circulation">Circulation</option>
-                  </>
+                  // Permis obtenu / externe → une seule séance générique
+                  // (le créneau est déjà inclus dans la circulation)
+                  <option value="circulation">Séance de conduite</option>
                 ) : currentStage === "code" ? (
                   <option value="creneau" disabled>Cours de Code requis d'abord</option>
                 ) : (
