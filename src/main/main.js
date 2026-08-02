@@ -35,6 +35,15 @@ db.query(`
     console.log("✅ Colonne 'est_auditeur_libre' ajoutée avec succès à la table Candidat !");
   }
 });
+db.query(`
+  ALTER TABLE Candidat ADD COLUMN externe TINYINT(1) NOT NULL DEFAULT 0
+`, (err) => {
+  if (err) {
+    console.log("ℹ️ Colonne 'externe' déjà présente sur Candidat (ou erreur ignorée) :", err.code || err.message);
+  } else {
+    console.log("✅ Colonne 'externe' ajoutée avec succès à la table Candidat !");
+  }
+});
 // ── SÉCURISATION FORCE DE LA BASE DE DONNÉES ───────────────────────────────
 db.query(`
   ALTER TABLE Candidat 
@@ -609,6 +618,50 @@ ipcMain.handle('add-candidat-auditeur-libre', async (event, data) => {
         estAuditeurLibre: true,
       });
     });
+  });
+});
+ipcMain.handle('get-auditeurs-libres', async () => {
+  return new Promise((resolve) => {
+    db.query(
+      `SELECT idCandidat, nom, prenom, telephone, email, categoriePermis, date_naissance, sexe, date_inscription
+       FROM Candidat
+       WHERE est_auditeur_libre = 1 AND deleted_at IS NULL
+       ORDER BY date_inscription DESC`,
+      (err, res) => {
+        if (err) { console.error('get-auditeurs-libres:', err); return resolve([]); }
+        resolve(res);
+      }
+    );
+  });
+});
+
+ipcMain.handle('convertir-auditeur-libre', async (event, idCandidat) => {
+  return new Promise((resolve) => {
+    db.query(
+      `UPDATE Candidat SET est_auditeur_libre = 0 WHERE idCandidat = ? AND est_auditeur_libre = 1`,
+      [idCandidat],
+      async (err, res) => {
+        if (err) { console.error('convertir-auditeur-libre:', err); return resolve({ success: false, error: err.message }); }
+        if (res.affectedRows === 0) return resolve({ success: false, error: "Candidat introuvable ou déjà inscrit." });
+
+        // Un dossier Paiement existe-t-il déjà pour ce candidat ?
+        db.query('SELECT idPaiement FROM Paiement WHERE idCandidat = ? LIMIT 1', [idCandidat], async (errCheck, rows) => {
+          if (errCheck) { console.error(errCheck); return resolve({ success: false, error: errCheck.message }); }
+          if (rows.length > 0) return resolve({ success: true }); // déjà un dossier, rien à faire
+
+          const prixActuel = await getPrixFormationFromDB();
+          db.query(
+            `INSERT INTO Paiement (montantTotal, montantRestant, typePaiement, statutPaiement, idCandidat)
+             VALUES (?, ?, 'tranche', 'en_cours', ?)`,
+            [prixActuel, prixActuel, idCandidat],
+            (errPaiement) => {
+              if (errPaiement) { console.error(errPaiement); return resolve({ success: false, error: errPaiement.message }); }
+              resolve({ success: true });
+            }
+          );
+        });
+      }
+    );
   });
 });
 ipcMain.handle("update-candidat", async (event, c) => {

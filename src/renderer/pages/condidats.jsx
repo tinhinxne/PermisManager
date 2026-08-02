@@ -25,7 +25,8 @@ const getInitials = (prenom, nom) =>
 function formatDateAr(rawDate) {
   if (!rawDate) return "";
   const str = rawDate instanceof Date ? rawDate.toISOString() : String(rawDate);
-  const d = new Date(str.includes("T") ? str : str + "T12:00:00");
+  const datePart = str.split(/[T ]/)[0];
+  const d = new Date(datePart + "T12:00:00");
   if (isNaN(d)) return str;
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -967,6 +968,37 @@ function EditExterneModal({ candidat, onClose, onSave }) {
     </div>
   );
 }
+function ConfirmAuditeurModal({ candidat, onConfirm, onClose }) {
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 1500, background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{ background: "#fff", borderRadius: 16, width: 400, maxWidth: "92vw", padding: 24, boxShadow: "0 25px 60px rgba(0,0,0,0.2)" }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 8 }}>
+          Inscrire à l'auto-école ?
+        </div>
+        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 20, lineHeight: 1.5 }}>
+          <strong>{candidat.prenom} {candidat.nom}</strong> va devenir un candidat officiel de l'auto-école. Vous pourrez ensuite compléter son dossier.
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={onClose}
+            style={{ flex: 1, padding: "10px 0", borderRadius: 9, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", cursor: "pointer", fontWeight: 600, fontSize: 13 }}
+          >
+            Annuler
+          </button>
+          <button
+            onClick={() => onConfirm(candidat)}
+            style={{ flex: 2, padding: "10px 0", borderRadius: 9, border: "none", background: "#166534", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13 }}
+          >
+            ✓ Inscrire
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const Condidats = () => {
   const [candidats,         setCandidats]        = useState([]);
@@ -988,6 +1020,10 @@ const Condidats = () => {
   // ── Table "Perfectionnement — Externes" ──────────────────────────────────
   const [selectedCategorieExterne, setSelectedCategorieExterne] = useState("Tous");
   const [editingExterne, setEditingExterne] = useState(null);
+  const [auditeursLibres, setAuditeursLibres] = useState([]);
+const [selectedCategorieAuditeur, setSelectedCategorieAuditeur] = useState("Tous");
+const [convertingId, setConvertingId] = useState(null);
+const [confirmAuditeur, setConfirmAuditeur] = useState(null); // candidat en attente de confirmation
   const [deletingExterneId, setDeletingExterneId] = useState(null);
 
   const { examensList } = useExamenCtx();
@@ -1069,10 +1105,8 @@ const Condidats = () => {
           return i.idCandidat === c.idCandidat && cat === currentCat;
         }).length;
 
-        const nbSessionsTotal = nbSessionsConduite + nbSessionsCode;
-
-        const nbSessions      = Math.min(nbSessionsTotal, max);
-        const nbSessionsSuppl = Math.max(nbSessionsTotal - max, 0);
+       const nbSessions      = Math.min(nbSessionsConduite, max);
+        const nbSessionsSuppl = Math.max(nbSessionsConduite - max, 0);
 
         return {
           id: c.idCandidat,
@@ -1094,7 +1128,14 @@ const Condidats = () => {
       console.error("Erreur lors du chargement des candidats:", e);
     }
   };
-
+const loadAuditeursLibres = async () => {
+    try {
+      const rows = await window.electron.getAuditeursLibres();
+      setAuditeursLibres(Array.isArray(rows) ? rows : []);
+    } catch (e) {
+      console.error("Erreur chargement auditeurs libres:", e);
+    }
+  };
   useEffect(() => {
     (async () => {
       let max = SESSIONS_NORMALES_MAX;
@@ -1106,6 +1147,7 @@ const Condidats = () => {
         console.error("Erreur chargement nombre de séances configuré:", e);
       }
       await loadCandidats(max);
+      await loadAuditeursLibres();
     })();
   }, []);
 
@@ -1208,6 +1250,39 @@ const Condidats = () => {
     } catch (e) {
       console.error(e);
       alert("Une erreur est survenue.");
+    }
+  };
+  // ── Actions pour la table Auditeurs libres ───────────────────────────────
+  const auditeursFiltres = auditeursLibres.filter((c) => {
+    const cat = (c.categoriePermis || "B").toString().trim().toUpperCase();
+    return selectedCategorieAuditeur === "Tous" || cat === selectedCategorieAuditeur.toUpperCase();
+  });
+
+ // Étape 1 : ouvre la confirmation maison (au lieu de window.confirm)
+  const handleDemandeConversion = (candidat) => {
+    setConfirmAuditeur(candidat);
+  };
+
+  // Étape 2 : exécutée seulement après confirmation dans la modale maison
+  const handleConvertirAuditeur = async (candidat) => {
+    setConfirmAuditeur(null);
+    setConvertingId(candidat.idCandidat);
+    try {
+      const result = await window.electron.convertirAuditeurLibre(candidat.idCandidat);
+      if (result?.success) {
+        await loadAuditeursLibres();
+        await loadCandidats();
+        setIsReinscription(false);
+        setEditCandidat(candidat);
+        setShowModal(true);
+      } else {
+        alert("Erreur : " + (result?.error || "impossible d'inscrire ce candidat"));
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Erreur lors de l'inscription.");
+    } finally {
+      setConvertingId(null);
     }
   };
 
@@ -1659,6 +1734,103 @@ const Condidats = () => {
                           </div>
                         </td>
                       </tr>
+                   ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* ── NOUVELLE TABLE : Auditeurs libres — Cours de code ───────────── */}
+        <div className="card" style={{ marginTop: 24 }}>
+          <div className="card-header">
+            <div>
+              <h2>📖 Auditeurs libres — Cours de code</h2>
+              <p>{auditeursFiltres.length} personne(s) ayant suivi le code sans être inscrite(s)</p>
+            </div>
+          </div>
+
+          <div style={{
+            display: "flex", gap: 12, marginBottom: 20,
+            background: "#fff", padding: "10px 14px", borderRadius: 12,
+            border: "1px solid #E2E8F0", alignItems: "center",
+          }}>
+            <Filter size={16} color="#64748b" />
+            <select
+              value={selectedCategorieAuditeur}
+              onChange={(e) => setSelectedCategorieAuditeur(e.target.value)}
+              style={{
+                padding: "10px 32px 10px 14px", fontSize: "14px", fontWeight: "600",
+                color: "#1e293b", background: "#F1F5F9", border: "1px solid #E2E8F0",
+                borderRadius: "8px", cursor: "pointer", outline: "none", minWidth: "160px",
+                appearance: "none",
+                backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                backgroundRepeat: "no-repeat", backgroundPosition: "right 12px center", backgroundSize: "14px",
+              }}
+            >
+              {TOUTES_CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat === "Tous" ? "Toutes catégories" : `Permis ${cat}`}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ background: "#fff", borderRadius: "15px", overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)" }}>
+            <div style={{ maxHeight: "500px", overflowY: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
+                  <tr style={{ background: "#d97706" }}>
+                    <th style={th}>Personne</th>
+                    <th style={th}>Contact</th>
+                    <th style={th}>Catégorie</th>
+                    <th style={th}>Ajouté le</th>
+                    <th style={th}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditeursFiltres.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: "center", padding: "40px", color: "#A0AEC0" }}>
+                        Aucun auditeur libre pour l'instant.
+                      </td>
+                    </tr>
+                  ) : (
+                    auditeursFiltres.map((c, index) => (
+                      <tr key={c.idCandidat} style={{ background: index % 2 === 0 ? "#fff" : "#F8FAFC" }}>
+                        <td style={td}>
+                          <div style={{ fontWeight: 600 }}>{c.nom} {c.prenom}</div>
+                          <span style={{ fontSize: "11px", background: "#fff7ed", color: "#c2410c", padding: "2px 6px", borderRadius: "4px", fontWeight: "bold", display: "inline-block", marginTop: 4 }}>
+                            📖 Auditeur libre
+                          </span>
+                        </td>
+                        <td style={td}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <Phone size={15} /> {c.telephone || "—"}
+                          </div>
+                        </td>
+                        <td style={td}>
+                          <span style={{ fontSize: "11px", background: "#e0f2fe", color: "#0369a1", padding: "2px 8px", borderRadius: "4px", fontWeight: "bold" }}>
+                            {c.categoriePermis}
+                          </span>
+                        </td>
+                        <td style={td}>{formatDateAr(c.date_inscription)}</td>
+                        <td style={td}>
+                        <button
+                            onClick={() => handleDemandeConversion(c)}
+                            disabled={convertingId === c.idCandidat}
+                            style={{
+                              padding: "7px 14px", borderRadius: 8, border: "none",
+                              background: convertingId === c.idCandidat ? "#94a3b8" : "#166534",
+                              color: "#fff", fontWeight: 700, fontSize: 12.5,
+                              cursor: convertingId === c.idCandidat ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            {convertingId === c.idCandidat ? "..." : "✓ Inscrire à l'auto-école"}
+                          </button>
+                        </td>
+                      </tr>
                     ))
                   )}
                 </tbody>
@@ -1707,11 +1879,19 @@ const Condidats = () => {
         />
       )}
 
-      {editingExterne && (
+    {editingExterne && (
         <EditExterneModal
           candidat={editingExterne}
           onClose={() => setEditingExterne(null)}
           onSave={handleSaveExterne}
+        />
+      )}
+
+      {confirmAuditeur && (
+        <ConfirmAuditeurModal
+          candidat={confirmAuditeur}
+          onConfirm={handleConvertirAuditeur}
+          onClose={() => setConfirmAuditeur(null)}
         />
       )}
     </div>

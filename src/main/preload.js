@@ -120,5 +120,7 @@ addCandidatExterne: (data) => ipcRenderer.invoke("add-candidat-externe", data),
 updateCandidatExterne: (data) => ipcRenderer.invoke("update-candidat-externe", data),
 deleteCandidatExterne: (idCandidat) => ipcRenderer.invoke("delete-candidat-externe", idCandidat),
 addCandidatAuditeurLibre: (data) => ipcRenderer.invoke('add-candidat-auditeur-libre', data),
+getAuditeursLibres: () => ipcRenderer.invoke('get-auditeurs-libres'),
+convertirAuditeurLibre: (idCandidat) => ipcRenderer.invoke('convertir-auditeur-libre', idCandidat),
 });
 
