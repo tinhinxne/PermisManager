@@ -1638,14 +1638,21 @@ const handleConfirmExport = async () => {
               const passe = (type) =>
                 type === examen.type ||
                 examensList.some((e) => e.candidatId === cid && e.type === type && e.status === "Passed");
-              if (passe("Code") && passe("Créneau") && passe("Circulation")) {
-                setPermisObtenuInfo({ candidat: examen.candidat });
-              }
+             if (passe("Code") && passe("Créneau") && passe("Circulation")) {
+  window.electron.updateStatutCandidat({ candidatId: cid, statut: "obtenu" })
+    .then((res) => {
+      if (!res?.success) console.error("Échec update-statut-candidat:", res);
+    })
+    .catch((err) => console.error("Erreur updateStatutCandidat:", err));
+
+  setPermisObtenuInfo({ candidat: examen.candidat });
+}
             }
           }
           if (["Passed", "Failed", "Absent"].includes(status)) setActiveHistoryTab(status);
           setResultModalExamen(null);
         }}
+      
       />
 
       <AbsenceModal

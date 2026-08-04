@@ -1117,7 +1117,7 @@ const [confirmAuditeur, setConfirmAuditeur] = useState(null); // candidat en att
           inscription: formatDateAr(c.date_inscription),
           sessions: nbSessions,
           sessionsSuppl: nbSessionsSuppl,
-          status: c.status || "en cours",
+          status: c.statut|| "en cours",
           externe: !!c.externe,
           _raw: c,
         };

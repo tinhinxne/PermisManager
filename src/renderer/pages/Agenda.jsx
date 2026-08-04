@@ -30,6 +30,22 @@ const moniteurCategories = (m) => {
 const candidatCategorie = (c) => normCat(c?.categoriePermis || c?.categorie || c?.categorie_permis || "B");
 
 const cap = s => s.split(" ").map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(" ");
+function countSeancesFormation(sessions, candidatId, categoriePermis) {
+  return sessions.filter(s => {
+    if (s.type !== "creneau" && s.type !== "circulation") return false;
+    const ids = s._raw?.candidatsIds
+      ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
+      : [];
+    if (!ids.includes(String(candidatId))) return false;
+    if (categoriePermis && s.categoriePermis !== categoriePermis) return false;
+    const statutNorm = (s._raw?.statut || "")
+      .toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (statutNorm === "annulee") return false;
+    const presenceNorm = (s._raw?.presence || "")
+      .toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return presenceNorm === "presente";
+  }).length;
+}
 
 function floatToHHMM(h) {
   const hours   = Math.floor(h);
@@ -586,7 +602,7 @@ function CongeAnnuelBanner({ congeAnnuel }) {
 }
 
 // ── CREATE / EDIT MODAL ───────────────────────────────────────────────────────
-function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, prefillCandidatId }) {
+function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, prefillCandidatId, nbSeancesMax = 20 }) {
   const [candidats, setCandidats] = useState([]);
   const [moniteurs, setMoniteurs] = useState([]);
   const [alertInfo, setAlertInfo] = useState(null);
@@ -641,15 +657,18 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
   const examsCandidat = (examensList || []).filter(
     e => String(e.candidatId) === String(form.candidatId)
   );
-  const aReussiCode    = examsCandidat.some(e => e.type === "Code"        && e.status === "Passed");
+ const aReussiCode    = examsCandidat.some(e => e.type === "Code"        && e.status === "Passed");
   const aReussiCreneau = examsCandidat.some(e => e.type === "Créneau"     && e.status === "Passed");
   const aReussiCirc    = examsCandidat.some(e => e.type === "Circulation" && e.status === "Passed");
 
-  // Permis complètement obtenu → tous les types sont libres.
-  // Une personne externe n'a jamais d'examens enregistrés chez nous : on la
-  // considère malgré tout comme ayant déjà le permis, sinon elle se
-  // retrouvait bloquée au stade "Code" par erreur.
-  const permisObtenu = estExterne || (aReussiCode && aReussiCreneau && aReussiCirc);
+  // Fin de formation = nombre de séances créneau+circulation (non annulées)
+  // atteint le seuil défini dans Paramètres > Nombre de séances.
+  // Une personne externe est directement considérée comme "hors forfait".
+  const nbSeancesEffectuees = form.candidatId
+    ? countSeancesFormation(sessions, form.candidatId, candidatCat)
+    : 0;
+  const seancesCompletes = nbSeancesEffectuees >= nbSeancesMax;
+  const permisObtenu = estExterne || seancesCompletes;
 
   // Stade actuel pour les candidats en cours (permis pas encore obtenu) :
   // - "code"        : par défaut, ou si Code pas encore réussi
@@ -936,12 +955,12 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
             </div>
           )}
 
-          {/* Bannière permis obtenu */}
+        {/* Bannière fin de formation */}
           {permisObtenu && (
             <div style={{ padding:"10px 14px", borderRadius:10, background:"#eef2ff", border:"1.5px solid #c7d2fe", fontSize:"0.78rem", color:"#4338ca", fontWeight:600, display:"flex", alignItems:"center", gap:8 }}>
               <span style={{ fontSize:18 }}>🎓</span>
               <div>
-                <div>Permis obtenu — séance hors forfait</div>
+                <div>{estExterne ? "Personne externe" : `Formation terminée (${nbSeancesEffectuees}/${nbSeancesMax} séances)`} — séance hors forfait</div>
                 <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>
                   Séance de conduite disponible (créneau et circulation confondus).
                 </div>
@@ -1116,7 +1135,7 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
 }
 
 // ── MILESTONE MODAL — Fin de formation (20 séances) ──────────────────────────
-function MilestoneModal({ candidatName, onClose, onPayer }) {
+function MilestoneModal({ candidatName, nbSeances = 20, onClose, onPayer }) {
   return (
     <div
       style={{
@@ -1163,7 +1182,7 @@ function MilestoneModal({ candidatName, onClose, onPayer }) {
             Formation terminée !
           </div>
           <div style={{ fontSize:"0.78rem", color:"rgba(255,255,255,0.75)", marginTop:4 }}>
-            20 séances complétées
+            {nbSeances} séances complétées
           </div>
         </div>
 
@@ -1188,8 +1207,8 @@ function MilestoneModal({ candidatName, onClose, onPayer }) {
               <div style={{ fontSize:"0.92rem", fontWeight:700, color:"#1e293b" }}>
                 {candidatName}
               </div>
-              <div style={{ fontSize:"0.72rem", color:"#2563eb", fontWeight:600, marginTop:2 }}>
-                🎓 20 séances de formation complétées
+             <div style={{ fontSize:"0.72rem", color:"#2563eb", fontWeight:600, marginTop:2 }}>
+                🎓 {nbSeances} séances de formation complétées
               </div>
             </div>
           </div>
@@ -1197,8 +1216,8 @@ function MilestoneModal({ candidatName, onClose, onPayer }) {
           {/* Barre de progression complète */}
           <div>
             <div style={{ display:"flex", justifyContent:"space-between", fontSize:"0.72rem", color:"#64748b", marginBottom:6 }}>
-              <span>Progression formation</span>
-              <span style={{ fontWeight:700, color:"#22c55e" }}>20 / 20 ✓</span>
+            <span>Progression formation</span>
+              <span style={{ fontWeight:700, color:"#22c55e" }}>{nbSeances} / {nbSeances} ✓</span>
             </div>
             <div style={{ height:10, borderRadius:10, background:"#e2e8f0", overflow:"hidden" }}>
               <div style={{
@@ -1605,7 +1624,7 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
                 const candidatId = s._raw?.candidatsIds
                   ? String(s._raw.candidatsIds).split(",")[0].trim()
                   : null;
-                const candidatAPermis = candidatId && aObtenuPermis ? aObtenuPermis(candidatId) : false;
+                const candidatAPermis = candidatId && aObtenuPermis ? aObtenuPermis(candidatId, s.categoriePermis) : false;
                 const statutNorm = (s._raw?.statut || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 const estAnnulee   = statutNorm === "annulee";
 const estConfirmee = statutNorm === "confirmee";
@@ -1725,10 +1744,26 @@ export default function AgendaPage() {
   const [seanceSupModal,  setSeanceSupModal]  = useState(null); // { candidat }
   const [prefillCandidatId,  setPrefillCandidatId]  = useState(null);
 
-  const [seanceSupPaiement,  setSeanceSupPaiement]   = useState(null); // { candidatId, candidatName }
+const [nbSeancesMax, setNbSeancesMax] = useState(20);
+  const [seanceSupPaiement, setSeanceSupPaiement] = useState(null); // { candidatId, candidatName }
+  const [milestoneCandidat, setMilestoneCandidat] = useState(null); // { candidatId, nom }
 
   const { isMoniteurEnConge, isCongeAnnuel, congeAnnuel } = useCongeCtx();
-  const { examensList } = useExamenCtx();
+
+  const loadNbSeancesMax = useCallback(async () => {
+    try {
+      if (window.electron?.getNbSeances) {
+        const n = await window.electron.getNbSeances();
+        setNbSeancesMax(Number(n) || 20);
+      }
+    } catch (e) { console.error("Erreur chargement nb séances:", e); }
+  }, []);
+
+  useEffect(() => {
+    loadNbSeancesMax();
+    window.addEventListener("nb-seances-updated", loadNbSeancesMax);
+    return () => window.removeEventListener("nb-seances-updated", loadNbSeancesMax);
+  }, [loadNbSeancesMax]);
 
   const weekDates = getWeekDates(weekBase);
   const weekLabel = formatWeekLabel(weekDates);
@@ -1738,15 +1773,11 @@ export default function AgendaPage() {
   const api = window.electron || null;
   const showToast = (message, type = "success") => setToast({ message, type });
 
-  // ── Helper : candidat a obtenu son permis ? ──────────────────────────────
-  const aObtenuPermis = useCallback((candidatId) => {
-    const exams = (examensList || []).filter(e => String(e.candidatId) === String(candidatId));
-    return (
-      exams.some(e => e.type === "Code"        && e.status === "Passed") &&
-      exams.some(e => e.type === "Créneau"     && e.status === "Passed") &&
-      exams.some(e => e.type === "Circulation" && e.status === "Passed")
-    );
-  }, [examensList]);
+  // ── Helper : candidat a terminé sa formation (créneau+circulation) ? ─────
+  const aObtenuPermis = useCallback((candidatId, categoriePermis) => {
+    const count = countSeancesFormation(sessions, candidatId, categoriePermis);
+    return count >= nbSeancesMax;
+  }, [sessions, nbSeancesMax]);
 
   useEffect(() => { loadSeances(); }, []);
 
@@ -1906,18 +1937,24 @@ export default function AgendaPage() {
       const url = formatWhatsAppUrl(_formData.candidatTelephone, message);
       if (url) window.electron?.openExternal?.(url);
     }
-
-          const candidatId = _formData.candidatIds?.[0];
+const candidatId = _formData.candidatIds?.[0];
           if (candidatId) {
             const nomCandidat = sessionObj.name || "Ce candidat";
-            if (aObtenuPermis(candidatId)) {
+            // `sessions` a déjà été rafraîchi par loadSeances() juste au-dessus,
+            // donc ce comptage inclut la séance qui vient d'être créée.
+            const compteApres = countSeancesFormation(sessions, candidatId, _formData.categoriePermis);
+            const vientDeFranchirLeSeuil = compteApres === nbSeancesMax;
+
+            if (vientDeFranchirLeSeuil) {
+              // Première fois que ce candidat atteint le seuil → afficher le milestone
+              setMilestoneCandidat({ candidatId, nom: nomCandidat });
+            } else if (aObtenuPermis(candidatId, _formData.categoriePermis)) {
+              // Déjà hors forfait depuis une séance précédente → flux crédit/paiement habituel
               const credit = getCredit(candidatId);
               if (credit > 0) {
-                // Crédit déjà payé disponible → on consomme une unité, pas de paiement
                 const resteApres = consumeCredit(candidatId);
                 showToast(`🎓 Séance supplémentaire créée — crédit restant : ${resteApres}.`, "info");
               } else {
-                // Plus de crédit → proposer l'achat d'un nouveau lot de séances
                 setSeanceSupPaiement({ candidatId, candidatName: nomCandidat });
               }
             }
@@ -2157,7 +2194,7 @@ export default function AgendaPage() {
           loadSeances={loadSeances}
         />
       )}
-      {showModal && (
+    {showModal && (
         <CreateModal
           onClose={() => { setShowModal(false); setEditing(null); setPrefillCandidatId(null); }}
           onCreate={handleSave}
@@ -2166,6 +2203,7 @@ export default function AgendaPage() {
           saving={saving}
           sessions={sessions}
           prefillCandidatId={prefillCandidatId}
+          nbSeancesMax={nbSeancesMax}
         />
       )}
 
@@ -2175,6 +2213,24 @@ export default function AgendaPage() {
           candidat={seanceSupModal.candidat}
           onClose={() => setSeanceSupModal(null)}
           onConfirm={handleConfirmSeanceSup}
+        />
+      )}
+      {milestoneCandidat && (
+        <MilestoneModal
+          candidatName={milestoneCandidat.nom}
+          nbSeances={nbSeancesMax}
+          onClose={() => setMilestoneCandidat(null)}
+          onPayer={() => {
+            const c = milestoneCandidat;
+            setMilestoneCandidat(null);
+            navigate("/payments", {
+              state: {
+                openSeanceSup: true,
+                candidatId:   c.candidatId,
+                candidatName: c.nom,
+              },
+            });
+          }}
         />
       )}
       {seanceSupPaiement && (

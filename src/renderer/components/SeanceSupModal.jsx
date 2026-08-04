@@ -66,7 +66,6 @@ const IconCheck = ({ size = 14 }) => (
     <path d="M20 6 9 17l-5-5" />
   </svg>
 );
-
 const SeanceSupModal = ({ onClose, onAddPayment, prefillCandidat }) => {
   const [candidats,      setCandidats]      = useState([]);
   const { examensList } = useExamenCtx();
@@ -74,6 +73,7 @@ const SeanceSupModal = ({ onClose, onAddPayment, prefillCandidat }) => {
   const [selected,       setSelected]       = useState(null);
   const [searchQuery,    setSearchQuery]    = useState("");
   const [loading,        setLoading]        = useState(true);
+  const [nbSeancesMax,   setNbSeancesMax]   = useState(20);
 
   const [nbSeances,  setNbSeances]  = useState(1);
   const [prixSeance, setPrixSeance] = useState("");
@@ -102,47 +102,80 @@ const SeanceSupModal = ({ onClose, onAddPayment, prefillCandidat }) => {
 
   const CATEGORIES_PERMIS = ["A1", "A", "B", "BE", "C1", "C", "C1E", "CE", "D", "DE", "F"];
 
-  useEffect(() => {
+ useEffect(() => {
     async function load() {
       setLoading(true);
       try {
-        const [allCandidats, allSeances] = await Promise.all([
+        const [allCandidats, allSeances, nbMax] = await Promise.all([
           window.electron.getCandidats(),
           window.electron.getSeances(),
+          window.electron.getNbSeances(),
         ]);
+        const seuil = Number(nbMax) || 20;
+        setNbSeancesMax(seuil);
 
         // Construire compteur { idCandidat: [séances] }
-        const compteur = {};
-        (allSeances || []).forEach(s => {
-          const ids = s.candidatsIds
-            ? String(s.candidatsIds).split(",").map(id => parseInt(id.trim())).filter(Boolean)
-            : [];
-          ids.forEach(id => {
-            if (!compteur[id]) compteur[id] = [];
-            compteur[id].push(s);
-          });
-        });
-        setSeancesParCand(compteur);
+       // Construire compteur { idCandidat: [séances] } — uniquement les séances
+// réellement EFFECTUÉES (creneau/circulation, non annulée, présence = présente)
+// pour que le compte affiché corresponde au seuil défini dans Paramètres.
+const estEffectuee = (s) => {
+  const type = normaliserType(s.type);
+  if (type !== "creneau" && type !== "circulation") return false;
+  const statutNorm = (s.statut || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (statutNorm === "annulee") return false;
+  const presenceNorm = (s.presence || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return presenceNorm === "presente";
+};
 
-        // Éligibles : candidat ayant réussi les 3 examens (Code + Créneau + Circulation)
-        // OU personne externe (permis obtenu hors de notre auto-école).
-        // Le nombre de séances effectuées n'entre plus en compte.
-        const aObtenuPermis = (candidatId) => {
-          const exams = (examensList || []).filter(e => String(e.candidatId) === String(candidatId));
-          return (
-            exams.some(e => e.type === "Code"        && e.status === "Passed") &&
-            exams.some(e => e.type === "Créneau"     && e.status === "Passed") &&
-            exams.some(e => e.type === "Circulation" && e.status === "Passed")
-          );
-        };
+const compteur = {};
+(allSeances || []).filter(estEffectuee).forEach(s => {
+  const ids = s.candidatsIds
+    ? String(s.candidatsIds).split(",").map(id => parseInt(id.trim())).filter(Boolean)
+    : [];
+  ids.forEach(id => {
+    if (!compteur[id]) compteur[id] = [];
+    compteur[id].push(s);
+  });
+});
+setSeancesParCand(compteur);
+
+       // Éligibles : candidat ayant atteint le nombre de séances créneau+circulation
+        // défini dans Paramètres, OU personne externe (permis obtenu hors auto-école).
+    const countFormation = (candidatId, categoriePermis) => {
+  return (allSeances || []).filter(s => {
+    const type = normaliserType(s.type);
+    if (type !== "creneau" && type !== "circulation") return false;
+    const ids = s.candidatsIds
+      ? String(s.candidatsIds).split(",").map(x => x.trim())
+      : [];
+    if (!ids.includes(String(candidatId))) return false;
+    if (categoriePermis) {
+      const cat = (s.categoriePermis || "").toString().trim().toUpperCase();
+      if (cat !== categoriePermis) return false;
+    }
+    const statutNorm = (s.statut || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (statutNorm === "annulee") return false;
+    const presenceNorm = (s.presence || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return presenceNorm === "presente";
+  }).length;
+};
+
+        console.log("=== DEBUG ÉLIGIBILITÉ SÉANCE SUP === seuil:", seuil);
+        (allCandidats || []).forEach(c => {
+          const id  = c.idCandidat || c.id;
+          const cat = (c.categoriePermis || c.categorie || c.categorie_permis || "B").toString().trim().toUpperCase();
+          const count = countFormation(id, cat);
+          console.log(`${c.prenom} ${c.nom}`, { id, catCalculee: cat, nbSeancesComptees: count, seuilRequis: seuil, externe: !!c.externe });
+        });
 
         const eligibles = (allCandidats || []).filter(c => {
-          const id = c.idCandidat || c.id;
-          return c.externe || aObtenuPermis(id);
+          const id  = c.idCandidat || c.id;
+          const cat = (c.categoriePermis || c.categorie || c.categorie_permis || "B").toString().trim().toUpperCase();
+          return c.externe || countFormation(id, cat) >= seuil;
         });
 
         setCandidats(eligibles);
-        // Pré-sélection si on arrive depuis l'agenda (milestone 20 séances)
+        // Pré-sélection si on arrive depuis l'agenda (candidat ayant fini sa formation)
         if (prefillCandidat) {
           const id = prefillCandidat.candidatId || prefillCandidat.id;
           const match = eligibles.find(c => String(c.idCandidat || c.id) === String(id));
@@ -158,7 +191,7 @@ const SeanceSupModal = ({ onClose, onAddPayment, prefillCandidat }) => {
       }
     }
     load();
-  }, [prefillCandidat, examensList]);
+  }, [prefillCandidat]);
 
   const candidatsFiltres = candidats.filter(c =>
     `${c.prenom} ${c.nom}`.toLowerCase().includes(searchQuery.toLowerCase())

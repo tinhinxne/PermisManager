@@ -380,20 +380,9 @@ function ExportModal({ fiches, onClose }) {
   const [step,          setStep]          = useState("form");
   const [previewDoc,    setPreviewDoc]    = useState(null);
   const [previewUrl,    setPreviewUrl]    = useState(null);
-  const location = useLocation();
-  const navigate = useNavigate();
-
-  useEffect(() => {
+useEffect(() => {
     return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
   }, [previewUrl]);
-  // Arrivée depuis l'agenda (milestone 20 séances) → ouvre directement le paiement
-  useEffect(() => {
-    if (location.state?.openSeanceSup) {
-      setShowSeanceSup(true);
-      // Nettoie le state pour éviter une réouverture si l'utilisateur revient en arrière
-      navigate(location.pathname, { replace: true, state: {} });
-    }
-  }, [location.state, location.pathname, navigate]);
 
   const fichesFiltrees = fiches.filter(f => {
     const nom = `${f.prenom || ""} ${f.nom || ""}`.toLowerCase();
@@ -819,11 +808,14 @@ function HistoriqueModal({ candidat, prixFormation = PRIX_PERMIS_DEFAULT, onClos
 
 // ─── Composant Principal ──────────────────────────────────────────────────────
 const Payments = () => {
+  const location = useLocation();
+  const navigate  = useNavigate();
   const [selected,       setSelected]       = useState(null);
   const [showModal,      setShowModal]      = useState(false);
   const [showInvoices,   setShowInvoices]   = useState(false);
   const [showExport,     setShowExport]     = useState(false);
   const [showSeanceSup,  setShowSeanceSup]  = useState(false);
+  const [seanceSupPrefill, setSeanceSupPrefill] = useState(null);
   const [rappelCand,     setRappelCand]     = useState(null);
   const [historiqueCand, setHistoriqueCand] = useState(null);
   const [searchTerm,     setSearchTerm]     = useState("");
@@ -857,6 +849,18 @@ const Payments = () => {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+// Arrivée depuis l'Agenda (candidat ayant terminé sa formation) → ouvre directement SeanceSupModal
+  useEffect(() => {
+    if (location.state?.openSeanceSup) {
+      setSeanceSupPrefill({
+        candidatId:   location.state.candidatId,
+        candidatName: location.state.candidatName,
+      });
+      setShowSeanceSup(true);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, location.pathname, navigate]);
 
   const handleAddPayment = async (paymentData) => {
     try {
@@ -1231,10 +1235,10 @@ const Payments = () => {
           <ExportModal fiches={fichesCandidats} onClose={() => setShowExport(false)} />
         )}
 
-       {showSeanceSup && (
+      {showSeanceSup && (
           <SeanceSupModal
-            prefillCandidat={location.state?.openSeanceSup ? location.state : null}
-            onClose={() => setShowSeanceSup(false)}
+            prefillCandidat={seanceSupPrefill}
+            onClose={() => { setShowSeanceSup(false); setSeanceSupPrefill(null); }}
             onAddPayment={async (paymentData) => {
               const result = await window.electron.addPayment(paymentData);
               if (result?.success) {
