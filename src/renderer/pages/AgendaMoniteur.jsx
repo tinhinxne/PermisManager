@@ -18,6 +18,8 @@ const COLORS = {
 const normCat = v => (v || "").toString().trim().toUpperCase();
 const cap = s => s.split(" ").map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(" ");
 
+const SEANCE_SUP_CREDIT_KEY = "seance_sup_credit";
+
 function floatToHHMM(h) {
   const hours = Math.floor(h);
   const mins  = Math.round((h % 1) * 60);
@@ -42,6 +44,23 @@ function formatWhatsAppUrl(telephone, message) {
   return `https://wa.me/${numero}?text=${encodeURIComponent(message)}`;
 }
 const TYPE_LABELS_WA = { code: "Code", creneau: "Créneau", circulation: "Circulation" };
+function countSeancesFormation(sessions, candidatId, categoriePermis) {
+  return sessions.filter(s => {
+    if (s.type !== "creneau" && s.type !== "circulation") return false;
+    const ids = s._raw?.candidatsIds
+      ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
+      : [];
+    if (!ids.includes(String(candidatId))) return false;
+    if (categoriePermis && s.categoriePermis !== categoriePermis) return false;
+    const statutNorm = (s._raw?.statut || "")
+      .toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (statutNorm === "annulee") return false;
+    const presenceNorm = (s._raw?.presence || "")
+      .toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return presenceNorm === "presente";
+  }).length;
+}
+
 function getSeanceSupCredits() {
   try { return JSON.parse(localStorage.getItem(SEANCE_SUP_CREDIT_KEY) || "{}"); }
   catch { return {}; }
@@ -819,7 +838,7 @@ function SessionPopup({ session, anchor, onClose, isOwn, canEdit, onEdit, onDele
 }
 
 // ── CREATE / EDIT MODAL ───────────────────────────────────────────────────────
-function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUserId, prefillCandidatId, isDateBloquee }) {
+function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUserId, prefillCandidatId, isDateBloquee, nbSeancesMax = 20 }) {
   const [candidats, setCandidats] = useState([]);
   const [alertInfo, setAlertInfo] = useState(null);
   const { examensList } = useExamenCtx();
@@ -869,8 +888,16 @@ const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
   const aReussiCreneau = examsCandidat.some(e => e.type === "Créneau"     && e.status === "Passed");
   const aReussiCirc    = examsCandidat.some(e => e.type === "Circulation" && e.status === "Passed");
 
-  const permisObtenu   = aReussiCode && aReussiCreneau && aReussiCirc;
-  const currentStage   = !aReussiCode ? "code" : !aReussiCreneau ? "creneau" : "circulation";
+  const estExterne = !!selectedCandidatObj?.externe;
+  const candidatCatForm = selectedCandidatObj
+    ? normCat(selectedCandidatObj.categoriePermis || selectedCandidatObj.categorie || selectedCandidatObj.categorie_permis || "B")
+    : "";
+  const nbSeancesEffectuees = form.candidatId
+    ? countSeancesFormation(sessions, form.candidatId, candidatCatForm)
+    : 0;
+  const seancesCompletes = nbSeancesEffectuees >= nbSeancesMax;
+  const permisObtenu   = estExterne || seancesCompletes;
+  const currentStage   = permisObtenu ? null : (!aReussiCode ? "code" : !aReussiCreneau ? "creneau" : "circulation");
 
 useEffect(() => {
     if (!form.candidatId) return;
@@ -986,6 +1013,7 @@ _formData: {
         moniteur_id: currentUserId,
         candidatIds: form.candidatId ? [parseInt(form.candidatId)] : [],
         duree:       parseFloat(form.dur) || 1,
+        categoriePermis: candidatCatForm || null,
         candidatTelephone: selectedCandidatObj?.telephone || null,
         candidatPrenom:    selectedCandidatObj?.prenom || null,
       },
@@ -1445,8 +1473,25 @@ export default function AgendaMoniteur() {
   const [seanceSupPaiement, setSeanceSupPaiement] = useState(null); // { candidatId, candidatName }
   const [prefillCandidatId, setPrefillCandidatId] = useState(null);
 
-  // État pour s'assurer que les congés sont chargés
+    // État pour s'assurer que les congés sont chargés
   const [congesReady, setCongesReady] = useState(false);
+  const [nbSeancesMax, setNbSeancesMax] = useState(20);
+  const [milestoneCandidat, setMilestoneCandidat] = useState(null); // { candidatId, nom }
+
+  const loadNbSeancesMax = useCallback(async () => {
+    try {
+      if (window.electron?.getNbSeances) {
+        const n = await window.electron.getNbSeances();
+        setNbSeancesMax(Number(n) || 20);
+      }
+    } catch (e) { console.error("Erreur chargement nb séances:", e); }
+  }, []);
+
+  useEffect(() => {
+    loadNbSeancesMax();
+    window.addEventListener("nb-seances-updated", loadNbSeancesMax);
+    return () => window.removeEventListener("nb-seances-updated", loadNbSeancesMax);
+  }, [loadNbSeancesMax]);
 
   const weekDates = getWeekDates(weekBase);
   const weekLabel = formatWeekLabel(weekDates);
@@ -1493,16 +1538,12 @@ const congePersoSemaine = (currentUserId &&  congesReady)
     finally { setLoading(false); }
   }
 
-  // ── Helper : un candidat a-t-il obtenu son permis ? ───────────────────────
-  const aObtenuPermis = useCallback((candidatId) => {
-    if (!candidatId || !examensList) return false;
-    const exams = examensList.filter(e => String(e.candidatId) === String(candidatId));
-    return (
-      exams.some(e => e.type === "Code"        && e.status === "Passed") &&
-      exams.some(e => e.type === "Créneau"     && e.status === "Passed") &&
-      exams.some(e => e.type === "Circulation" && e.status === "Passed")
-    );
-  }, [examensList]);
+   // ── Helper : un candidat a-t-il terminé sa formation (comme côté admin) ──
+  const aObtenuPermis = useCallback((candidatId, categoriePermis) => {
+    if (!candidatId) return false;
+    const count = countSeancesFormation(sessions, candidatId, categoriePermis);
+    return count >= nbSeancesMax;
+  }, [sessions, nbSeancesMax]);
 
   // ── isDateBloquee : retourne le congé si la date est bloquée (personnel + annuel) ─────────────
 const isDateBloquee = useCallback((dateStr) => {
@@ -1558,8 +1599,12 @@ const isDateBloquee = useCallback((dateStr) => {
       const updated = groupModal.filter(x => x.id!==id);
       updated.length > 0 ? setGroupModal(updated) : setGroupModal(null);
     }
-    if (api?.deleteSeance) {
-      try { await api.deleteSeance(id); showToast("Séance supprimée."); }
+      if (api?.deleteSeance) {
+      try {
+        await api.deleteSeance(id);
+        showToast("Séance supprimée.");
+        window.dispatchEvent(new CustomEvent("seance-updated"));
+      }
       catch { showToast("Erreur lors de la suppression.", "error"); }
     }
   };
@@ -1625,22 +1670,27 @@ const isDateBloquee = useCallback((dateStr) => {
       if (url) window.electron?.openExternal?.(url);
     }
 
-    const candidatId = _formData.candidatIds?.[0];
+     const candidatId = _formData.candidatIds?.[0];
     if (candidatId) {
       const nomCandidat = sessionObj.name || "Ce candidat";
+      // `sessions` a déjà été rafraîchi par loadSeances() juste au-dessus,
+      // donc ce comptage inclut la séance qui vient d'être créée.
+      const compteApres = countSeancesFormation(sessions, candidatId, _formData.categoriePermis);
+      const vientDeFranchirLeSeuil = compteApres === nbSeancesMax;
 
-      if (aObtenuPermis(candidatId)) {
-        // ── Candidat ayant déjà son permis → gestion du crédit séance sup. ──
+      if (vientDeFranchirLeSeuil) {
+        // Première fois que ce candidat atteint le seuil → afficher le milestone
+        setMilestoneCandidat({ candidatId, nom: nomCandidat });
+      } else if (aObtenuPermis(candidatId, _formData.categoriePermis)) {
+        // Déjà hors forfait depuis une séance précédente → flux crédit/paiement habituel
         const credit = getCredit(candidatId);
         if (credit > 0) {
-          // Crédit déjà payé disponible → on consomme une unité, pas de paiement
           const resteApres = consumeCredit(candidatId);
           showToast(`🎓 Séance supplémentaire créée — crédit restant : ${resteApres}.`, "info");
         } else {
-          // Plus de crédit → proposer l'enregistrement d'un paiement pour cette séance
           setSeanceSupPaiement({ candidatId, candidatName: nomCandidat });
         }
-      } 
+      }
     }
   } else throw new Error(result?.message || "Erreur.");
 }
@@ -1888,7 +1938,7 @@ const isDateBloquee = useCallback((dateStr) => {
       )}
 
       {/* Modal création/édition */}
-      {showModal && (
+        {showModal && (
         <CreateModal
           onClose={() => { setShowModal(false); setEditing(null); setPrefillCandidatId(null); }}
           onCreate={handleSave}
@@ -1898,6 +1948,7 @@ const isDateBloquee = useCallback((dateStr) => {
           currentUserId={currentUserId}
           prefillCandidatId={prefillCandidatId}
           isDateBloquee={isDateBloquee}
+          nbSeancesMax={nbSeancesMax}
         />
       )}
 
@@ -1923,6 +1974,13 @@ const isDateBloquee = useCallback((dateStr) => {
     onConfirm={handleSeanceSupPaiement}
   />
 )}
+
+      {milestoneCandidat && (
+        <MilestoneModal
+          candidatName={milestoneCandidat.nom}
+          onClose={() => setMilestoneCandidat(null)}
+        />
+      )}
 
       {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
     </>

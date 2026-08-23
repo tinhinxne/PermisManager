@@ -1,11 +1,35 @@
 import React, { useState, useEffect } from "react";
-import { Users, Plus, Trash2, FileText, X, Filter } from "lucide-react";
+import { Users, Plus, Trash2, FileText, X, Filter, History, SquarePen, Mail, Phone } from "lucide-react";
 import ConnexionImg from "../../assets/Connexion.png";
 import SmallCar from "../../assets/SmallCar.png";
 import { useAuth } from "../context/AuthContext";
 import { useMyPermissions } from "../context/PermissionsContext";
+import { useExamenCtx } from "../context/ExamenContext";
 import AddCandidatModal from "../components/addCondidat";
 
+const TOUTES_CATEGORIES = [
+  "Tous",
+  "A1", "A", "B", "C1",
+  "C", "D", "F", "BE",
+  "C1E", "CE", "DE",
+];
+
+const getInitialsCandidat = (prenom, nom) =>
+  `${prenom?.[0] || ""}${nom?.[0] || ""}`.toUpperCase();
+
+function getDateObtention(candidatId, examensList) {
+  if (!Array.isArray(examensList)) return null;
+  const reussis = examensList
+    .filter((e) => String(e.candidatId) === String(candidatId) && e.status === "Passed")
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  return reussis[0]?.date || null;
+}
+
+const STATUS_CONFIG_HISTO = {
+  Scheduled: { bg: "#e3f2fd", color: "#1565c0", label: "Programmé" },
+  Passed:    { bg: "#e8f5e9", color: "#2e7d32", label: "Réussi"    },
+  Failed:    { bg: "#ffebee", color: "#c62828", label: "Échoué"    },
+};
 // ─────────────────────────────────────────────
 // Clés localStorage
 // ─────────────────────────────────────────────
@@ -275,6 +299,197 @@ function openWhatsAppBienvenue(telephone, prenom) {
   const url = `https://wa.me/${numero}?text=${encodeURIComponent(message)}`;
   window.open(url, "_blank");
 }
+function HistoriqueExamensModal({ candidat, examensList, onClose }) {
+  const nomComplet = `${candidat.prenom} ${candidat.nom}`;
+  const historique = examensList
+    .filter((e) => String(e.candidatId) === String(candidat.id))
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{ background: "#fff", borderRadius: 16, width: 560, maxWidth: "95vw", maxHeight: "80vh", boxShadow: "0 20px 60px rgba(0,0,0,0.18)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 22px 14px", borderBottom: "1px solid #e2e8f0" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#ede9fe", color: "#6d28d9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700 }}>
+              {getInitialsCandidat(candidat.prenom, candidat.nom)}
+            </div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>Historique des examens — {nomComplet}</div>
+              <div style={{ fontSize: 12, color: "#64748b" }}>{historique.length} session{historique.length !== 1 ? "s" : ""} d'examen</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "#f1f5f9", border: "none", borderRadius: 8, width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b" }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <div style={{ padding: "16px 22px", overflowY: "auto" }}>
+          {historique.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "30px 0", color: "#94a3b8", fontSize: 13 }}>
+              Aucun examen enregistré pour ce candidat.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {historique.map((ex) => {
+                const st = STATUS_CONFIG_HISTO[ex.status] || STATUS_CONFIG_HISTO.Scheduled;
+                return (
+                  <div key={ex.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#f8fafc" }}>
+                    <div>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, color: "#1e293b" }}>{ex.type}</div>
+                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                        {ex.date} {ex.heure ? `· ${ex.heure}` : ""} {ex.lieu ? `· ${ex.lieu}` : ""}
+                      </div>
+                    </div>
+                    <span style={{ background: st.bg, color: st.color, padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+                      {st.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", padding: "14px 22px 18px", borderTop: "1px solid #e2e8f0" }}>
+          <button onClick={onClose} style={{ padding: "9px 22px", borderRadius: 10, background: "#2b537e", border: "none", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditExterneModal({ candidat, onClose, onSave }) {
+  const [form, setForm] = useState({
+    idCandidat: candidat.idCandidat,
+    prenom: candidat.prenom || "",
+    nom: candidat.nom || "",
+    telephone: candidat.telephone || "",
+    date_naissance: candidat.date_naissance ? String(candidat.date_naissance).slice(0, 10) : "",
+    sexe: candidat.sexe || "M",
+    categoriePermis: candidat.categoriePermis || "B",
+    email: candidat.email || "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  const inp = { width: "100%", boxSizing: "border-box", padding: "9px 12px", border: "1.5px solid #e2e8f0", borderRadius: 8, fontSize: 13, outline: "none", color: "#1e293b" };
+  const lbl = { fontSize: 11.5, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 4 };
+
+  const handleSubmit = async () => {
+    if (!form.prenom.trim() || !form.nom.trim() || !form.date_naissance) {
+      setError("Prénom, nom et date de naissance sont requis.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await onSave(form);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{ background: "#fff", borderRadius: 16, width: 460, maxWidth: "94vw", padding: 22, boxShadow: "0 25px 60px rgba(0,0,0,0.2)" }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 16 }}>
+          Modifier — personne externe (perfectionnement)
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div>
+            <label style={lbl}>Prénom *</label>
+            <input style={inp} value={form.prenom} onChange={(e) => set("prenom", e.target.value)} />
+          </div>
+          <div>
+            <label style={lbl}>Nom *</label>
+            <input style={inp} value={form.nom} onChange={(e) => set("nom", e.target.value)} />
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div>
+            <label style={lbl}>Date de naissance *</label>
+            <input type="date" style={inp} value={form.date_naissance} onChange={(e) => set("date_naissance", e.target.value)} />
+          </div>
+          <div>
+            <label style={lbl}>Sexe *</label>
+            <select style={inp} value={form.sexe} onChange={(e) => set("sexe", e.target.value)}>
+              <option value="M">Masculin</option>
+              <option value="F">Féminin</option>
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div>
+            <label style={lbl}>Catégorie</label>
+            <select style={inp} value={form.categoriePermis} onChange={(e) => set("categoriePermis", e.target.value)}>
+              {TOUTES_CATEGORIES.filter((c) => c !== "Tous").map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>Téléphone</label>
+            <input style={inp} value={form.telephone} onChange={(e) => set("telephone", e.target.value)} />
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={lbl}>Email</label>
+          <input type="email" style={inp} value={form.email} onChange={(e) => set("email", e.target.value)} />
+        </div>
+
+        {error && (
+          <div style={{ marginBottom: 12, fontSize: 12, color: "#dc2626", fontWeight: 600 }}>{error}</div>
+        )}
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onClose} disabled={saving} style={{ flex: 1, padding: "10px 0", borderRadius: 9, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", cursor: "pointer", fontWeight: 600 }}>
+            Annuler
+          </button>
+          <button onClick={handleSubmit} disabled={saving} style={{ flex: 2, padding: "10px 0", borderRadius: 9, border: "none", background: saving ? "#94a3b8" : "#0369a1", color: "#fff", cursor: saving ? "not-allowed" : "pointer", fontWeight: 700 }}>
+            {saving ? "Enregistrement…" : "Enregistrer"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmAuditeurModal({ candidat, onConfirm, onClose }) {
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 1500, background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{ background: "#fff", borderRadius: 16, width: 400, maxWidth: "92vw", padding: 24, boxShadow: "0 25px 60px rgba(0,0,0,0.2)" }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 8 }}>
+          Inscrire à l'auto-école ?
+        </div>
+        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 20, lineHeight: 1.5 }}>
+          <strong>{candidat.prenom} {candidat.nom}</strong> va devenir un candidat officiel de l'auto-école. Vous pourrez ensuite compléter son dossier.
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: "10px 0", borderRadius: 9, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
+            Annuler
+          </button>
+          <button onClick={() => onConfirm(candidat)} style={{ flex: 2, padding: "10px 0", borderRadius: 9, border: "none", background: "#166534", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+            ✓ Inscrire
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────
 // Composant principal
@@ -294,7 +509,20 @@ const MesCandidats = () => {
   const [showModal,      setShowModal]      = useState(false);
   const [editCandidat,   setEditCandidat]   = useState(null);
   const [showEnvoiModal, setShowEnvoiModal] = useState(false);
-    const [nbSeancesMax,   setNbSeancesMax]   = useState(SESSIONS_NORMALES_MAX);
+  const [nbSeancesMax,   setNbSeancesMax]   = useState(SESSIONS_NORMALES_MAX);
+
+  const [activeTab, setActiveTab] = useState("encours");
+  const { examensList } = useExamenCtx();
+  const [historiqueCandidat, setHistoriqueCandidat] = useState(null);
+
+  const [selectedCategorieExterne, setSelectedCategorieExterne] = useState("Tous");
+  const [editingExterne, setEditingExterne] = useState(null);
+  const [deletingExterneId, setDeletingExterneId] = useState(null);
+
+  const [auditeursLibres, setAuditeursLibres] = useState([]);
+  const [selectedCategorieAuditeur, setSelectedCategorieAuditeur] = useState("Tous");
+  const [convertingId, setConvertingId] = useState(null);
+  const [confirmAuditeur, setConfirmAuditeur] = useState(null);
 
   // ── Chargement ───────────────────────────────────────────────────────────────
 const loadData = async (maxOverride) => {
@@ -391,9 +619,11 @@ const loadData = async (maxOverride) => {
           const isMien = mesCandidatIdSet.has(c.idCandidat) || mesCreationSet.has(c.idCandidat);
           const isNouveauInscrit = mesCreationSet.has(c.idCandidat) && !mesCandidatIdSet.has(c.idCandidat);
 
-          return {
+              return {
             id:              c.idCandidat,
             nom:             `${c.prenom} ${c.nom}`,
+            prenomSeul:      c.prenom,
+            nomSeul:         c.nom,
             prenom:          c.prenom,
             tel:             c.telephone,
             categoriePermis: currentCat,
@@ -402,6 +632,7 @@ const loadData = async (maxOverride) => {
             total:           max,
             nextSession,
             status:          c.statut,
+            externe:         !!c.externe,
             isMien,
             isNouveauInscrit,
             _raw:            c,
@@ -418,6 +649,15 @@ const loadData = async (maxOverride) => {
     }
   };
 
+  const loadAuditeursLibres = async () => {
+    try {
+      const rows = await window.electron.getAuditeursLibres();
+      setAuditeursLibres(Array.isArray(rows) ? rows : []);
+    } catch (e) {
+      console.error("Erreur chargement auditeurs libres:", e);
+    }
+  };
+
  useEffect(() => {
   (async () => {
     let max = SESSIONS_NORMALES_MAX;
@@ -429,6 +669,7 @@ const loadData = async (maxOverride) => {
       console.error("Erreur chargement nombre de séances configuré:", e);
     }
     await loadData(max);
+    await loadAuditeursLibres();
   })();
 }, [currentUser?.id, CAN_VIEW_ALL_CANDIDATES]);
 
@@ -504,13 +745,89 @@ const handleSave = async (data) => {
 
   const filtered = candidats.filter(
     (c) =>
-      c.nom.toLowerCase().includes(search.toLowerCase()) ||
-      c.tel?.toLowerCase().includes(search.toLowerCase())
+      (c.nom.toLowerCase().includes(search.toLowerCase()) ||
+      c.tel?.toLowerCase().includes(search.toLowerCase())) &&
+      !c.externe
   );
 
   // ── Split : candidats en cours vs permis obtenus ──────────────────────────────
   const filteredEnCours = filtered.filter((c) => c.status !== "obtenu");
   const filteredObtenus = filtered.filter((c) => c.status === "obtenu");
+
+  // ── Personnes externes (perfectionnement) ──────────────────────────────
+  const candidatsExternes = candidats.filter((c) => {
+    if (!c.externe) return false;
+    const matchesCategorie = selectedCategorieExterne === "Tous" || c.categoriePermis === selectedCategorieExterne.toUpperCase();
+    return matchesCategorie;
+  });
+
+  const handleDeleteExterne = async (id) => {
+    if (!window.confirm("Supprimer cette personne externe ?")) return;
+    setDeletingExterneId(id);
+    try {
+      const ok = await window.electron.deleteCandidatExterne(id);
+      if (ok) {
+        await loadData();
+      } else {
+        alert("Erreur lors de la suppression.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Erreur lors de la suppression.");
+    } finally {
+      setDeletingExterneId(null);
+    }
+  };
+
+  const handleSaveExterne = async (payload) => {
+    try {
+      const result = await window.electron.updateCandidatExterne(payload);
+      if (result) {
+        await loadData();
+        setEditingExterne(null);
+      } else {
+        alert("Erreur lors de la mise à jour.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Une erreur est survenue.");
+    }
+  };
+
+  // ── Auditeurs libres ────────────────────────────────────────────────────
+  const auditeursFiltres = auditeursLibres.filter((c) => {
+    const cat = (c.categoriePermis || "B").toString().trim().toUpperCase();
+    return selectedCategorieAuditeur === "Tous" || cat === selectedCategorieAuditeur.toUpperCase();
+  });
+
+  const handleDemandeConversion = (candidat) => {
+    setConfirmAuditeur(candidat);
+  };
+
+  const handleConvertirAuditeur = async (candidat) => {
+    setConfirmAuditeur(null);
+    setConvertingId(candidat.idCandidat);
+    try {
+      const result = await window.electron.convertirAuditeurLibre(candidat.idCandidat);
+      if (result?.success) {
+        await loadAuditeursLibres();
+        await loadData();
+      } else {
+        alert("Erreur : " + (result?.error || "impossible d'inscrire ce candidat"));
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Erreur lors de l'inscription.");
+    } finally {
+      setConvertingId(null);
+    }
+  };
+
+  const TABS = [
+    { key: "encours",   label: "Mes candidats",     count: filtered.length },
+    { key: "externes",  label: "Externes",          count: candidatsExternes.length },
+    { key: "auditeurs", label: "Auditeurs libres",  count: auditeursFiltres.length },
+  ];
 
   // ── Rendu d'une card (factorisé : utilisé pour les deux sections) ────────────
   const renderCard = (c) => {
@@ -614,6 +931,22 @@ const handleSave = async (data) => {
           </span>
         </div>
 
+               {/* Historique des examens */}
+        <button
+          onClick={() => setHistoriqueCandidat(c)}
+          style={{
+            marginTop: 8,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            width: "100%", padding: "7px 0", borderRadius: 8,
+            background: "rgba(124,58,237,0.07)",
+            border: "1px solid rgba(124,58,237,0.22)",
+            color: "#7c3aed", fontSize: 12, fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          <History size={13} /> Historique des examens
+        </button>
+
         {/* Bouton Supprimer */}
         {CAN_REMOVE_CANDIDAT && (
           <button
@@ -700,7 +1033,32 @@ const handleSave = async (data) => {
           )}
         </div>
 
+            {/* ── BARRE D'ONGLETS ── */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 20, background: "#fff", padding: 6, borderRadius: 12, border: "1px solid #E2E8F0" }}>
+          {TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              style={{
+                flex: 1, padding: "10px 14px", borderRadius: 8, border: "none",
+                background: activeTab === tab.key ? "#2b537e" : "transparent",
+                color: activeTab === tab.key ? "#fff" : "#475569",
+                fontWeight: 600, fontSize: 13.5, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              }}
+            >
+              {tab.label}
+              <span style={{
+                background: activeTab === tab.key ? "rgba(255,255,255,0.25)" : "#e2e8f0",
+                color: activeTab === tab.key ? "#fff" : "#64748b",
+                borderRadius: 20, padding: "1px 8px", fontSize: 11.5,
+              }}>{tab.count}</span>
+            </button>
+          ))}
+        </div>
+
         {/* SECTION CANDIDATS */}
+        {activeTab === "encours" && (
         <div className="card">
           <div className="card-header">
             <div>
@@ -804,9 +1162,185 @@ const handleSave = async (data) => {
                   </div>
                 </>
               )}
-            </>
+                 </>
           )}
         </div>
+        )}
+
+        {/* ── ONGLET EXTERNES ── */}
+        {activeTab === "externes" && (
+        <div className="card">
+          <div className="card-header">
+            <div>
+              <h2>🚗 Perfectionnement — Externes</h2>
+              <p>{candidatsExternes.length} personne(s) — permis déjà obtenu hors auto-école</p>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 12, marginBottom: 20, background: "#fff", padding: "10px 14px", borderRadius: 12, border: "1px solid #E2E8F0", alignItems: "center" }}>
+            <Filter size={16} color="#64748b" />
+            <select
+              value={selectedCategorieExterne}
+              onChange={(e) => setSelectedCategorieExterne(e.target.value)}
+              style={{ padding: "10px 14px", fontSize: "14px", fontWeight: "600", color: "#1e293b", background: "#F1F5F9", border: "1px solid #E2E8F0", borderRadius: "8px", cursor: "pointer", outline: "none", minWidth: "160px" }}
+            >
+              {TOUTES_CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>{cat === "Tous" ? "Toutes catégories" : `Permis ${cat}`}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ background: "#fff", borderRadius: "15px", overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)" }}>
+            <div style={{ maxHeight: "500px", overflowY: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
+                  <tr style={{ background: "#0369a1" }}>
+                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Personne</th>
+                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Contact</th>
+                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Catégorie</th>
+                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Séances</th>
+                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {candidatsExternes.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: "center", padding: "40px", color: "#A0AEC0" }}>
+                        Aucune personne externe pour l'instant.
+                      </td>
+                    </tr>
+                  ) : (
+                    candidatsExternes.map((c, index) => (
+                      <tr key={c.id} style={{ background: index % 2 === 0 ? "#fff" : "#F8FAFC" }}>
+                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                          <div style={{ fontWeight: 600 }}>{c.nom}</div>
+                          <span style={{ fontSize: "11px", background: "#e0e7ff", color: "#3730a3", padding: "2px 6px", borderRadius: "4px", fontWeight: "bold", display: "inline-block", marginTop: 4 }}>
+                            🆕 Externe
+                          </span>
+                        </td>
+                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <Phone size={15} /> {c.tel || "—"}
+                          </div>
+                        </td>
+                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                          <span style={{ fontSize: "11px", background: "#e0f2fe", color: "#0369a1", padding: "2px 8px", borderRadius: "4px", fontWeight: "bold" }}>
+                            {c.categoriePermis}
+                          </span>
+                        </td>
+                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                          {c.sessions}{c.sessionsSuppl > 0 ? ` (+${c.sessionsSuppl})` : ""}
+                        </td>
+                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                            <SquarePen size={17} color="blue" style={{ cursor: "pointer" }} title="Modifier" onClick={() => setEditingExterne(c._raw)} />
+                            <History size={17} color="#7c3aed" style={{ cursor: "pointer" }} title="Historique des examens" onClick={() => setHistoriqueCandidat(c)} />
+                            {CAN_REMOVE_CANDIDAT && (
+                              <Trash2
+                                size={17} color="red"
+                                style={{ cursor: deletingExterneId === c.id ? "not-allowed" : "pointer" }}
+                                onClick={() => { if (deletingExterneId !== c.id) handleDeleteExterne(c.id); }}
+                              />
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        )}
+
+        {/* ── ONGLET AUDITEURS LIBRES ── */}
+        {activeTab === "auditeurs" && (
+        <div className="card">
+          <div className="card-header">
+            <div>
+              <h2>📖 Auditeurs libres — Cours de code</h2>
+              <p>{auditeursFiltres.length} personne(s) ayant suivi le code sans être inscrite(s)</p>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 12, marginBottom: 20, background: "#fff", padding: "10px 14px", borderRadius: 12, border: "1px solid #E2E8F0", alignItems: "center" }}>
+            <Filter size={16} color="#64748b" />
+            <select
+              value={selectedCategorieAuditeur}
+              onChange={(e) => setSelectedCategorieAuditeur(e.target.value)}
+              style={{ padding: "10px 14px", fontSize: "14px", fontWeight: "600", color: "#1e293b", background: "#F1F5F9", border: "1px solid #E2E8F0", borderRadius: "8px", cursor: "pointer", outline: "none", minWidth: "160px" }}
+            >
+              {TOUTES_CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>{cat === "Tous" ? "Toutes catégories" : `Permis ${cat}`}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ background: "#fff", borderRadius: "15px", overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)" }}>
+            <div style={{ maxHeight: "500px", overflowY: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
+                  <tr style={{ background: "#d97706" }}>
+                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Personne</th>
+                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Contact</th>
+                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Catégorie</th>
+                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Ajouté le</th>
+                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditeursFiltres.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: "center", padding: "40px", color: "#A0AEC0" }}>
+                        Aucun auditeur libre pour l'instant.
+                      </td>
+                    </tr>
+                  ) : (
+                    auditeursFiltres.map((c, index) => (
+                      <tr key={c.idCandidat} style={{ background: index % 2 === 0 ? "#fff" : "#F8FAFC" }}>
+                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                          <div style={{ fontWeight: 600 }}>{c.nom} {c.prenom}</div>
+                          <span style={{ fontSize: "11px", background: "#fff7ed", color: "#c2410c", padding: "2px 6px", borderRadius: "4px", fontWeight: "bold", display: "inline-block", marginTop: 4 }}>
+                            📖 Auditeur libre
+                          </span>
+                        </td>
+                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <Phone size={15} /> {c.telephone || "—"}
+                          </div>
+                        </td>
+                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                          <span style={{ fontSize: "11px", background: "#e0f2fe", color: "#0369a1", padding: "2px 8px", borderRadius: "4px", fontWeight: "bold" }}>
+                            {c.categoriePermis}
+                          </span>
+                        </td>
+                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>{formatDateAr(c.date_inscription)}</td>
+                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                          {CAN_ADD_CANDIDAT && (
+                            <button
+                              onClick={() => handleDemandeConversion(c)}
+                              disabled={convertingId === c.idCandidat}
+                              style={{
+                                padding: "7px 14px", borderRadius: 8, border: "none",
+                                background: convertingId === c.idCandidat ? "#94a3b8" : "#166534",
+                                color: "#fff", fontWeight: 700, fontSize: 12.5,
+                                cursor: convertingId === c.idCandidat ? "not-allowed" : "pointer",
+                              }}
+                            >
+                              {convertingId === c.idCandidat ? "..." : "✓ Inscrire à l'auto-école"}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        )}
       </div>
 
       {/* MODALE AJOUT */}
@@ -824,6 +1358,30 @@ const handleSave = async (data) => {
         <EnvoiCandidatsModal
           candidats={candidats}
           onClose={() => setShowEnvoiModal(false)}
+        />
+      )}
+
+      {historiqueCandidat && (
+        <HistoriqueExamensModal
+          candidat={historiqueCandidat}
+          examensList={examensList}
+          onClose={() => setHistoriqueCandidat(null)}
+        />
+      )}
+
+      {editingExterne && (
+        <EditExterneModal
+          candidat={editingExterne}
+          onClose={() => setEditingExterne(null)}
+          onSave={handleSaveExterne}
+        />
+      )}
+
+      {confirmAuditeur && (
+        <ConfirmAuditeurModal
+          candidat={confirmAuditeur}
+          onConfirm={handleConvertirAuditeur}
+          onClose={() => setConfirmAuditeur(null)}
         />
       )}
     </div>

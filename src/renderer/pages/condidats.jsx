@@ -1011,6 +1011,7 @@ const Condidats = () => {
   const [showEnvoiModal,   setShowEnvoiModal]   = useState(false);
   const [showMatriculesModal, setShowMatriculesModal] = useState(false);
   const [historiqueCandidat, setHistoriqueCandidat]  = useState(null);
+  const [activeTab, setActiveTab] = useState("encours");
 
   const [selectedCategorieObtenu, setSelectedCategorieObtenu] = useState("Tous");
   const [dateObtentionDebut, setDateObtentionDebut] = useState("");
@@ -1285,6 +1286,12 @@ const loadAuditeursLibres = async () => {
       setConvertingId(null);
     }
   };
+  const TABS = [
+  { key: "encours",   label: "Candidats en cours", count: candidatsEnCours.length },
+  { key: "obtenus",   label: "Permis obtenus",     count: candidatsObtenus.length },
+  { key: "externes",  label: "Externes",           count: candidatsExternes.length },
+  { key: "auditeurs", label: "Auditeurs libres",   count: auditeursFiltres.length },
+];
 
   return (
     <div className="container">
@@ -1296,13 +1303,37 @@ const loadAuditeursLibres = async () => {
             <img src={SmallCar} alt="" width={40} />
             Panneau de contrôle de l'auto-école
           </h1>
-          <p>Gérer les étudiants, les leçons et les examens</p>
-        </div>
+         <p>Gérer les étudiants, les leçons et les examens</p>
+</div>
 
-        <div className="card">
-          <div className="card-header">
-            <div>
-              <h2>Candidats en cours</h2>
+<div style={{ display: "flex", gap: 6, marginBottom: 20, background: "#fff", padding: 6, borderRadius: 12, border: "1px solid #E2E8F0" }}>
+  {TABS.map((tab) => (
+    <button
+      key={tab.key}
+      onClick={() => setActiveTab(tab.key)}
+      style={{
+        flex: 1, padding: "10px 14px", borderRadius: 8, border: "none",
+        background: activeTab === tab.key ? "#2b537e" : "transparent",
+        color: activeTab === tab.key ? "#fff" : "#475569",
+        fontWeight: 600, fontSize: 13.5, cursor: "pointer",
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+      }}
+    >
+      {tab.label}
+      <span style={{
+        background: activeTab === tab.key ? "rgba(255,255,255,0.25)" : "#e2e8f0",
+        color: activeTab === tab.key ? "#fff" : "#64748b",
+        borderRadius: 20, padding: "1px 8px", fontSize: 11.5,
+      }}>{tab.count}</span>
+    </button>
+  ))}
+</div>
+
+{activeTab === "encours" && (
+<div className="card">
+  <div className="card-header">
+    <div>
+      <h2>Candidats en cours</h2>
               <p>{candidatsEnCours.length} candidat(s) en formation</p>
             </div>
             <div style={{ display: "flex", gap: 10 }}>
@@ -1492,10 +1523,13 @@ const loadAuditeursLibres = async () => {
           </div>
         </div>
 
-        <div className="card" style={{ marginTop: 24 }}>
-          <div className="card-header">
-            <div>
-              <h2>🎓 Historique — Permis obtenus</h2>
+        )}
+
+{activeTab === "obtenus" && (
+<div className="card" style={{ marginTop: 24 }}>
+  <div className="card-header">
+    <div>
+      <h2>🎓 Historique — Permis obtenus</h2>
               <p>{candidatsObtenus.length} candidat(s) ayant obtenu leur permis</p>
             </div>
           </div>
@@ -1624,13 +1658,15 @@ const loadAuditeursLibres = async () => {
               </table>
             </div>
           </div>
-        </div>
+          </div>
+        )}
 
-        {/* ── NOUVELLE TABLE : Perfectionnement — Externes ────────────────── */}
-        <div className="card" style={{ marginTop: 24 }}>
-          <div className="card-header">
-            <div>
-              <h2>🚗 Perfectionnement — Externes</h2>
+{/* ── NOUVELLE TABLE : Perfectionnement — Externes ────────────────── */}
+{activeTab === "externes" && (
+<div className="card" style={{ marginTop: 24 }}>
+  <div className="card-header">
+    <div>
+      <h2>🚗 Perfectionnement — Externes</h2>
               <p>{candidatsExternes.length} personne(s) — permis déjà obtenu hors auto-école</p>
             </div>
           </div>
@@ -1741,12 +1777,14 @@ const loadAuditeursLibres = async () => {
             </div>
           </div>
         </div>
+        )}
 
-        {/* ── NOUVELLE TABLE : Auditeurs libres — Cours de code ───────────── */}
-        <div className="card" style={{ marginTop: 24 }}>
-          <div className="card-header">
-            <div>
-              <h2>📖 Auditeurs libres — Cours de code</h2>
+{/* ── NOUVELLE TABLE : Auditeurs libres — Cours de code ───────────── */}
+{activeTab === "auditeurs" && (
+<div className="card" style={{ marginTop: 24 }}>
+  <div className="card-header">
+    <div>
+      <h2>📖 Auditeurs libres — Cours de code</h2>
               <p>{auditeursFiltres.length} personne(s) ayant suivi le code sans être inscrite(s)</p>
             </div>
           </div>
@@ -1839,9 +1877,11 @@ const loadAuditeursLibres = async () => {
           </div>
         </div>
 
-      </div>
+     )}
 
-      <AddCandidatModal
+</div>
+
+<AddCandidatModal
         showModal={showModal}
         setShowModal={setShowModal}
         candidat={editCandidat}
