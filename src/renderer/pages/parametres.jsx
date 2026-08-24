@@ -50,6 +50,7 @@ const PERM_GROUPS = [
     perms: [
       { key: "CAN_VIEW_ALL_CANDIDATES", Icon: EyeIcon,   label: "Voir tous les candidats" },
       { key: "CAN_ADD_CANDIDAT",        Icon: UserPlus,  label: "Ajouter un candidat"      },
+      { key: "CAN_EDIT_CANDIDAT",       Icon: PenLine,   label: "Modifier un candidat"     }, 
       { key: "CAN_REMOVE_CANDIDAT",     Icon: Trash2,    label: "Supprimer un candidat"    },
       { key: "CAN_EXPORT_LISTE_ENVOI",  Icon: FileSpreadsheet, label: "Générer لائحة الإرسال (PDF)" },
     ],

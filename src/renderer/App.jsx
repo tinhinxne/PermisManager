@@ -21,7 +21,7 @@ import Layout              from "./layout/Layout";
 
 import LayoutMoniteur      from "./layout/LayoutMoniteur";
 import DashboardMoniteur   from "./pages/DashboardMoniteur";
-import MesCandidats        from "./pages/MesCandidats";
+import MesCandidats        from "./pages/condidatsMoniteur";
 import CoursCodeMoniteur from "./pages/CoursCodeMoniteur";
 import AgendaMoniteur      from "./pages/AgendaMoniteur";
 import ExamensMoniteur     from "./pages/ExamenMoniteur";

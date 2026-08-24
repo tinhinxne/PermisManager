@@ -358,21 +358,23 @@ const { blocked, needsParent, age } = evaluateRules(inscriptionRules, form.dob, 
     return errs;
   };
 
-  const handleChange = (field, value) => {
-    // 🌟 SÉCURITÉ : Si on change la catégorie, on force la valeur en MAJUSCULES
-    const cleanValue = field === "categoriePermis" ? String(value).toUpperCase() : value;
-    const updated = { ...form, [field]: cleanValue };
-    setForm(updated);
+ const handleChange = (field, value) => {
+  // 🌟 SÉCURITÉ : Si on change la catégorie, on force la valeur en MAJUSCULES
+  const cleanValue = field === "categoriePermis" ? String(value).toUpperCase() : value;
+  const updated = { ...form, [field]: cleanValue };
+  setForm(updated);
 
-    if (field === "dob") {
-      setParentAuthFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
+  if (field === "dob") {
+    setParentAuthFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
 
-    if (touched[field] || field === "dob" || field === "categoriePermis") {
-      setErrors(validate(updated, field === "dob" ? null : parentAuthFile));
-    }
-  };
+  // ── On revalide TOUJOURS le formulaire à chaque changement, ──
+  // ── pas seulement si le champ a déjà été "touché" ──
+  // ── (sinon un champ sans onBlur, comme le sexe via les radios, ──
+  // ── ne rafraîchit jamais l'état d'erreur et le bouton reste bloqué) ──
+  setErrors(validate(updated, field === "dob" ? null : parentAuthFile));
+};
 
   const handleBlur = (field) => {
     setTouched((t) => ({ ...t, [field]: true }));

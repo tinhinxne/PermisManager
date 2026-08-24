@@ -13,6 +13,7 @@ import "../../styles/DashboardMoniteur.css";
 const PERM_LABELS = [
   { key: "CAN_VIEW_ALL_CANDIDATES",    label: "Voir tous les candidats"          },
   { key: "CAN_ADD_CANDIDAT",           label: "Ajouter un candidat"              },
+  { key: "CAN_EDIT_CANDIDAT",          label: "Modifier un candidat"             },
   { key: "CAN_REMOVE_CANDIDAT",        label: "Supprimer un candidat"            },
   { key: "CAN_ADD_SESSION",            label: "Gérer les séances"                },
   { key: "CAN_ADD_PAYMENT",            label: "Enregistrer un paiement"          },

@@ -299,6 +299,17 @@ function openWhatsAppBienvenue(telephone, prenom) {
   const url = `https://wa.me/${numero}?text=${encodeURIComponent(message)}`;
   window.open(url, "_blank");
 }
+
+// ── Contact WhatsApp manuel (sans message pré-rempli de bienvenue) ──
+function openWhatsAppContact(telephone) {
+  if (!telephone) return;
+  let numero = telephone.replace(/\D/g, "");
+  if (numero.startsWith("0")) {
+    numero = "213" + numero.slice(1);
+  }
+  window.open(`https://wa.me/${numero}`, "_blank");
+}
+
 function HistoriqueExamensModal({ candidat, examensList, onClose }) {
   const nomComplet = `${candidat.prenom} ${candidat.nom}`;
   const historique = examensList
@@ -494,12 +505,13 @@ function ConfirmAuditeurModal({ candidat, onConfirm, onClose }) {
 // ─────────────────────────────────────────────
 // Composant principal
 // ─────────────────────────────────────────────
-const MesCandidats = () => {
+const condidatsMoniteur = () => {
   const { currentUser } = useAuth();
   const {
     CAN_VIEW_ALL_CANDIDATES,
     CAN_REMOVE_CANDIDAT,
     CAN_ADD_CANDIDAT,
+    CAN_EDIT_CANDIDAT, 
     CAN_EXPORT_LISTE_ENVOI,
   } = useMyPermissions();
 
@@ -524,15 +536,19 @@ const MesCandidats = () => {
   const [convertingId, setConvertingId] = useState(null);
   const [confirmAuditeur, setConfirmAuditeur] = useState(null);
 
+  // ── Filtres pour l'onglet "Permis obtenus" ──────────────────────────────
+  const [selectedCategorieObtenu, setSelectedCategorieObtenu] = useState("Tous");
+  const [dateObtentionDebut, setDateObtentionDebut] = useState("");
+  const [dateObtentionFin,   setDateObtentionFin]   = useState("");
+
   // ── Chargement ───────────────────────────────────────────────────────────────
 const loadData = async (maxOverride) => {
     const max = maxOverride ?? nbSeancesMax;
     try {
       setLoading(true);
-      const [rawCandidats, rawSeances, inscriptionsCode] = await Promise.all([
+      const [rawCandidats, rawSeances] = await Promise.all([
         window.electron.getCandidats(),
         window.electron.getSeances(),
-        window.electron.getInscriptionsCode(),
       ]);
 
       const moniteurId = currentUser?.id;
@@ -584,15 +600,10 @@ const loadData = async (maxOverride) => {
             return statutNorm !== "annulee";
           });
 
-          const nbSessionsCode = (inscriptionsCode || []).filter((i) => {
-            const cat = (i.categoriePermis || "").toString().trim().toUpperCase();
-            return i.idCandidat === c.idCandidat && cat === currentCat;
-          }).length;
-
-          const nbSessionsTotal = seancesDuCandidat.length + nbSessionsCode;
-
-          const nbSessions      = Math.min(nbSessionsTotal, max);
-          const nbSessionsSuppl = Math.max(nbSessionsTotal - max, 0);
+          // ── Les cours de code ne comptent pas dans le total de séances : ──
+          // ── on ne compte qu'à partir du circuit/circulation (code déjà réussi) ──
+          const nbSessions      = Math.min(seancesDuCandidat.length, max);
+          const nbSessionsSuppl = Math.max(seancesDuCandidat.length - max, 0);
 
           const nextSeance = seancesDuCandidat
             .map((s) => {
@@ -701,6 +712,11 @@ const loadData = async (maxOverride) => {
     setEditCandidat(null);
     setShowModal(true);
   };
+  const handleEdit = (candidat) => {
+  if (!CAN_EDIT_CANDIDAT) return;
+  setEditCandidat(candidat);
+  setShowModal(true);
+};
 const handleSave = async (data) => {
   if (!CAN_ADD_CANDIDAT) return;
   if (data.idCandidat) {
@@ -752,7 +768,21 @@ const handleSave = async (data) => {
 
   // ── Split : candidats en cours vs permis obtenus ──────────────────────────────
   const filteredEnCours = filtered.filter((c) => c.status !== "obtenu");
-  const filteredObtenus = filtered.filter((c) => c.status === "obtenu");
+
+  const filteredObtenus = filtered
+    .filter((c) => c.status === "obtenu")
+    .map((c) => ({ ...c, dateObtention: getDateObtention(c.id, examensList) }))
+    .filter((c) => {
+      const matchesCategorie =
+        selectedCategorieObtenu === "Tous" ||
+        c.categoriePermis === selectedCategorieObtenu.toUpperCase();
+      const d = toComparableDate(c.dateObtention);
+      const matchesDate =
+        (!dateObtentionDebut || (d && d >= dateObtentionDebut)) &&
+        (!dateObtentionFin   || (d && d <= dateObtentionFin));
+      return matchesCategorie && matchesDate;
+    })
+    .sort((a, b) => new Date(b.dateObtention || 0) - new Date(a.dateObtention || 0));
 
   // ── Personnes externes (perfectionnement) ──────────────────────────────
   const candidatsExternes = candidats.filter((c) => {
@@ -824,7 +854,8 @@ const handleSave = async (data) => {
   };
 
   const TABS = [
-    { key: "encours",   label: "Mes candidats",     count: filtered.length },
+    { key: "encours",   label: "Mes candidats",     count: filteredEnCours.length },
+    { key: "obtenus",   label: "Permis obtenus",    count: filteredObtenus.length },
     { key: "externes",  label: "Externes",          count: candidatsExternes.length },
     { key: "auditeurs", label: "Auditeurs libres",  count: auditeursFiltres.length },
   ];
@@ -930,6 +961,23 @@ const handleSave = async (data) => {
             {c.isNouveauInscrit ? "Aucune séance planifiée" : c.nextSession}
           </span>
         </div>
+        {/* Modifier la fiche */}
+{CAN_EDIT_CANDIDAT && (
+  <button
+    onClick={() => handleEdit(c._raw)}
+    style={{
+      marginTop: 8,
+      display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+      width: "100%", padding: "7px 0", borderRadius: 8,
+      background: "rgba(59,130,246,0.07)",
+      border: "1px solid rgba(59,130,246,0.22)",
+      color: "#2563eb", fontSize: 12, fontWeight: 600,
+      cursor: "pointer",
+    }}
+  >
+    <SquarePen size={13} /> Modifier la fiche
+  </button>
+)}
 
                {/* Historique des examens */}
         <button
@@ -946,6 +994,24 @@ const handleSave = async (data) => {
         >
           <History size={13} /> Historique des examens
         </button>
+
+        {/* Contacter via WhatsApp */}
+        {c.tel && (
+          <button
+            onClick={() => openWhatsAppContact(c.tel)}
+            style={{
+              marginTop: 8,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              width: "100%", padding: "7px 0", borderRadius: 8,
+              background: "rgba(37,211,102,0.08)",
+              border: "1px solid rgba(37,211,102,0.25)",
+              color: "#128c4a", fontSize: 12, fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            <Phone size={13} /> Contacter via WhatsApp
+          </button>
+        )}
 
         {/* Bouton Supprimer */}
         {CAN_REMOVE_CANDIDAT && (
@@ -1057,7 +1123,7 @@ const handleSave = async (data) => {
           ))}
         </div>
 
-        {/* SECTION CANDIDATS */}
+        {/* SECTION CANDIDATS EN COURS */}
         {activeTab === "encours" && (
         <div className="card">
           <div className="card-header">
@@ -1124,45 +1190,86 @@ const handleSave = async (data) => {
           {/* CARDS */}
           {loading ? (
             <p style={{ textAlign: "center", color: "#888", padding: "20px" }}>Chargement…</p>
-          ) : filtered.length === 0 ? (
+          ) : filteredEnCours.length === 0 ? (
             <p style={{ textAlign: "center", color: "#888", padding: "20px" }}>Aucun candidat trouvé</p>
           ) : (
-            <>
-              {/* ── Section : candidats en cours ── */}
-              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e293b", margin: "4px 0 10px" }}>
-                En cours ({filteredEnCours.length})
-              </h3>
-              {filteredEnCours.length === 0 ? (
-                <p style={{ color: "#94a3b8", fontSize: 13, marginBottom: 20 }}>
-                  Aucun candidat en cours.
-                </p>
-              ) : (
-                <div style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-                  gap: 12,
-                  marginBottom: 24,
-                }}>
-                  {filteredEnCours.map(renderCard)}
-                </div>
-              )}
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+              gap: 12,
+            }}>
+              {filteredEnCours.map(renderCard)}
+            </div>
+          )}
+        </div>
+        )}
 
-              {/* ── Section : permis obtenus ── */}
-              {filteredObtenus.length > 0 && (
-                <>
-                  <h3 style={{ fontSize: 14, fontWeight: 700, color: "#4338ca", margin: "4px 0 10px" }}>
-                    🎓 Permis obtenus ({filteredObtenus.length})
-                  </h3>
-                  <div style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-                    gap: 12,
-                  }}>
-                    {filteredObtenus.map(renderCard)}
-                  </div>
-                </>
-              )}
-                 </>
+        {/* ── ONGLET PERMIS OBTENUS ── */}
+        {activeTab === "obtenus" && (
+        <div className="card">
+          <div className="card-header">
+            <div>
+              <h2>🎓 Historique — Permis obtenus</h2>
+              <p>{filteredObtenus.length} candidat(s) ayant obtenu leur permis</p>
+            </div>
+          </div>
+
+          <div style={{
+            display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap",
+            background: "#fff", padding: "10px 14px", borderRadius: 12,
+            border: "1px solid #E2E8F0", alignItems: "center",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Filter size={16} color="#64748b" />
+              <select
+                value={selectedCategorieObtenu}
+                onChange={(e) => setSelectedCategorieObtenu(e.target.value)}
+                style={{
+                  padding: "10px 14px", fontSize: "14px", fontWeight: "600",
+                  color: "#1e293b", background: "#F1F5F9", border: "1px solid #E2E8F0",
+                  borderRadius: "8px", cursor: "pointer", outline: "none", minWidth: "160px",
+                }}
+              >
+                {TOUTES_CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat === "Tous" ? "Toutes catégories" : `Permis ${cat}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 13, color: "#64748b", fontWeight: 600 }}>Du</span>
+              <input
+                type="date"
+                value={dateObtentionDebut}
+                onChange={(e) => setDateObtentionDebut(e.target.value)}
+                style={{ padding: "9px 12px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 13.5, color: "#1e293b" }}
+              />
+              <span style={{ fontSize: 13, color: "#64748b", fontWeight: 600 }}>au</span>
+              <input
+                type="date"
+                value={dateObtentionFin}
+                onChange={(e) => setDateObtentionFin(e.target.value)}
+                style={{ padding: "9px 12px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 13.5, color: "#1e293b" }}
+              />
+            </div>
+          </div>
+
+          {loading ? (
+            <p style={{ textAlign: "center", color: "#888", padding: "20px" }}>Chargement…</p>
+          ) : filteredObtenus.length === 0 ? (
+            <p style={{ textAlign: "center", color: "#94a3b8", padding: "20px" }}>
+              Aucun candidat trouvé pour cette sélection.
+            </p>
+          ) : (
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+              gap: 12,
+            }}>
+              {filteredObtenus.map(renderCard)}
+            </div>
           )}
         </div>
         )}
@@ -1235,6 +1342,13 @@ const handleSave = async (data) => {
                           <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
                             <SquarePen size={17} color="blue" style={{ cursor: "pointer" }} title="Modifier" onClick={() => setEditingExterne(c._raw)} />
                             <History size={17} color="#7c3aed" style={{ cursor: "pointer" }} title="Historique des examens" onClick={() => setHistoriqueCandidat(c)} />
+                            <Phone
+                              size={17}
+                              color={c.tel ? "#128c4a" : "#cbd5e1"}
+                              style={{ cursor: c.tel ? "pointer" : "default" }}
+                              title={c.tel ? "Contacter via WhatsApp" : "Pas de téléphone enregistré"}
+                              onClick={() => { if (c.tel) openWhatsAppContact(c.tel); }}
+                            />
                             {CAN_REMOVE_CANDIDAT && (
                               <Trash2
                                 size={17} color="red"
@@ -1407,4 +1521,4 @@ const candidateCardNouveau = {
   background: "#fffef0",
 };
 
-export default MesCandidats;
+export default condidatsMoniteur;
