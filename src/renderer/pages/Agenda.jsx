@@ -647,8 +647,9 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
   // personne externe (permis obtenu hors de notre auto-école) avant de statuer
   // sur le stade de formation.
   const selectedCandidatObj = candidats.find(c => String(c.idCandidat) === String(form.candidatId));
-  const candidatCat  = selectedCandidatObj ? candidatCategorie(selectedCandidatObj) : "";
-  const estExterne   = !!selectedCandidatObj?.externe;
+const candidatCat  = selectedCandidatObj ? candidatCategorie(selectedCandidatObj) : "";
+const estExterne   = !!selectedCandidatObj?.externe;
+const montantRestant = Number(selectedCandidatObj?.montantRestant ?? 0);
 
   // ── Examens du candidat ────────────────────────────────────────────────────
   // RÈGLE STRICTE : on ne passe au stade suivant QUE quand l'examen précédent
@@ -669,6 +670,8 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
     : 0;
   const seancesCompletes = nbSeancesEffectuees >= nbSeancesMax;
   const permisObtenu = estExterne || seancesCompletes;
+  // Un candidat externe n'a pas de forfait (30000 DA) à payer, donc pas concerné.
+const forfaitNonSolde = permisObtenu && !estExterne && montantRestant > 0;
 
   // Stade actuel pour les candidats en cours (permis pas encore obtenu) :
   // - "code"        : par défaut, ou si Code pas encore réussi
@@ -774,9 +777,17 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
       });
       return;
     }
+    // ── AJOUT : blocage forfait non soldé ───────────────────────────────────
+if (forfaitNonSolde) {
+  setAlertInfo({
+    icon:"💳", title:"Forfait non soldé", color:"#ef4444",
+    message:`${form.candidat || "Ce candidat"} n'a pas encore réglé son forfait de formation (reste ${montantRestant.toLocaleString("fr-DZ")} DA). Veuillez enregistrer le paiement depuis le module Paiements avant de planifier une séance supplémentaire.`,
+  });
+  return;
+}
 
     // ── Blocage : candidat encore au stade "code" ──────────────────────────
-    if (form.candidatId && !permisObtenu && currentStage === "code") {
+ if (form.candidatId && !permisObtenu && currentStage === "code") {
       setAlertInfo({
         icon:"📘", title:"Cours de Code requis", color:"#3b82f6",
         message:`${form.candidat || "Ce candidat"} doit d'abord suivre et réussir son examen de Code. Rendez-vous sur la page "Cours de Code" pour planifier ses séances de code.`,
@@ -976,6 +987,18 @@ function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, 
                     </div>
                   );
                 })()}
+              </div>
+            </div>
+          )}
+                    {/* Bannière forfait non soldé */}
+          {forfaitNonSolde && (
+            <div style={{ padding:"10px 14px", borderRadius:10, background:"#fef2f2", border:"1.5px solid #fca5a5", fontSize:"0.78rem", color:"#dc2626", fontWeight:700, display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:18 }}>💳</span>
+              <div>
+                <div>Forfait de formation non soldé</div>
+                <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>
+                  Reste {montantRestant.toLocaleString("fr-DZ")} DA à régler. Enregistrez le paiement du forfait (module Paiements) avant de planifier une séance supplémentaire pour ce candidat.
+                </div>
               </div>
             </div>
           )}
@@ -1916,10 +1939,12 @@ const [nbSeancesMax, setNbSeancesMax] = useState(20);
         showToast("Séance modifiée avec succès.");
         window.dispatchEvent(new CustomEvent("seance-updated"));
 
-      } else if (api?.addSeance && !editing) {
+          } else if (api?.addSeance && !editing) {
         const result = await api.addSeance(_formData);
         if (result?.success) {
-          await loadSeances();
+          const freshRows = await api.getSeances();
+          const freshSessions = Array.isArray(freshRows) ? freshRows.map(dbRowToSession) : sessions;
+          setSessions(freshSessions);
           showToast("Séance créée avec succès.");
           // ── Notification WhatsApp au candidat ────────────────────────────
     if (_formData.candidatTelephone) {
@@ -1940,16 +1965,14 @@ const [nbSeancesMax, setNbSeancesMax] = useState(20);
 const candidatId = _formData.candidatIds?.[0];
           if (candidatId) {
             const nomCandidat = sessionObj.name || "Ce candidat";
-            // `sessions` a déjà été rafraîchi par loadSeances() juste au-dessus,
-            // donc ce comptage inclut la séance qui vient d'être créée.
-            const compteApres = countSeancesFormation(sessions, candidatId, _formData.categoriePermis);
+            // On utilise freshSessions (juste récupéré ci-dessus), pas `sessions`
+            // qui reste l'ancien tableau dans cette fermeture.
+            const compteApres = countSeancesFormation(freshSessions, candidatId, _formData.categoriePermis);
             const vientDeFranchirLeSeuil = compteApres === nbSeancesMax;
 
             if (vientDeFranchirLeSeuil) {
-              // Première fois que ce candidat atteint le seuil → afficher le milestone
               setMilestoneCandidat({ candidatId, nom: nomCandidat });
-            } else if (aObtenuPermis(candidatId, _formData.categoriePermis)) {
-              // Déjà hors forfait depuis une séance précédente → flux crédit/paiement habituel
+            } else if (compteApres >= nbSeancesMax) {
               const credit = getCredit(candidatId);
               if (credit > 0) {
                 const resteApres = consumeCredit(candidatId);

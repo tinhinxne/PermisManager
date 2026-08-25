@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useMyPermissions } from "../context/PermissionsContext";
 import { useExamenCtx } from "../context/ExamenContext";
@@ -179,7 +180,7 @@ function LockedTooltip({ children }) {
 }
 
 // ── MILESTONE MODAL ───────────────────────────────────────────────────────────
-function MilestoneModal({ candidatName, onClose }) {
+function MilestoneModal({ candidatName, nbSeances = 20, onClose, onPayer }) {
   return (
     <div style={{
       position:"fixed", inset:0, zIndex:600,
@@ -203,7 +204,7 @@ function MilestoneModal({ candidatName, onClose }) {
         </div>
         <div style={{ padding:"20px 24px" }}>
           <p style={{ fontSize:"0.9rem", color:"#1e293b", fontWeight:600, margin:"0 0 8px", textAlign:"center" }}>
-            🎉 <strong>{candidatName}</strong> vient d'atteindre ses <strong>20 séances</strong> !
+            🎉 <strong>{candidatName}</strong> vient d'atteindre ses <strong>{nbSeances} séances</strong> !
           </p>
           <p style={{ fontSize:"0.8rem", color:"#64748b", margin:"0 0 4px", textAlign:"center" }}>
             Il peut désormais se présenter à l'examen du permis de conduire.
@@ -215,13 +216,29 @@ function MilestoneModal({ candidatName, onClose }) {
           }}>
             ✅ Formation théorique et pratique terminée
           </div>
+          <div style={{
+            marginTop:14, padding:"10px 14px", borderRadius:10,
+            background:"#f8fafc", border:"1px solid #e2e8f0",
+            fontSize:"0.78rem", color:"#475569", lineHeight:1.6, textAlign:"center",
+          }}>
+            Toute nouvelle séance sera une <strong style={{ color:"#6366f1" }}>séance supplémentaire payante</strong>.
+          </div>
         </div>
-        <div style={{ padding:"0 24px 20px", display:"flex", justifyContent:"center" }}>
+        <div style={{ padding:"0 24px 22px", display:"flex", gap:10 }}>
           <button onClick={onClose} style={{
-            padding:"10px 36px", borderRadius:10, background:"#16a34a",
-            border:"none", color:"#fff", fontFamily:"'Poppins',sans-serif",
-            fontSize:"0.88rem", fontWeight:700, cursor:"pointer",
-          }}>Compris</button>
+            flex:1, padding:"10px 0", borderRadius:10,
+            background:"#f1f5f9", border:"none", color:"#64748b",
+            fontFamily:"'Poppins',sans-serif", fontSize:"0.84rem",
+            fontWeight:600, cursor:"pointer",
+          }}>Fermer</button>
+          <button onClick={onPayer} style={{
+            flex:2, padding:"10px 0", borderRadius:10,
+            background:"linear-gradient(135deg,#6366f1,#4f46e5)",
+            border:"none", color:"#fff",
+            fontFamily:"'Poppins',sans-serif", fontSize:"0.84rem",
+            fontWeight:700, cursor:"pointer",
+            boxShadow:"0 4px 14px rgba(99,102,241,0.35)",
+          }}>💳 Enregistrer paiement séance sup.</button>
         </div>
       </div>
     </div>
@@ -855,6 +872,22 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
     }
     load();
   }, []);
+    const [moniteurCourant, setMoniteurCourant] = useState(null);
+
+  useEffect(() => {
+    async function loadMoniteur() {
+      try {
+        if (window.electron?.getMoniteurs && currentUserId) {
+          const list = await window.electron.getMoniteurs();
+          const self = (Array.isArray(list) ? list : []).find(
+            m => String(m.id) === String(currentUserId)
+          );
+          setMoniteurCourant(self || null);
+        }
+      } catch (e) { console.error("Erreur chargement moniteur:", e); }
+    }
+    loadMoniteur();
+  }, [currentUserId]);
 
   const [form, setForm] = useState(editing ? {
     candidatId:  editing._raw?.candidatsIds ? String(editing._raw.candidatsIds.split(",")[0].trim()) : "",
@@ -872,8 +905,16 @@ function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUser
   });
 
 const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
-
   const selectedCandidatObj = candidats.find(c => String(c.idCandidat) === String(form.candidatId));
+  const montantRestant   = Number(selectedCandidatObj?.montantRestant ?? 0);
+
+  const moniteurCategoriesLocal = (m) => {
+    const raw = m?.categories_habilitees;
+    if (!raw) return [];
+    const arr = Array.isArray(raw) ? raw : String(raw).split(",");
+    return arr.map(c => c.trim().toUpperCase()).filter(Boolean);
+  };
+
 
   const seanceDateObj  = form.date ? new Date(form.date + "T12:00:00") : null;
   const todayMidnight  = new Date(); todayMidnight.setHours(0,0,0,0);
@@ -896,12 +937,21 @@ const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
     ? countSeancesFormation(sessions, form.candidatId, candidatCatForm)
     : 0;
   const seancesCompletes = nbSeancesEffectuees >= nbSeancesMax;
-  const permisObtenu   = estExterne || seancesCompletes;
-  const currentStage   = permisObtenu ? null : (!aReussiCode ? "code" : !aReussiCreneau ? "creneau" : "circulation");
+    const permisObtenu    = estExterne || seancesCompletes;
+  const forfaitNonSolde = permisObtenu && !estExterne && montantRestant > 0;
+  const currentStage    = permisObtenu ? null : (!aReussiCode ? "code" : !aReussiCreneau ? "creneau" : "circulation");
+
+  const categorieNonHabilitee = !!(
+    selectedCandidatObj && moniteurCourant &&
+    !moniteurCategoriesLocal(moniteurCourant).includes(candidatCatForm)
+  );
 
 useEffect(() => {
     if (!form.candidatId) return;
-    if (permisObtenu) return;
+    if (permisObtenu) {
+      if (form.type !== "circulation") set("type", "circulation");
+      return;
+    }
     if (currentStage === "code") return; // Le code se planifie via le module dédié
     if (form.type !== currentStage) set("type", currentStage);
   }, [form.candidatId, currentStage, permisObtenu, form.type]);
@@ -928,8 +978,16 @@ useEffect(() => {
       .filter(s => {
         const sDate = toLocalISO(s._raw?.date);
         const isOther = editing ? s.id !== editing.id : true;
+        if (sDate !== form.date || !isOther) return false;
+
         const sameMon = String(s.moniteur_id) === String(currentUserId);
-        return sDate === form.date && isOther && sameMon;
+
+        const sCandidatIds = s._raw?.candidatsIds
+          ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
+          : [];
+        const sameCandidat = !!form.candidatId && sCandidatIds.includes(String(form.candidatId));
+
+        return sameMon || sameCandidat;
       })
       .map(s => ({ start: s.startH, end: s.startH + s.dur }));
 
@@ -954,9 +1012,23 @@ useEffect(() => {
     });
   };
 
-  const isBlocked = dateEstPassee || !!congeBloquant;
+   const isBlocked = dateEstPassee || !!congeBloquant || forfaitNonSolde || categorieNonHabilitee;
 
   const handleSubmit = () => {
+    if (categorieNonHabilitee) {
+      setAlertInfo({
+        icon:"🎓", title:"Catégorie incompatible", color:"#3b82f6",
+        message:`Vous n'êtes pas habilité pour la catégorie ${candidatCatForm}. Contactez l'administrateur si c'est une erreur.`,
+      });
+      return;
+    }
+    if (forfaitNonSolde) {
+  setAlertInfo({
+    icon:"💳", title:"Forfait non soldé", color:"#ef4444",
+    message:`${form.candidat || "Ce candidat"} n'a pas encore réglé son forfait de formation (reste ${montantRestant.toLocaleString("fr-DZ")} DA). Le paiement doit être enregistré avant de planifier une séance supplémentaire.`,
+  });
+  return;
+}
     if (!form.date || !form.heure || !form.type) return;
 
     if (dateEstPassee) {
@@ -985,6 +1057,25 @@ if (form.candidatId && !permisObtenu && currentStage === "code") {
 
     if (!form.candidatId) {
       setAlertInfo({ icon:"🧑", title:"Candidat manquant", message:"Veuillez sélectionner un candidat avant d'enregistrer la séance.", color:"#ef4444" });
+      return;
+    }
+        const candidatConflict = (sessions || []).find(s => {
+      if (editing && String(s.id) === String(editing.id)) return false;
+      if (toLocalISO(s._raw?.date) !== form.date) return false;
+      const sCandidatIds = s._raw?.candidatsIds
+        ? String(s._raw.candidatsIds).split(",").map(x => x.trim())
+        : [];
+      if (!sCandidatIds.includes(String(form.candidatId))) return false;
+      const startH = parseInt(form.heure.split(":")[0]) + parseInt(form.heure.split(":")[1] || 0) / 60;
+      const dur = parseFloat(form.dur) || 1;
+      return startH < s.startH + s.dur && (startH + dur) > s.startH;
+    });
+
+    if (candidatConflict) {
+      setAlertInfo({
+        icon:"🚫", title:"Candidat déjà occupé", color:"#ef4444",
+        message:`${form.candidat || "Ce candidat"} a déjà une séance de ${floatToHHMM(candidatConflict.startH)} à ${floatToHHMM(candidatConflict.startH + candidatConflict.dur)} ce jour-là. Choisissez un autre créneau.`,
+      });
       return;
     }
     if (!permisObtenu && form.type !== currentStage) {
@@ -1050,6 +1141,17 @@ _formData: {
         <div style={{ padding:"18px 24px", overflowY:"auto", display:"flex", flexDirection:"column", gap:14 }}>
 
         {/* Bannière : candidat encore au stade Code */}
+        {forfaitNonSolde && (
+  <div style={{ padding:"10px 14px", borderRadius:10, background:"#fef2f2", border:"1.5px solid #fca5a5", fontSize:"0.78rem", color:"#dc2626", fontWeight:700, display:"flex", alignItems:"center", gap:8 }}>
+    <span style={{ fontSize:18 }}>💳</span>
+    <div>
+      <div>Forfait de formation non soldé</div>
+      <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>
+        Reste {montantRestant.toLocaleString("fr-DZ")} DA à régler avant une séance supplémentaire.
+      </div>
+    </div>
+  </div>
+)}
           {form.candidatId && !permisObtenu && currentStage === "code" && (
             <div style={{ padding:"10px 14px", borderRadius:10, background:"#eff6ff", border:"1.5px solid #bfdbfe", fontSize:"0.78rem", color:"#1d4ed8", fontWeight:600, display:"flex", alignItems:"center", gap:8 }}>
               <span style={{ fontSize:18 }}>📘</span>
@@ -1061,15 +1163,39 @@ _formData: {
               </div>
             </div>
           )}
-
           {/* Bannière permis obtenu */}
           {permisObtenu && (
             <div style={{ padding:"10px 14px", borderRadius:10, background:"#eef2ff", border:"1.5px solid #c7d2fe", fontSize:"0.78rem", color:"#4338ca", fontWeight:600, display:"flex", alignItems:"center", gap:8 }}>
               <span style={{ fontSize:18 }}>🎓</span>
               <div>
-                <div>Permis obtenu — séance hors forfait</div>
+                <div>{estExterne ? "Personne externe" : `Formation terminée (${nbSeancesEffectuees}/${nbSeancesMax} séances)`} — séance hors forfait</div>
                 <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>
-                  Tous les types de séance sont disponibles. Le paiement se gère dans le module Paiements.
+                  Séance de conduite disponible (créneau et circulation confondus). Le paiement se gère dans le module Paiements.
+                </div>
+                {form.candidatId && (() => {
+                  const credit = getCredit(form.candidatId);
+                  return credit > 0 ? (
+                    <div style={{ marginTop:6, fontWeight:700, color:"#16a34a", fontSize:"0.72rem" }}>
+                      ✅ Crédit disponible : {credit} séance(s) déjà payée(s) — aucun paiement requis pour celle-ci.
+                    </div>
+                  ) : (
+                    <div style={{ marginTop:6, fontWeight:700, color:"#ea580c", fontSize:"0.72rem" }}>
+                      ⚠️ Aucun crédit restant — un paiement sera demandé après la création.
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* Bannière forfait non soldé */}
+          {forfaitNonSolde && (
+            <div style={{ padding:"10px 14px", borderRadius:10, background:"#fef2f2", border:"1.5px solid #fca5a5", fontSize:"0.78rem", color:"#dc2626", fontWeight:700, display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:18 }}>💳</span>
+              <div>
+                <div>Forfait de formation non soldé</div>
+                <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>
+                  Reste {montantRestant.toLocaleString("fr-DZ")} DA à régler. Enregistrez le paiement du forfait (module Paiements) avant de planifier une séance supplémentaire pour ce candidat.
                 </div>
               </div>
             </div>
@@ -1121,12 +1247,9 @@ _formData: {
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Type <span style={{ color:"#ef4444" }}>*</span></label>
-             <select style={inpS} value={form.type} disabled={!form.candidatId || currentStage === "code"} onChange={e => set("type", e.target.value)}>
+                         <select style={inpS} value={form.type} disabled={!form.candidatId || currentStage === "code"} onChange={e => set("type", e.target.value)}>
                 {permisObtenu ? (
-                  <>
-                    <option value="creneau">Créneau</option>
-                    <option value="circulation">Circulation</option>
-                  </>
+                  <option value="circulation">Séance de conduite</option>
                 ) : currentStage === "code" ? (
                   <option value="creneau" disabled>Cours de Code requis d'abord</option>
                 ) : (
@@ -1221,8 +1344,9 @@ _formData: {
             }}
           >
             {saving && <div style={{ width:14, height:14, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.4)", borderTop:"2px solid #fff", animation:"spin 0.7s linear infinite" }} />}
-            {dateEstPassee ? "📅 Date passée"
+                     {dateEstPassee ? "📅 Date passée"
               : congeBloquant ? "🌴 Congé actif"
+              : forfaitNonSolde ? "💳 Forfait non soldé"
               : editing ? "Enregistrer"
               : permisObtenu ? "📅 Planifier la séance"
               : "Créer la séance"}
@@ -1248,11 +1372,11 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
       else { columns[colIdx] = endH; }
       return { session: s, colIdx };
     });
-    const items = withCol.map(({ session: s, colIdx }) => {
+     const items = withCol.map(({ session: s, colIdx }) => {
       const overlappingCount = withCol.filter(({ session: other }) =>
         other.id !== s.id &&
         other.startH < s.startH + s.dur &&
-        other.startH + s.dur > s.startH
+        other.startH + other.dur > s.startH
       ).length;
       return { session: s, colIdx, localCols: overlappingCount + 1 };
     });
@@ -1336,7 +1460,7 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
                const isOwn    = String(s.moniteur_id) === String(currentUserId);
                 const col      = COLORS[s.type] || COLORS.code;
                 const candidatId = s._raw?.candidatsIds ? String(s._raw.candidatsIds.split(",")[0].trim()) : null;
-                const hasPermis  = candidatId && aObtenuPermis ? aObtenuPermis(candidatId) : false;
+               const hasPermis = candidatId && aObtenuPermis ? aObtenuPermis(candidatId, s.categoriePermis) : false;
 
                 const statutNorm = (s._raw?.statut || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                 const estAnnulee   = statutNorm === "annulee";
@@ -1439,6 +1563,7 @@ function CalendarGrid({ sessions, weekDates, todayIdx, onSessionClick, onGroupCl
 
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────────
 export default function AgendaMoniteur() {
+  const navigate = useNavigate();
   const { currentUser }  = useAuth();
   const { CAN_ADD_SESSION } = useMyPermissions();
   const { examensList }  = useExamenCtx();
@@ -1650,7 +1775,10 @@ const isDateBloquee = useCallback((dateStr) => {
    }  else if (api?.addSeance && !editing) {
   const result = await api.addSeance(_formData);
   if (result?.success) {
-    await loadSeances();
+    const freshRows = await api.getSeances();
+    const freshSessions = Array.isArray(freshRows) ? freshRows.map(dbRowToSession) : sessions;
+    setSessions(freshSessions);
+    setLoading(false);
     showToast("Séance créée.");
 
     // ── Notification WhatsApp au candidat ────────────────────────────
@@ -1670,19 +1798,18 @@ const isDateBloquee = useCallback((dateStr) => {
       if (url) window.electron?.openExternal?.(url);
     }
 
-     const candidatId = _formData.candidatIds?.[0];
+      const candidatId = _formData.candidatIds?.[0];
     if (candidatId) {
       const nomCandidat = sessionObj.name || "Ce candidat";
-      // `sessions` a déjà été rafraîchi par loadSeances() juste au-dessus,
-      // donc ce comptage inclut la séance qui vient d'être créée.
-      const compteApres = countSeancesFormation(sessions, candidatId, _formData.categoriePermis);
+      // On utilise freshSessions (juste récupéré ci-dessus), pas `sessions`
+      // qui reste l'ancien tableau dans cette fermeture tant que React
+      // n'a pas re-render le composant.
+      const compteApres = countSeancesFormation(freshSessions, candidatId, _formData.categoriePermis);
       const vientDeFranchirLeSeuil = compteApres === nbSeancesMax;
 
       if (vientDeFranchirLeSeuil) {
-        // Première fois que ce candidat atteint le seuil → afficher le milestone
         setMilestoneCandidat({ candidatId, nom: nomCandidat });
-      } else if (aObtenuPermis(candidatId, _formData.categoriePermis)) {
-        // Déjà hors forfait depuis une séance précédente → flux crédit/paiement habituel
+      } else if (compteApres >= nbSeancesMax) {
         const credit = getCredit(candidatId);
         if (credit > 0) {
           const resteApres = consumeCredit(candidatId);
@@ -1952,19 +2079,23 @@ const isDateBloquee = useCallback((dateStr) => {
         />
       )}
 
-      {/* Modal séance supplémentaire */}
-      {seanceSupModal && (
+       {seanceSupModal && (
         <SeanceSupplementaireModal
           candidat={seanceSupModal}
           onClose={() => setSeanceSupModal(null)}
           onConfirm={() => {
-            setPrefillCandidatId(seanceSupModal.idCandidat);
+            const c = seanceSupModal;
             setSeanceSupModal(null);
-            setShowModal(true);
+            navigate("/payments", {
+              state: {
+                openSeanceSup: true,
+                candidatId:   c.idCandidat,
+                candidatName: `${c.prenom || ""} ${c.nom || ""}`.trim(),
+              },
+            });
           }}
         />
       )}
-
       
       {seanceSupPaiement && (
   <SeanceSupPaiementModal
@@ -1975,10 +2106,22 @@ const isDateBloquee = useCallback((dateStr) => {
   />
 )}
 
-      {milestoneCandidat && (
+         {milestoneCandidat && (
         <MilestoneModal
           candidatName={milestoneCandidat.nom}
+          nbSeances={nbSeancesMax}
           onClose={() => setMilestoneCandidat(null)}
+          onPayer={() => {
+            const c = milestoneCandidat;
+            setMilestoneCandidat(null);
+            navigate("/payments", {
+              state: {
+                openSeanceSup: true,
+                candidatId:   c.candidatId,
+                candidatName: c.nom,
+              },
+            });
+          }}
         />
       )}
 

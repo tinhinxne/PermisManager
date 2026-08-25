@@ -37,6 +37,18 @@ const TYPE_COLORS = {
   Créneau:     { bg: "#FFF7ED", color: "#EA580C" },
   Circulation: { bg: "#F0FDF4", color: "#16A34A" },
 };
+function estSeancePasseeNonTraitee(seance) {
+  if (!seance?.date) return false;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const seanceDate = new Date(seance.date);
+  seanceDate.setHours(0, 0, 0, 0);
+  if (isNaN(seanceDate)) return false;
+
+  const statutNorm = (seance.statut || "")
+    .toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  return seanceDate < today && statutNorm === "planifiee";
+}
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -109,8 +121,9 @@ const unseenCount = notifications.filter(n => !seenIds.has(n.id)).length;
           window.electron.getSeancesMois(),
           window.electron.getCandidats(),
         ]);
-        setStats(s ?? { totalCandidats: 0, sessionsToday: 0, revenuMois: 0 });
-        setSeances((allSeances ?? []).slice(0, 5));
+               setStats(s ?? { totalCandidats: 0, sessionsToday: 0, revenuMois: 0 });
+        const seancesFiltrees = (allSeances ?? []).filter(s => !estSeancePasseeNonTraitee(s));
+        setSeances(seancesFiltrees.slice(0, 5));
         setRevenusData(revenus    ?? []);
         setSeancesData(seancesMois ?? []);
 
@@ -546,7 +559,7 @@ const unseenCount = notifications.filter(n => !seenIds.has(n.id)).length;
             <p style={{ color: "#94A3B8", fontSize: 14 }}>Aucune séance enregistrée.</p>
           )}
 
-          {!loading && seances.map((s) => {
+                         {!loading && seances.map((s) => {
             const { bg, color } = statutColor(s.statut);
             return (
               <motion.div
