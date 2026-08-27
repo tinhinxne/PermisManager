@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Users, Plus, Trash2, FileText, X, Filter, History, SquarePen, Mail, Phone } from "lucide-react";
+import { Users, Plus, Trash2, FileText, X, Filter, History, SquarePen, Mail, Phone, Send, Paperclip } from "lucide-react";
 import ConnexionImg from "../../assets/Connexion.png";
 import SmallCar from "../../assets/SmallCar.png";
 import { useAuth } from "../context/AuthContext";
@@ -13,6 +13,9 @@ const TOUTES_CATEGORIES = [
   "C", "D", "F", "BE",
   "C1E", "CE", "DE",
 ];
+
+// Taille maximale autorisée pour la pièce jointe PDF (10 Mo)
+const MAX_PIECE_JOINTE_BYTES = 10 * 1024 * 1024;
 
 const getInitialsCandidat = (prenom, nom) =>
   `${prenom?.[0] || ""}${nom?.[0] || ""}`.toUpperCase();
@@ -30,6 +33,15 @@ const STATUS_CONFIG_HISTO = {
   Passed:    { bg: "#e8f5e9", color: "#2e7d32", label: "Réussi"    },
   Failed:    { bg: "#ffebee", color: "#c62828", label: "Échoué"    },
 };
+
+const SUBJECTS = [
+  "Rappel de séance",
+  "Convocation à l'examen",
+  "Retard de paiement",
+  "Félicitations",
+  "Autre",
+];
+
 // ─────────────────────────────────────────────
 // Clés localStorage
 // ─────────────────────────────────────────────
@@ -73,6 +85,13 @@ function toComparableDate(rawDate) {
   return str.slice(0, 10);
 }
 
+// Formatte une taille en octets en texte lisible
+function formatTailleFichier(bytes) {
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} Ko`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
 // ─────────────────────────────────────────────
 // Sous-composant champ formulaire
 // ─────────────────────────────────────────────
@@ -95,6 +114,330 @@ const FormField = ({ label, value, onChange, placeholder, type = "text", require
     />
   </div>
 );
+
+// ─────────────────────────────────────────────
+// Modale Contact par email (+ pièce jointe PDF)
+// ─────────────────────────────────────────────
+function ContactModal({ candidat, onClose }) {
+  const [sujet,       setSujet]       = useState(SUBJECTS[0]);
+  const [sujetCustom, setSujetCustom] = useState("");
+  const [message,     setMessage]     = useState("");
+  const [pieceJointe, setPieceJointe] = useState(null); // { nom, taille, type, data(base64) }
+  const [sending,     setSending]     = useState(false);
+  const [sent,        setSent]        = useState(false);
+  const [error,       setError]       = useState("");
+
+  const email = candidat._raw?.email;
+  const hasEmail = !!email;
+  const nomComplet = candidat.nom; // déjà "prénom nom" formaté dans candidatsMoniteur
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== "application/pdf") {
+      setError("Seuls les fichiers PDF sont acceptés.");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > MAX_PIECE_JOINTE_BYTES) {
+      setError(`Le fichier est trop volumineux (max ${formatTailleFichier(MAX_PIECE_JOINTE_BYTES)}).`);
+      e.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = String(reader.result).split(",")[1] || "";
+      setPieceJointe({
+        nom: file.name,
+        taille: file.size,
+        type: file.type,
+        data: base64,
+      });
+      setError("");
+    };
+    reader.onerror = () => {
+      setError("Impossible de lire le fichier sélectionné.");
+    };
+    reader.readAsDataURL(file);
+
+    e.target.value = "";
+  };
+
+  const handleRemovePieceJointe = () => setPieceJointe(null);
+
+  const handleSend = async () => {
+    const sujetFinal = sujet === "Autre" ? sujetCustom.trim() : sujet;
+    if (!message.trim())                          { setError("Le message ne peut pas être vide."); return; }
+    if (sujet === "Autre" && !sujetCustom.trim()) { setError("Veuillez saisir un sujet."); return; }
+    if (!hasEmail)                                { setError("Ce candidat n'a pas d'adresse email enregistrée."); return; }
+    setSending(true);
+    setError("");
+    try {
+      const result = await window.electron.sendCandidatMessage({
+        email,
+        nomCandidat: nomComplet,
+        sujet: sujetFinal,
+        message,
+        pieceJointe: pieceJointe
+          ? { nom: pieceJointe.nom, type: pieceJointe.type, data: pieceJointe.data }
+          : null,
+      });
+      if (result?.success) setSent(true);
+      else setError(result?.message || "Erreur lors de l'envoi. Vérifiez votre connexion.");
+    } catch (err) {
+      setError("Erreur inattendue : " + err.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontFamily: "inherit",
+      }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{
+        background: "#fff", borderRadius: 16,
+        width: 480, maxWidth: "95vw",
+        boxShadow: "0 20px 60px rgba(0,0,0,0.18)",
+        display: "flex", flexDirection: "column", overflow: "hidden",
+        animation: "slideUp .22s cubic-bezier(.34,1.56,.64,1)",
+      }}>
+        <style>{`
+          @keyframes slideUp { from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
+          @keyframes spin    { to{transform:rotate(360deg)} }
+        `}</style>
+
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "18px 22px 14px", borderBottom: "1px solid #e2e8f0",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: "50%",
+              background: "#dbeafe", color: "#185fa5",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 13, fontWeight: 700,
+            }}>
+              {getInitialsCandidat(candidat.prenom, candidat.nomSeul)}
+            </div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>
+                Contacter {nomComplet}
+              </div>
+              <div style={{ fontSize: 12, color: hasEmail ? "#64748b" : "#ef4444" }}>
+                {hasEmail ? email : "⚠ Pas d'email enregistré"}
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background: "#f1f5f9", border: "none", borderRadius: 8,
+            width: 32, height: 32, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#64748b",
+          }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        {sent ? (
+          <div style={{
+            padding: "40px 24px", textAlign: "center",
+            display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
+          }}>
+            <div style={{
+              width: 56, height: 56, borderRadius: "50%",
+              background: "#dcfce7", display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <Send size={24} color="#16a34a" />
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#1e293b" }}>Email envoyé !</div>
+            <div style={{ fontSize: 13, color: "#64748b" }}>
+              Le message a été transmis à <strong>{email}</strong>.
+            </div>
+            <button onClick={onClose} style={{
+              marginTop: 8, padding: "10px 28px", borderRadius: 10,
+              background: "#2b537e", border: "none", color: "#fff",
+              fontSize: 13, fontWeight: 600, cursor: "pointer",
+            }}>
+              Fermer
+            </button>
+          </div>
+        ) : (
+          <div style={{ padding: "20px 22px", display: "flex", flexDirection: "column", gap: 14 }}>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#475569" }}>
+                Sujet <span style={{ color: "#ef4444" }}>*</span>
+              </label>
+              <select
+                value={sujet}
+                onChange={(e) => { setSujet(e.target.value); setSujetCustom(""); setError(""); }}
+                style={{
+                  padding: "9px 12px", border: "1.5px solid #e2e8f0", borderRadius: 9,
+                  fontFamily: "inherit", fontSize: 13, color: "#1e293b",
+                  background: "#f8fafc", outline: "none",
+                }}
+              >
+                {SUBJECTS.map((s) => <option key={s}>{s}</option>)}
+              </select>
+
+              {sujet === "Autre" && (
+                <input
+                  type="text"
+                  value={sujetCustom}
+                  onChange={(e) => { setSujetCustom(e.target.value); setError(""); }}
+                  placeholder="Saisissez votre sujet…"
+                  style={{
+                    padding: "9px 12px", border: "1.5px solid #e2e8f0", borderRadius: 9,
+                    fontFamily: "inherit", fontSize: 13, color: "#1e293b",
+                    background: "#f8fafc", outline: "none", marginTop: 4,
+                  }}
+                />
+              )}
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#475569" }}>
+                Message <span style={{ color: "#ef4444" }}>*</span>
+              </label>
+              <textarea
+                value={message}
+                onChange={(e) => { setMessage(e.target.value); setError(""); }}
+                placeholder="Saisissez votre message ici…"
+                rows={5}
+                style={{
+                  padding: "10px 12px", border: "1.5px solid #e2e8f0", borderRadius: 9,
+                  fontFamily: "inherit", fontSize: 13, color: "#1e293b",
+                  background: "#f8fafc", outline: "none", resize: "vertical",
+                  lineHeight: 1.6,
+                }}
+              />
+            </div>
+
+            <div style={{ fontSize: 11, color: "#94a3b8", textAlign: "right", marginTop: -8 }}>
+              {message.length} caractère{message.length !== 1 ? "s" : ""}
+            </div>
+
+            {/* ── Pièce jointe PDF ─────────────────────────────────────── */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#475569" }}>
+                Pièce jointe (PDF, optionnel)
+              </label>
+
+              {!pieceJointe ? (
+                <label style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "10px 12px", border: "1.5px dashed #cbd5e1", borderRadius: 9,
+                  fontSize: 13, color: "#64748b", cursor: "pointer", background: "#f8fafc",
+                }}>
+                  <Paperclip size={15} />
+                  Joindre un fichier PDF…
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    onChange={handleFileChange}
+                    style={{ display: "none" }}
+                  />
+                </label>
+              ) : (
+                <div style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "9px 12px", border: "1.5px solid #bbf7d0", borderRadius: 9,
+                  fontSize: 13, background: "#f0fdf4",
+                }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#166534", fontWeight: 600, overflow: "hidden" }}>
+                    <FileText size={15} style={{ flexShrink: 0 }} />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {pieceJointe.nom}
+                    </span>
+                    <span style={{ color: "#4d7c0f", fontWeight: 500, flexShrink: 0 }}>
+                      ({formatTailleFichier(pieceJointe.taille)})
+                    </span>
+                  </span>
+                  <X
+                    size={15}
+                    style={{ cursor: "pointer", color: "#64748b", flexShrink: 0, marginLeft: 8 }}
+                    onClick={handleRemovePieceJointe}
+                  />
+                </div>
+              )}
+            </div>
+
+            {error && (
+              <div style={{
+                padding: "9px 13px", borderRadius: 9,
+                background: "#fef2f2", border: "1px solid #fca5a5",
+                color: "#dc2626", fontSize: 12, fontWeight: 500,
+              }}>
+                ⚠ {error}
+              </div>
+            )}
+
+            {!hasEmail && (
+              <div style={{
+                padding: "9px 13px", borderRadius: 9,
+                background: "#fff7ed", border: "1px solid #fed7aa",
+                color: "#c2410c", fontSize: 12, fontWeight: 500,
+              }}>
+                ⚠ Ce candidat n'a pas d'adresse email. Ajoutez-en une dans sa fiche pour pouvoir le contacter.
+              </div>
+            )}
+          </div>
+        )}
+
+        {!sent && (
+          <div style={{
+            display: "flex", justifyContent: "flex-end", gap: 10,
+            padding: "14px 22px 18px", borderTop: "1px solid #e2e8f0",
+          }}>
+            <button onClick={onClose} style={{
+              padding: "9px 20px", borderRadius: 10,
+              background: "#f1f5f9", border: "none", color: "#64748b",
+              fontSize: 13, fontWeight: 600, cursor: "pointer",
+            }}>
+              Annuler
+            </button>
+            <button
+              onClick={handleSend}
+              disabled={sending || !hasEmail}
+              style={{
+                padding: "9px 22px", borderRadius: 10,
+                background: sending || !hasEmail ? "#94a3b8" : "#2b537e",
+                border: "none", color: "#fff",
+                fontSize: 13, fontWeight: 700,
+                cursor: sending || !hasEmail ? "not-allowed" : "pointer",
+                display: "flex", alignItems: "center", gap: 7,
+                transition: "background .15s",
+              }}
+            >
+              {sending ? (
+                <>
+                  <div style={{
+                    width: 13, height: 13, borderRadius: "50%",
+                    border: "2px solid rgba(255,255,255,0.4)",
+                    borderTop: "2px solid #fff",
+                    animation: "spin .7s linear infinite",
+                  }} />
+                  Envoi…
+                </>
+              ) : (
+                <><Send size={14} /> Envoyer</>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────
 // Modale لائحة الإرسال
@@ -522,6 +865,7 @@ const condidatsMoniteur = () => {
   const [editCandidat,   setEditCandidat]   = useState(null);
   const [showEnvoiModal, setShowEnvoiModal] = useState(false);
   const [nbSeancesMax,   setNbSeancesMax]   = useState(SESSIONS_NORMALES_MAX);
+  const [contactCandidat, setContactCandidat] = useState(null);
 
   const [activeTab, setActiveTab] = useState("encours");
   const { examensList } = useExamenCtx();
@@ -995,6 +1339,25 @@ const handleSave = async (data) => {
           <History size={13} /> Historique des examens
         </button>
 
+        {/* Contacter par email (+ pièce jointe PDF) */}
+        <button
+          onClick={() => { if (c._raw?.email) setContactCandidat(c); }}
+          disabled={!c._raw?.email}
+          title={c._raw?.email ? `Envoyer un email à ${c.nom}` : "Pas d'email enregistré"}
+          style={{
+            marginTop: 8,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            width: "100%", padding: "7px 0", borderRadius: 8,
+            background: c._raw?.email ? "rgba(43,83,126,0.07)" : "rgba(148,163,184,0.08)",
+            border: `1px solid ${c._raw?.email ? "rgba(43,83,126,0.22)" : "rgba(148,163,184,0.25)"}`,
+            color: c._raw?.email ? "#2b537e" : "#94a3b8",
+            fontSize: 12, fontWeight: 600,
+            cursor: c._raw?.email ? "pointer" : "not-allowed",
+          }}
+        >
+          <Mail size={13} /> Contacter par email
+        </button>
+
         {/* Contacter via WhatsApp */}
         {c.tel && (
           <button
@@ -1342,6 +1705,13 @@ const handleSave = async (data) => {
                           <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
                             <SquarePen size={17} color="blue" style={{ cursor: "pointer" }} title="Modifier" onClick={() => setEditingExterne(c._raw)} />
                             <History size={17} color="#7c3aed" style={{ cursor: "pointer" }} title="Historique des examens" onClick={() => setHistoriqueCandidat(c)} />
+                            <Mail
+                              size={17}
+                              color={c._raw?.email ? "#2b537e" : "#cbd5e1"}
+                              style={{ cursor: c._raw?.email ? "pointer" : "default" }}
+                              title={c._raw?.email ? `Envoyer un email à ${c.nom}` : "Pas d'email enregistré"}
+                              onClick={() => { if (c._raw?.email) setContactCandidat(c); }}
+                            />
                             <Phone
                               size={17}
                               color={c.tel ? "#128c4a" : "#cbd5e1"}
@@ -1480,6 +1850,13 @@ const handleSave = async (data) => {
           candidat={historiqueCandidat}
           examensList={examensList}
           onClose={() => setHistoriqueCandidat(null)}
+        />
+      )}
+
+      {contactCandidat && (
+        <ContactModal
+          candidat={contactCandidat}
+          onClose={() => setContactCandidat(null)}
         />
       )}
 

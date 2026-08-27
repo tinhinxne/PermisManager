@@ -75,12 +75,11 @@ const validatePhone = (tel) => {
 };
 
 const validateEmail = (email) => {
-  if (!email || !email.trim()) return { valid: false, msg: "L'email est requis." };
+  if (!email || !email.trim()) return { valid: true, msg: "" }; // optionnel désormais
   const re = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
   if (!re.test(email)) return { valid: false, msg: "Adresse email invalide." };
   return { valid: true, msg: "" };
 };
-
 // ── Validation du nom arabe : autorise lettres arabes, espaces, tirets ───────
 const validateArabicText = (text, fieldLabel) => {
   if (!text || !text.trim()) return { valid: true, msg: "" }; // optionnel, donc vide = ok
@@ -604,7 +603,7 @@ inscription: candidat.date_inscription
 
             {/* Contact & Profil */}
             <div className="field">
-              <label>Email <span className="req">*</span></label>
+              <label>Email <span className="opt">— optionnel</span></label>
               <input type="email" placeholder="email@exemple.com" value={form.email} className={touched.email && errors.email ? "input-error" : ""} onChange={(e) => handleChange("email", e.target.value)} onBlur={() => handleBlur("email")} />
               {touched.email && errors.email && <span className="field-error">{errors.email}</span>}
             </div>

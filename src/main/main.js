@@ -1415,7 +1415,7 @@ ipcMain.handle("send-examen-notification", async (event, { email, candidat, type
   }
 });
 
-ipcMain.handle("send-candidat-message", async (event, { email, nomCandidat, sujet, message }) => {
+ipcMain.handle("send-candidat-message", async (event, { email, nomCandidat, sujet, message, pieceJointe }) => {
   const html = `
     <div style="font-family:sans-serif;max-width:480px;margin:auto;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;">
       <div style="background:#2b537e;padding:24px;text-align:center;">
@@ -1432,13 +1432,33 @@ ipcMain.handle("send-candidat-message", async (event, { email, nomCandidat, suje
       </div>
     </div>
   `;
+
+  const mailOptions = {
+    from: '"Auto-École 🚗" <tinhinanethequeen@gmail.com>',
+    to: email,
+    subject: sujet || "Message de votre auto-école",
+    html,
+  };
+
+  // ── Pièce jointe PDF (optionnelle) ─────────────────────────────────────
+  if (pieceJointe && pieceJointe.data) {
+    // Limite de sécurité côté serveur (10 Mo en base64 ≈ 13,3 Mo réels)
+    const MAX_B64_LENGTH = 14 * 1024 * 1024;
+    if (pieceJointe.data.length > MAX_B64_LENGTH) {
+      return { success: false, message: "Le fichier joint est trop volumineux." };
+    }
+    mailOptions.attachments = [
+      {
+        filename: pieceJointe.nom || "document.pdf",
+        content: pieceJointe.data,
+        encoding: "base64",
+        contentType: pieceJointe.type || "application/pdf",
+      },
+    ];
+  }
+
   try {
-    await transporter.sendMail({
-      from: '"Auto-École 🚗" <tinhinanethequeen@gmail.com>',
-      to: email,
-      subject: sujet || "Message de votre auto-école",
-      html,
-    });
+    await transporter.sendMail(mailOptions);
     return { success: true };
   } catch (err) {
     console.error("Erreur envoi message candidat:", err.message);

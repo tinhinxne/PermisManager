@@ -6,7 +6,7 @@ import ConnexionImg from "../../assets/Connexion.png";
 import SmallCar from "../../assets/SmallCar.png";
 import AddCandidatModal from "../components/addCondidat";
 import { useExamenCtx } from "../context/ExamenContext";
-import { SquarePen, Trash, Phone, Mail, X, Send, PlusCircle, Filter, FileText, History } from "lucide-react";
+import { SquarePen, Trash, Phone, Mail, X, Send, PlusCircle, Filter, FileText, History, Paperclip } from "lucide-react";
 
 const TOUTES_CATEGORIES = [
   "Tous",
@@ -18,6 +18,9 @@ const TOUTES_CATEGORIES = [
 const ENVOI_REF_KEY = "liste_envoi_derniere_date";
 const ENVOI_DEFAULTS_KEY = "export_pdf_defaults";
 const SESSIONS_NORMALES_MAX = 20;
+
+// Taille maximale autorisée pour la pièce jointe PDF (10 Mo)
+const MAX_PIECE_JOINTE_BYTES = 10 * 1024 * 1024;
 
 const getInitials = (prenom, nom) =>
   `${prenom?.[0] || ""}${nom?.[0] || ""}`.toUpperCase();
@@ -68,10 +71,40 @@ const SUBJECTS = [
   "Autre",
 ];
 
+// ── Utilitaire : formatte une taille en octets en texte lisible ────────────
+function formatTailleFichier(bytes) {
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} Ko`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
+// ── WhatsApp : message de bienvenue à l'ajout d'un nouveau candidat ────────
+function openWhatsAppBienvenue(telephone, prenom) {
+  if (!telephone) return;
+  let numero = telephone.replace(/\D/g, "");
+  if (numero.startsWith("0")) {
+    numero = "213" + numero.slice(1);
+  }
+  const message = `Bonjour ${prenom}, bienvenue à l'auto-école ! 🚗 Nous sommes ravis de vous compter parmi nos candidats.`;
+  const url = `https://wa.me/${numero}?text=${encodeURIComponent(message)}`;
+  window.open(url, "_blank");
+}
+
+// ── WhatsApp : contact manuel depuis les boutons d'action (sans message pré-rempli) ──
+function openWhatsAppContact(telephone) {
+  if (!telephone) return;
+  let numero = telephone.replace(/\D/g, "");
+  if (numero.startsWith("0")) {
+    numero = "213" + numero.slice(1);
+  }
+  window.open(`https://wa.me/${numero}`, "_blank");
+}
+
 function ContactModal({ candidat, onClose }) {
   const [sujet,       setSujet]       = useState(SUBJECTS[0]);
   const [sujetCustom, setSujetCustom] = useState("");
   const [message,     setMessage]     = useState("");
+  const [pieceJointe, setPieceJointe] = useState(null); // { nom, taille, type, data(base64) }
   const [sending,     setSending]     = useState(false);
   const [sent,        setSent]        = useState(false);
   const [error,       setError]       = useState("");
@@ -79,6 +112,42 @@ function ContactModal({ candidat, onClose }) {
   const email = candidat._raw?.email;
   const hasEmail = !!email;
   const nomComplet = `${candidat.prenom} ${candidat.nom}`;
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== "application/pdf") {
+      setError("Seuls les fichiers PDF sont acceptés.");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > MAX_PIECE_JOINTE_BYTES) {
+      setError(`Le fichier est trop volumineux (max ${formatTailleFichier(MAX_PIECE_JOINTE_BYTES)}).`);
+      e.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = String(reader.result).split(",")[1] || "";
+      setPieceJointe({
+        nom: file.name,
+        taille: file.size,
+        type: file.type,
+        data: base64,
+      });
+      setError("");
+    };
+    reader.onerror = () => {
+      setError("Impossible de lire le fichier sélectionné.");
+    };
+    reader.readAsDataURL(file);
+
+    e.target.value = "";
+  };
+
+  const handleRemovePieceJointe = () => setPieceJointe(null);
 
   const handleSend = async () => {
     const sujetFinal = sujet === "Autre" ? sujetCustom.trim() : sujet;
@@ -93,9 +162,12 @@ function ContactModal({ candidat, onClose }) {
         nomCandidat: nomComplet,
         sujet: sujetFinal,
         message,
+        pieceJointe: pieceJointe
+          ? { nom: pieceJointe.nom, type: pieceJointe.type, data: pieceJointe.data }
+          : null,
       });
       if (result?.success) setSent(true);
-      else setError("Erreur lors de l'envoi. Vérifiez votre connexion.");
+      else setError(result?.message || "Erreur lors de l'envoi. Vérifiez votre connexion.");
     } catch (err) {
       setError("Erreur inattendue : " + err.message);
     } finally {
@@ -234,6 +306,51 @@ function ContactModal({ candidat, onClose }) {
 
             <div style={{ fontSize: 11, color: "#94a3b8", textAlign: "right", marginTop: -8 }}>
               {message.length} caractère{message.length !== 1 ? "s" : ""}
+            </div>
+
+            {/* ── Pièce jointe PDF ─────────────────────────────────────── */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#475569" }}>
+                Pièce jointe (PDF, optionnel)
+              </label>
+
+              {!pieceJointe ? (
+                <label style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "10px 12px", border: "1.5px dashed #cbd5e1", borderRadius: 9,
+                  fontSize: 13, color: "#64748b", cursor: "pointer", background: "#f8fafc",
+                }}>
+                  <Paperclip size={15} />
+                  Joindre un fichier PDF…
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    onChange={handleFileChange}
+                    style={{ display: "none" }}
+                  />
+                </label>
+              ) : (
+                <div style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "9px 12px", border: "1.5px solid #bbf7d0", borderRadius: 9,
+                  fontSize: 13, background: "#f0fdf4",
+                }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#166534", fontWeight: 600, overflow: "hidden" }}>
+                    <FileText size={15} style={{ flexShrink: 0 }} />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {pieceJointe.nom}
+                    </span>
+                    <span style={{ color: "#4d7c0f", fontWeight: 500, flexShrink: 0 }}>
+                      ({formatTailleFichier(pieceJointe.taille)})
+                    </span>
+                  </span>
+                  <X
+                    size={15}
+                    style={{ cursor: "pointer", color: "#64748b", flexShrink: 0, marginLeft: 8 }}
+                    onClick={handleRemovePieceJointe}
+                  />
+                </div>
+              )}
             </div>
 
             {error && (
@@ -702,7 +819,6 @@ function MatriculesEnAttenteModal({ onClose, onSaved }) {
     try {
       const result = await window.electron.updateMatriculeCandidat(idCandidat, matricule);
       if (result?.success) {
-        // On met à jour la ligne localement au lieu de la retirer
         setCandidatsTous((prev) =>
           prev.map((c) => (c.idCandidat === idCandidat ? { ...c, matricule } : c))
         );
@@ -838,20 +954,6 @@ function MatriculesEnAttenteModal({ onClose, onSaved }) {
       </div>
     </div>
   );
-}
-
-function openWhatsAppBienvenue(telephone, prenom) {
-  if (!telephone) return;
-  // Garde uniquement les chiffres
-  let numero = telephone.replace(/\D/g, "");
-  // Ajoute l'indicatif Algérie (213) si le numéro commence par 0
-  if (numero.startsWith("0")) {
-    numero = "213" + numero.slice(1);
-  }
-  const message = `Bonjour ${prenom}, bienvenue à l'auto-école ! 🚗 Nous sommes ravis de vous compter parmi nos candidats.`;
-  const url = `https://wa.me/${numero}?text=${encodeURIComponent(message)}`;
-   console.log("URL générée :", url);
-  window.open(url, "_blank");
 }
 
 // ── MODAL D'ÉDITION — personne externe (perfectionnement) ──────────────────
@@ -1016,7 +1118,7 @@ const Condidats = () => {
   const [selectedCategorieObtenu, setSelectedCategorieObtenu] = useState("Tous");
   const [dateObtentionDebut, setDateObtentionDebut] = useState("");
   const [dateObtentionFin,   setDateObtentionFin]   = useState("");
-  const [nbSeancesMax, setNbSeancesMax] = useState(SESSIONS_NORMALES_MAX); // valeur configurable, défaut 2
+  const [nbSeancesMax, setNbSeancesMax] = useState(SESSIONS_NORMALES_MAX);
 
   // ── Table "Perfectionnement — Externes" ──────────────────────────────────
   const [selectedCategorieExterne, setSelectedCategorieExterne] = useState("Tous");
@@ -1024,7 +1126,7 @@ const Condidats = () => {
   const [auditeursLibres, setAuditeursLibres] = useState([]);
 const [selectedCategorieAuditeur, setSelectedCategorieAuditeur] = useState("Tous");
 const [convertingId, setConvertingId] = useState(null);
-const [confirmAuditeur, setConfirmAuditeur] = useState(null); // candidat en attente de confirmation
+const [confirmAuditeur, setConfirmAuditeur] = useState(null);
   const [deletingExterneId, setDeletingExterneId] = useState(null);
 
   const { examensList } = useExamenCtx();
@@ -1042,7 +1144,6 @@ const [confirmAuditeur, setConfirmAuditeur] = useState(null); // candidat en att
     );
   });
 
-  // Candidats "en cours" : on exclut désormais aussi les externes (perfectionnement uniquement)
   const candidatsEnCours = candidatsBase.filter((c) => {
     if (c.status === "obtenu") return false;
     if (c.externe) return false;
@@ -1050,7 +1151,6 @@ const [confirmAuditeur, setConfirmAuditeur] = useState(null); // candidat en att
     return matchesCategorie;
   });
 
-  // Candidats "obtenu" (vrais candidats de l'auto-école) : externes exclus aussi
   const candidatsObtenus = candidatsBase
     .filter((c) => c.status === "obtenu" && !c.externe)
     .map((c) => ({ ...c, dateObtention: getDateObtention(c.id, examensList) }))
@@ -1064,7 +1164,6 @@ const [confirmAuditeur, setConfirmAuditeur] = useState(null); // candidat en att
     })
     .sort((a, b) => new Date(b.dateObtention || 0) - new Date(a.dateObtention || 0));
 
-  // Personnes externes (perfectionnement uniquement — permis déjà obtenu ailleurs)
   const candidatsExternes = candidatsBase.filter((c) => {
     if (!c.externe) return false;
     const matchesCategorie = selectedCategorieExterne === "Tous" || c.categoriePermis === selectedCategorieExterne.toUpperCase();
@@ -1082,7 +1181,6 @@ const [confirmAuditeur, setConfirmAuditeur] = useState(null); // candidat en att
         const currentCat = (c.categoriePermis || c.categorie || c.categorie_permis || "B")
           .toString().trim().toUpperCase();
 
-        // ── Séances de conduite (hors "code") ──────────────────────────────
         const nbSessionsConduite = seances.filter((s) => {
           if (!s.candidatsIds) return false;
           const ids = String(s.candidatsIds).split(",").map((id) => parseInt(id.trim()));
@@ -1093,14 +1191,12 @@ const [confirmAuditeur, setConfirmAuditeur] = useState(null); // candidat en att
           const seanceType = (s.type || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
           const matchType = !seanceType.includes("code");
 
-          // ── On exclut les séances annulées : présente ET absente comptent, annulée non ──
           const statutNorm = (s.statut || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
           const matchStatut = statutNorm !== "annulee";
 
           return matchCandidat && matchCategorie && matchType && matchStatut;
         }).length;
 
-        // ── Cours de code (table séparée SeanceCode / CandidatSeanceCode) ──
         const nbSessionsCode = inscriptionsCode.filter((i) => {
           const cat = (i.categoriePermis || "").toString().trim().toUpperCase();
           return i.idCandidat === c.idCandidat && cat === currentCat;
@@ -1201,7 +1297,6 @@ const loadAuditeursLibres = async () => {
         await window.electron.updateCandidat(cleanData);
       } else {
         await window.electron.addCandidat(cleanData);
-        // Nouveau candidat uniquement → message de bienvenue WhatsApp
         openWhatsAppBienvenue(cleanData.telephone, cleanData.prenom);
       }
       await loadCandidats();
@@ -1220,7 +1315,6 @@ const loadAuditeursLibres = async () => {
     setShowEnvoiModal(true);
   };
 
-  // ── Actions pour la table Externes ───────────────────────────────────────
   const handleDeleteExterne = async (id) => {
     if (!window.confirm("Supprimer cette personne externe ?")) return;
     setDeletingExterneId(id);
@@ -1253,18 +1347,15 @@ const loadAuditeursLibres = async () => {
       alert("Une erreur est survenue.");
     }
   };
-  // ── Actions pour la table Auditeurs libres ───────────────────────────────
   const auditeursFiltres = auditeursLibres.filter((c) => {
     const cat = (c.categoriePermis || "B").toString().trim().toUpperCase();
     return selectedCategorieAuditeur === "Tous" || cat === selectedCategorieAuditeur.toUpperCase();
   });
 
- // Étape 1 : ouvre la confirmation maison (au lieu de window.confirm)
   const handleDemandeConversion = (candidat) => {
     setConfirmAuditeur(candidat);
   };
 
-  // Étape 2 : exécutée seulement après confirmation dans la modale maison
   const handleConvertirAuditeur = async (candidat) => {
     setConfirmAuditeur(null);
     setConvertingId(candidat.idCandidat);
@@ -1498,6 +1589,15 @@ const loadAuditeursLibres = async () => {
                               title={c._raw?.email ? `Envoyer un email à ${c.prenom} ${c.nom}` : "Pas d'email enregistré"}
                               onClick={() => { if (c._raw?.email) setContactCandidat(c); }}
                             />
+
+                            <Phone
+                              size={17}
+                              color={c.tel ? "#128c4a" : "#cbd5e1"}
+                              style={{ cursor: c.tel ? "pointer" : "default" }}
+                              title={c.tel ? "Contacter via WhatsApp" : "Pas de téléphone enregistré"}
+                              onClick={() => { if (c.tel) openWhatsAppContact(c.tel); }}
+                            />
+
                             <History
                               size={17}
                               color="#7c3aed"
@@ -1643,6 +1743,13 @@ const loadAuditeursLibres = async () => {
                               title={c._raw?.email ? `Envoyer un email à ${c.prenom} ${c.nom}` : "Pas d'email enregistré"}
                               onClick={() => { if (c._raw?.email) setContactCandidat(c); }}
                             />
+                            <Phone
+                              size={17}
+                              color={c.tel ? "#128c4a" : "#cbd5e1"}
+                              style={{ cursor: c.tel ? "pointer" : "default" }}
+                              title={c.tel ? "Contacter via WhatsApp" : "Pas de téléphone enregistré"}
+                              onClick={() => { if (c.tel) openWhatsAppContact(c.tel); }}
+                            />
                             <Trash
                               size={17}
                               color="red"
@@ -1661,7 +1768,6 @@ const loadAuditeursLibres = async () => {
           </div>
         )}
 
-{/* ── NOUVELLE TABLE : Perfectionnement — Externes ────────────────── */}
 {activeTab === "externes" && (
 <div className="card" style={{ marginTop: 24 }}>
   <div className="card-header">
@@ -1762,6 +1868,13 @@ const loadAuditeursLibres = async () => {
                               title={c._raw?.email ? `Envoyer un email à ${c.prenom} ${c.nom}` : "Pas d'email enregistré"}
                               onClick={() => { if (c._raw?.email) setContactCandidat(c); }}
                             />
+                            <Phone
+                              size={17}
+                              color={c.tel ? "#128c4a" : "#cbd5e1"}
+                              style={{ cursor: c.tel ? "pointer" : "default" }}
+                              title={c.tel ? "Contacter via WhatsApp" : "Pas de téléphone enregistré"}
+                              onClick={() => { if (c.tel) openWhatsAppContact(c.tel); }}
+                            />
                             <Trash
                               size={17} color="red"
                               style={{ cursor: deletingExterneId === c.id ? "not-allowed" : "pointer" }}
@@ -1779,7 +1892,6 @@ const loadAuditeursLibres = async () => {
         </div>
         )}
 
-{/* ── NOUVELLE TABLE : Auditeurs libres — Cours de code ───────────── */}
 {activeTab === "auditeurs" && (
 <div className="card" style={{ marginTop: 24 }}>
   <div className="card-header">
