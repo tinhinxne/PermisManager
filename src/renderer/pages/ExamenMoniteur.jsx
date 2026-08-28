@@ -5,7 +5,7 @@ import {
   FaClock, FaTrashAlt, FaExchangeAlt, FaUser,
   FaInfoCircle, FaCalendarPlus, FaFilePdf, FaTimes,
   FaLock, FaUserSlash, FaHistory, FaFilter,
-  FaBell, FaThumbsUp, FaThumbsDown,
+  FaBell, FaThumbsUp, FaThumbsDown, FaSync,
 } from "react-icons/fa";
 
 import SelectFilter from "../components/SelectFilter";
@@ -36,6 +36,7 @@ const HISTORY_TABS = [
 ];
 
 const ABSENCE_CUTOFF_DAYS = 1;
+const DAYS_OPTIONS = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
 
 function formatDateAr(isoDate) {
   if (!isoDate) return "";
@@ -480,6 +481,13 @@ function SessionsExamenList({ sessions, examensList, onAjouterCandidats, onSuppr
 
   const sorted = [...sessions].sort((a, b) => (a.date + a.heure).localeCompare(b.date + b.heure));
 
+  const isSessionPast = (dateStr) => {
+    const d = parseExamDate(dateStr);
+    if (!d) return false;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return d < today;
+  };
+
   return (
     <div style={{ marginTop: 24 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
@@ -495,10 +503,11 @@ function SessionsExamenList({ sessions, examensList, onAjouterCandidats, onSuppr
       <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)", border: "1px solid #e2e8f0" }}>
         {sorted.map(s => {
           const nb = examensList.filter(e => e.sessionId === s.id).length;
+          const passee = isSessionPast(s.date);
           return (
-            <div key={s.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 16px", borderBottom: "1px solid #f1f5f9" }}>
+            <div key={s.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 16px", borderBottom: "1px solid #f1f5f9", opacity: passee ? 0.75 : 1 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <FaCalendarDay style={{ color: "#4E96E1", fontSize: 13 }} />
+                <FaCalendarDay style={{ color: passee ? "#94a3b8" : "#4E96E1", fontSize: 13 }} />
                 <div>
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: "#1e293b" }}>
                     {s.date} <span style={{ color: "#64748b", fontWeight: 500 }}>à {s.heure}</span>
@@ -508,16 +517,30 @@ function SessionsExamenList({ sessions, examensList, onAjouterCandidats, onSuppr
                 <span style={{ background: "#f1f5f9", color: "#475569", padding: "2px 9px", borderRadius: 10, fontSize: 12, fontWeight: 600, marginLeft: 6 }}>
                   {nb} candidat{nb > 1 ? "s" : ""}
                 </span>
+                {passee && (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "#f1f5f9", color: "#94a3b8", padding: "2px 9px", borderRadius: 10, fontSize: 11.5, fontWeight: 600 }}>
+                    <FaLock style={{ fontSize: 9 }} /> Session passée
+                  </span>
+                )}
               </div>
 
               {canManage && (
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    onClick={() => onAjouterCandidats(s)}
-                    style={{ display: "flex", alignItems: "center", gap: 7, background: "#dbeafe", color: "#1d4ed8", border: "1px solid #93c5fd", padding: "7px 13px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, fontWeight: 700 }}
-                  >
-                    <FaCalendarPlus style={{ fontSize: 11 }} /> Ajouter des candidats
-                  </button>
+                  {passee ? (
+                    <span
+                      title="Impossible d'ajouter des candidats — la date de cette session est déjà passée"
+                      style={{ display: "flex", alignItems: "center", gap: 7, background: "#f8fafc", color: "#94a3b8", border: "1px solid #e2e8f0", padding: "7px 13px", borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: "not-allowed" }}
+                    >
+                      <FaLock style={{ fontSize: 11 }} /> Ajouter des candidats
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => onAjouterCandidats(s)}
+                      style={{ display: "flex", alignItems: "center", gap: 7, background: "#dbeafe", color: "#1d4ed8", border: "1px solid #93c5fd", padding: "7px 13px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, fontWeight: 700 }}
+                    >
+                      <FaCalendarPlus style={{ fontSize: 11 }} /> Ajouter des candidats
+                    </button>
+                  )}
                   <button
                     onClick={() => onSupprimer(s.id)}
                     title="Supprimer cette session (les examens déjà créés restent)"
@@ -984,7 +1007,7 @@ const {
     validerToutesPropositions, rejeterToutesPropositions,
     sessionsExamens, creerSessionExamen, supprimerSessionExamen,
   } = useExamenCtx();
-  const { examRules }    = useExamenRulesCtx();
+  const { examRules, saveExamRules } = useExamenRulesCtx();
   const { currentUser }  = useAuth();
   const { CAN_VIEW_ALL_CANDIDATES, CAN_REMOVE_CANDIDAT, CAN_TOGGLE_STATUS, CAN_EXPORT_LISTE_CANDIDATS } = useMyPermissions();
 
@@ -1028,7 +1051,8 @@ const {
   }, []);
 
   // ── chargement ──
-  const handleGenerate = async () => {
+  // userTriggered = true quand le moniteur clique lui-même sur "Regénérer"
+  const handleGenerate = async (userTriggered = false) => {
     setLoading(true);
     try {
       const [seances, candidats] = await Promise.all([
@@ -1036,8 +1060,11 @@ const {
         window.electron.getCandidats(),
       ]);
 
- const map = {};
-      candidats.forEach(c => {
+ // ── Exclure les candidats externes (déjà titulaires du permis, séances supp uniquement) ──
+      const candidatsInternes = candidats.filter(c => Number(c.externe) !== 1);
+
+      const map = {};
+      candidatsInternes.forEach(c => {
         map[String(c.idCandidat)] = {
           nom: c.nom ?? "", prenom: c.prenom ?? "",
           nom_ar: c.nom_ar ?? "", prenom_ar: c.prenom_ar ?? "",
@@ -1047,7 +1074,7 @@ const {
       });
       setCandidatsMap(map);
 
-      setCandidatsFullList(candidats.map(c => ({
+      setCandidatsFullList(candidatsInternes.map(c => ({
         id: c.idCandidat,
         nom: c.nom ?? "",
         prenom: c.prenom ?? "",
@@ -1078,15 +1105,21 @@ const {
         setMesCandidatIds([...ids]);
       }
 
-      generateExamens(seances, candidats);
+      const nouvellesPropositions = await generateExamens(seances, candidatsInternes);
       setLastGenerated(new Date().toLocaleString("fr-FR"));
+
+      if (userTriggered && nouvellesPropositions && nouvellesPropositions.length > 0) {
+        setTimeout(() => {
+          document.getElementById("propositions-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 100);
+      }
     } catch (e) {
       console.error("Erreur chargement examens moniteur:", e);
     }
     setLoading(false);
   };
 
-  useEffect(() => { handleGenerate(); }, [currentUser?.id, CAN_VIEW_ALL_CANDIDATES]);
+  useEffect(() => { handleGenerate(false); }, [currentUser?.id, CAN_VIEW_ALL_CANDIDATES]);
 
   // ── filteredBase avec useMemo ──
   const filteredBase = useMemo(() =>
@@ -1116,6 +1149,16 @@ const {
   const resetDateFilter = () => { setDateDebut(""); setDateFin(""); };
 
   const applyFilters = (list) => filterByDate(byType(list));
+
+  // ── Jours d'examen autorisés (éditable directement sur cette page) ──
+  const toggleJourAutorise = (day) => {
+    if (!canManageExamens) return;
+    const current = examRules.joursAutorises || [];
+    const updated = current.includes(day)
+      ? current.filter(d => d !== day)
+      : [...current, day];
+    saveExamRules({ ...examRules, joursAutorises: updated });
+  };
 
   // ── segmentation ──
   const scheduled    = applyFilters(filteredBase.filter(e => e.status === "Scheduled"));
@@ -1334,16 +1377,55 @@ const {
                 )}
               </button>
             )}
+
+            {/* Regénérer — seulement avec la permission de gérer les examens */}
+            {canManageExamens && (
+              <button
+                onClick={() => handleGenerate(true)}
+                disabled={loading}
+                style={{ display: "flex", alignItems: "center", gap: 8, background: "#4E96E1", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600, opacity: loading ? 0.7 : 1 }}
+              >
+                <FaSync style={{ animation: loading ? "spin 1s linear infinite" : "none" }} />
+                {loading ? "Génération..." : "Regénérer"}
+              </button>
+            )}
           </div>
         </div>
 
         {/* ── Règles actives ── */}
-        <div style={{ background: "#f0f4ff", border: "1px solid #c7d7f5", borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: "#3b5bdb", display: "flex", alignItems: "center", gap: 10 }}>
-          <FaInfoCircle />
+        <div style={{ background: "#f0f4ff", border: "1px solid #c7d7f5", borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: "#3b5bdb", display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <FaInfoCircle style={{ flexShrink: 0 }} />
           <span>
             Délai après échec : <strong>{examRules.delaiApresEchec}j</strong> ·
-            Tentatives max : <strong>{examRules.tentativesMax}</strong> ·
+            Tentatives max : <strong>{examRules.tentativesMax}</strong>
           </span>
+
+          <span style={{ width: 1, height: 16, background: "#c7d7f5" }} />
+
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span style={{ fontWeight: 600 }}>Jours autorisés :</span>
+            {DAYS_OPTIONS.map(day => {
+              const isSel = (examRules.joursAutorises || []).includes(day);
+              return (
+                <button
+                  key={day}
+                  onClick={() => toggleJourAutorise(day)}
+                  disabled={!canManageExamens}
+                  title={canManageExamens ? (isSel ? `Retirer ${day}` : `Ajouter ${day}`) : "Permission requise"}
+                  style={{
+                    padding: "3px 10px", borderRadius: 14, fontSize: 11.5, fontWeight: 600,
+                    cursor: canManageExamens ? "pointer" : "not-allowed", transition: "all 0.15s",
+                    border: `1px solid ${isSel ? "#3b5bdb" : "#c7d7f5"}`,
+                    background: isSel ? "#3b5bdb" : "#fff",
+                    color: isSel ? "#fff" : "#3b5bdb",
+                    opacity: canManageExamens ? 1 : 0.6,
+                  }}
+                >
+                  {day}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* ── Légende badge J-X ── */}
@@ -1434,7 +1516,12 @@ const {
             <SessionsExamenList
               sessions={sessionsExamens}
               examensList={examensList}
-              onAjouterCandidats={(s) => setSessionPourAjout(s)}
+              onAjouterCandidats={(s) => {
+                const d = parseExamDate(s.date);
+                const today = new Date(); today.setHours(0, 0, 0, 0);
+                if (d && d < today) return; // session déjà passée — ne rien ouvrir
+                setSessionPourAjout(s);
+              }}
               onSupprimer={supprimerSessionExamen}
               canManage={canManageExamens}
             />
@@ -1667,6 +1754,12 @@ const {
                 type === examen.type ||
                 examensList.some((e) => e.candidatId === cid && e.type === type && e.status === "Passed");
               if (passe("Code") && passe("Créneau") && passe("Circulation")) {
+                window.electron.updateStatutCandidat({ candidatId: cid, statut: "obtenu" })
+                  .then((res) => {
+                    if (!res?.success) console.error("Échec update-statut-candidat:", res);
+                  })
+                  .catch((err) => console.error("Erreur updateStatutCandidat:", err));
+
                 setPermisObtenuInfo({ candidat: examen.candidat });
               }
             }
