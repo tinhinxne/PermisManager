@@ -629,6 +629,13 @@ function SessionsExamenList({ sessions, examensList, onAjouterCandidats, onSuppr
 
   const sorted = [...sessions].sort((a, b) => (a.date + a.heure).localeCompare(b.date + b.heure));
 
+  const isSessionPast = (dateStr) => {
+    const d = parseExamDate(dateStr);
+    if (!d) return false;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return d < today;
+  };
+
   return (
     <div style={{ marginTop: 24 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
@@ -644,10 +651,11 @@ function SessionsExamenList({ sessions, examensList, onAjouterCandidats, onSuppr
       <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)", border: "1px solid #e2e8f0" }}>
         {sorted.map(s => {
           const nb = examensList.filter(e => e.sessionId === s.id).length;
+          const passee = isSessionPast(s.date);
           return (
-            <div key={s.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 16px", borderBottom: "1px solid #f1f5f9" }}>
+            <div key={s.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 16px", borderBottom: "1px solid #f1f5f9", opacity: passee ? 0.75 : 1 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <FaCalendarDay style={{ color: "#4E96E1", fontSize: 13 }} />
+                <FaCalendarDay style={{ color: passee ? "#94a3b8" : "#4E96E1", fontSize: 13 }} />
                 <div>
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: "#1e293b" }}>
                     {s.date} <span style={{ color: "#64748b", fontWeight: 500 }}>à {s.heure}</span>
@@ -657,16 +665,30 @@ function SessionsExamenList({ sessions, examensList, onAjouterCandidats, onSuppr
                 <span style={{ background: "#f1f5f9", color: "#475569", padding: "2px 9px", borderRadius: 10, fontSize: 12, fontWeight: 600, marginLeft: 6 }}>
                   {nb} candidat{nb > 1 ? "s" : ""}
                 </span>
+                {passee && (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "#f1f5f9", color: "#94a3b8", padding: "2px 9px", borderRadius: 10, fontSize: 11.5, fontWeight: 600 }}>
+                    <FaLock style={{ fontSize: 9 }} /> Session passée
+                  </span>
+                )}
               </div>
 
               {canManage && (
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    onClick={() => onAjouterCandidats(s)}
-                    style={{ display: "flex", alignItems: "center", gap: 7, background: "#dbeafe", color: "#1d4ed8", border: "1px solid #93c5fd", padding: "7px 13px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, fontWeight: 700 }}
-                  >
-                    <FaCalendarPlus style={{ fontSize: 11 }} /> Ajouter des candidats
-                  </button>
+                  {passee ? (
+                    <span
+                      title="Impossible d'ajouter des candidats — la date de cette session est déjà passée"
+                      style={{ display: "flex", alignItems: "center", gap: 7, background: "#f8fafc", color: "#94a3b8", border: "1px solid #e2e8f0", padding: "7px 13px", borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: "not-allowed" }}
+                    >
+                      <FaLock style={{ fontSize: 11 }} /> Ajouter des candidats
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => onAjouterCandidats(s)}
+                      style={{ display: "flex", alignItems: "center", gap: 7, background: "#dbeafe", color: "#1d4ed8", border: "1px solid #93c5fd", padding: "7px 13px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, fontWeight: 700 }}
+                    >
+                      <FaCalendarPlus style={{ fontSize: 11 }} /> Ajouter des candidats
+                    </button>
+                  )}
                   <button
                     onClick={() => onSupprimer(s.id)}
                     title="Supprimer cette session (les examens déjà créés restent)"
@@ -1382,7 +1404,12 @@ const handleConfirmExport = async () => {
         <SessionsExamenList
           sessions={sessionsExamens}
           examensList={examensList}
-          onAjouterCandidats={(s) => setSessionPourAjout(s)}
+          onAjouterCandidats={(s) => {
+            const d = parseExamDate(s.date);
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            if (d && d < today) return; // session déjà passée — ne rien ouvrir
+            setSessionPourAjout(s);
+          }}
           onSupprimer={supprimerSessionExamen}
           canManage={isAdmin || perms.CAN_TOGGLE_STATUS}
         />
