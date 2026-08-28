@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Users, Plus, Trash2, FileText, X, Filter, History, SquarePen, Mail, Phone, Send, Paperclip } from "lucide-react";
+import { Users, Plus, Trash2, FileText, X, Filter, History, SquarePen, Mail, Phone, Send, Paperclip, MoreHorizontal, ChevronDown, ChevronUp } from "lucide-react";
 import ConnexionImg from "../../assets/Connexion.png";
 import SmallCar from "../../assets/SmallCar.png";
 import { useAuth } from "../context/AuthContext";
@@ -846,6 +846,80 @@ function ConfirmAuditeurModal({ candidat, onConfirm, onClose }) {
 }
 
 // ─────────────────────────────────────────────
+// Menu d'actions dépliable pour une card candidat
+// ─────────────────────────────────────────────
+function CandidateActions({ candidat, canEdit, canRemove, onEdit, onHistorique, onEmail, onWhatsapp, onDelete }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasEmail = !!candidat._raw?.email;
+
+  const actions = [];
+  if (canEdit) {
+    actions.push({ key: "edit", icon: <SquarePen size={15} />, label: "Modifier", onClick: onEdit, color: "#2563eb", bg: "rgba(59,130,246,0.08)", border: "rgba(59,130,246,0.25)" });
+  }
+  actions.push({ key: "histo", icon: <History size={15} />, label: "Historique", onClick: onHistorique, color: "#7c3aed", bg: "rgba(124,58,237,0.08)", border: "rgba(124,58,237,0.25)" });
+  actions.push({
+    key: "email", icon: <Mail size={15} />, label: "Email", onClick: onEmail, disabled: !hasEmail,
+    color: hasEmail ? "#2b537e" : "#94a3b8",
+    bg: hasEmail ? "rgba(43,83,126,0.08)" : "rgba(148,163,184,0.08)",
+    border: hasEmail ? "rgba(43,83,126,0.25)" : "rgba(148,163,184,0.25)",
+  });
+  if (candidat.tel) {
+    actions.push({ key: "wa", icon: <Phone size={15} />, label: "WhatsApp", onClick: onWhatsapp, color: "#128c4a", bg: "rgba(37,211,102,0.1)", border: "rgba(37,211,102,0.3)" });
+  }
+  if (canRemove) {
+    actions.push({ key: "delete", icon: <Trash2 size={15} />, label: "Supprimer", onClick: onDelete, color: "#dc2626", bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.25)" });
+  }
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          width: "100%", padding: "8px 0", borderRadius: 8,
+          background: expanded ? "#2b537e" : "rgba(43,83,126,0.08)",
+          border: `1px solid ${expanded ? "#2b537e" : "rgba(43,83,126,0.22)"}`,
+          color: expanded ? "#fff" : "#2b537e",
+          fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+          transition: "background .15s, color .15s",
+        }}
+      >
+        <MoreHorizontal size={14} />
+        Actions
+        {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+      </button>
+
+      {expanded && (
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${Math.min(actions.length, 3)}, 1fr)`,
+          gap: 6, marginTop: 6,
+        }}>
+          {actions.map((a) => (
+            <button
+              key={a.key}
+              onClick={a.onClick}
+              disabled={a.disabled}
+              title={a.disabled ? "Pas d'email enregistré" : a.label}
+              style={{
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                gap: 3, padding: "8px 2px", borderRadius: 8,
+                background: a.bg, border: `1px solid ${a.border}`,
+                color: a.color, fontSize: 9.5, fontWeight: 700,
+                cursor: a.disabled ? "not-allowed" : "pointer",
+              }}
+            >
+              {a.icon}
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // Composant principal
 // ─────────────────────────────────────────────
 const condidatsMoniteur = () => {
@@ -1305,96 +1379,18 @@ const handleSave = async (data) => {
             {c.isNouveauInscrit ? "Aucune séance planifiée" : c.nextSession}
           </span>
         </div>
-        {/* Modifier la fiche */}
-{CAN_EDIT_CANDIDAT && (
-  <button
-    onClick={() => handleEdit(c._raw)}
-    style={{
-      marginTop: 8,
-      display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-      width: "100%", padding: "7px 0", borderRadius: 8,
-      background: "rgba(59,130,246,0.07)",
-      border: "1px solid rgba(59,130,246,0.22)",
-      color: "#2563eb", fontSize: 12, fontWeight: 600,
-      cursor: "pointer",
-    }}
-  >
-    <SquarePen size={13} /> Modifier la fiche
-  </button>
-)}
 
-               {/* Historique des examens */}
-        <button
-          onClick={() => setHistoriqueCandidat(c)}
-          style={{
-            marginTop: 8,
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-            width: "100%", padding: "7px 0", borderRadius: 8,
-            background: "rgba(124,58,237,0.07)",
-            border: "1px solid rgba(124,58,237,0.22)",
-            color: "#7c3aed", fontSize: 12, fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          <History size={13} /> Historique des examens
-        </button>
-
-        {/* Contacter par email (+ pièce jointe PDF) */}
-        <button
-          onClick={() => { if (c._raw?.email) setContactCandidat(c); }}
-          disabled={!c._raw?.email}
-          title={c._raw?.email ? `Envoyer un email à ${c.nom}` : "Pas d'email enregistré"}
-          style={{
-            marginTop: 8,
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-            width: "100%", padding: "7px 0", borderRadius: 8,
-            background: c._raw?.email ? "rgba(43,83,126,0.07)" : "rgba(148,163,184,0.08)",
-            border: `1px solid ${c._raw?.email ? "rgba(43,83,126,0.22)" : "rgba(148,163,184,0.25)"}`,
-            color: c._raw?.email ? "#2b537e" : "#94a3b8",
-            fontSize: 12, fontWeight: 600,
-            cursor: c._raw?.email ? "pointer" : "not-allowed",
-          }}
-        >
-          <Mail size={13} /> Contacter par email
-        </button>
-
-        {/* Contacter via WhatsApp */}
-        {c.tel && (
-          <button
-            onClick={() => openWhatsAppContact(c.tel)}
-            style={{
-              marginTop: 8,
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              width: "100%", padding: "7px 0", borderRadius: 8,
-              background: "rgba(37,211,102,0.08)",
-              border: "1px solid rgba(37,211,102,0.25)",
-              color: "#128c4a", fontSize: 12, fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            <Phone size={13} /> Contacter via WhatsApp
-          </button>
-        )}
-
-        {/* Bouton Supprimer */}
-        {CAN_REMOVE_CANDIDAT && (
-          <button
-            onClick={() => handleDelete(c.id)}
-            style={{
-              marginTop: 12,
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              width: "100%", padding: "7px 0", borderRadius: 8,
-              background: "rgba(239,68,68,0.07)",
-              border: "1px solid rgba(239,68,68,0.22)",
-              color: "#dc2626", fontSize: 12, fontWeight: 600,
-              cursor: "pointer", transition: "background 0.18s",
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(239,68,68,0.15)"}
-            onMouseLeave={(e) => e.currentTarget.style.background = "rgba(239,68,68,0.07)"}
-          >
-            <Trash2 size={13} /> Supprimer
-          </button>
-        )}
+        {/* ── Menu d'actions dépliable (Modifier / Historique / Email / WhatsApp / Supprimer) ── */}
+        <CandidateActions
+          candidat={c}
+          canEdit={CAN_EDIT_CANDIDAT}
+          canRemove={CAN_REMOVE_CANDIDAT}
+          onEdit={() => handleEdit(c._raw)}
+          onHistorique={() => setHistoriqueCandidat(c)}
+          onEmail={() => { if (c._raw?.email) setContactCandidat(c); }}
+          onWhatsapp={() => openWhatsAppContact(c.tel)}
+          onDelete={() => handleDelete(c.id)}
+        />
 
       </div>
     );

@@ -83,7 +83,7 @@ function consumeCredit(candidatId) {
   setCredit(candidatId, current - 1);
   return current - 1;
 }
-  
+
 function dbRowToSession(row) {
   const rawDate   = toLocalISO(row.date);
   const dateObj   = new Date(rawDate + "T12:00:00");
@@ -244,7 +244,8 @@ function MilestoneModal({ candidatName, nbSeances = 20, onClose, onPayer }) {
     </div>
   );
 }
-// ── SÉANCE SUP PAIEMENT MODAL ─────────────────────────────────────────────────
+// ── SÉANCE SUP PAIEMENT MODAL (non utilisée pour le flux hors forfait —
+// conservée telle quelle au cas où elle serait référencée ailleurs) ──────────
 function SeanceSupPaiementModal({ candidatName, candidatId, onClose, onConfirm }) {
   const [montant,  setMontant]  = useState("");
   const [methode,  setMethode]  = useState("especes");
@@ -541,7 +542,6 @@ function SeanceSupplementaireModal({ candidat, onClose, onConfirm }) {
   );
 }
 // ── BANNIÈRE CONGÉ ANNUEL ─────────────────────────────────────────────────────
-// Remplace la CongeAnnuelBanner existante par celle-ci :
 function CongeAnnuelBanner({ congeAnnuel, congePersoSemaine }) {
   const showAnnuel = congeAnnuel?.actif && congeAnnuel?.dateDebut && congeAnnuel?.dateFin && (() => {
     const now = new Date();
@@ -650,12 +650,17 @@ function GroupModal({ sessions, onClose, onDelete, onEdit, loadSeances, currentU
             const handleMarquerPresence = async (presence) => {
               if (!isOwn) return;
               try {
+                const statutNorm = (s._raw?.statut || "")
+                  .toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                if (statutNorm === "annulee" && window.electron?.updateStatutSeance) {
+                  await window.electron.updateStatutSeance({ id: s.id, statut: "confirmée" });
+                }
                 if (window.electron?.updatePresenceSeance) {
                   await window.electron.updatePresenceSeance({ id: s.id, presence });
-                  if (loadSeances) await loadSeances();
-                  window.dispatchEvent(new CustomEvent("seance-updated"));
-                  onClose();
                 }
+                if (loadSeances) await loadSeances();
+                window.dispatchEvent(new CustomEvent("seance-updated"));
+                onClose();
               } catch (err) { console.error("Erreur mise à jour présence :", err); }
             };
             const handleAnnuler = async () => {
@@ -663,6 +668,9 @@ function GroupModal({ sessions, onClose, onDelete, onEdit, loadSeances, currentU
               try {
                 if (window.electron?.updateStatutSeance) {
                   await window.electron.updateStatutSeance({ id: s.id, statut: "annulée" });
+                  if (window.electron?.updatePresenceSeance) {
+                    await window.electron.updatePresenceSeance({ id: s.id, presence: null });
+                  }
                   if (loadSeances) await loadSeances();
                   window.dispatchEvent(new CustomEvent("seance-updated"));
                   onClose();
@@ -750,12 +758,17 @@ function SessionPopup({ session, anchor, onClose, isOwn, canEdit, onEdit, onDele
 
   const handleMarquerPresence = async (presence) => {
     try {
+      const statutNorm = (session._raw?.statut || "")
+        .toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (statutNorm === "annulee" && window.electron?.updateStatutSeance) {
+        await window.electron.updateStatutSeance({ id: session.id, statut: "confirmée" });
+      }
       if (window.electron?.updatePresenceSeance) {
         await window.electron.updatePresenceSeance({ id: session.id, presence });
-        if (loadSeances) await loadSeances();
-        window.dispatchEvent(new CustomEvent("seance-updated"));
-        onClose();
       }
+      if (loadSeances) await loadSeances();
+      window.dispatchEvent(new CustomEvent("seance-updated"));
+      onClose();
     } catch (err) { console.error("Erreur mise à jour présence :", err); }
   };
 
@@ -763,6 +776,9 @@ function SessionPopup({ session, anchor, onClose, isOwn, canEdit, onEdit, onDele
     try {
       if (window.electron?.updateStatutSeance) {
         await window.electron.updateStatutSeance({ id: session.id, statut: "annulée" });
+        if (window.electron?.updatePresenceSeance) {
+          await window.electron.updatePresenceSeance({ id: session.id, presence: null });
+        }
         if (loadSeances) await loadSeances();
         window.dispatchEvent(new CustomEvent("seance-updated"));
         onClose();
@@ -856,6 +872,7 @@ function SessionPopup({ session, anchor, onClose, isOwn, canEdit, onEdit, onDele
 
 // ── CREATE / EDIT MODAL ───────────────────────────────────────────────────────
 function CreateModal({ onClose, onCreate, editing, saving, sessions, currentUserId, prefillCandidatId, isDateBloquee, nbSeancesMax = 20 }) {
+  const navigate = useNavigate();
   const [candidats, setCandidats] = useState([]);
   const [alertInfo, setAlertInfo] = useState(null);
   const { examensList } = useExamenCtx();
@@ -937,7 +954,9 @@ const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
     ? countSeancesFormation(sessions, form.candidatId, candidatCatForm)
     : 0;
   const seancesCompletes = nbSeancesEffectuees >= nbSeancesMax;
-    const permisObtenu    = estExterne || seancesCompletes;
+    // ── Réussir l'examen de Circulation vaut "permis obtenu" indépendamment
+    // du nombre de séances effectuées, comme côté admin.
+    const permisObtenu    = estExterne || seancesCompletes || aReussiCirc;
   const forfaitNonSolde = permisObtenu && !estExterne && montantRestant > 0;
   const currentStage    = permisObtenu ? null : (!aReussiCode ? "code" : !aReussiCreneau ? "creneau" : "circulation");
 
@@ -1107,6 +1126,11 @@ _formData: {
         categoriePermis: candidatCatForm || null,
         candidatTelephone: selectedCandidatObj?.telephone || null,
         candidatPrenom:    selectedCandidatObj?.prenom || null,
+        // ── AJOUT : pour que handleSave sache si c'est hors forfait,
+        // exactement comme côté admin (nécessaire pour gérer les
+        // candidats externes qui n'ont jamais de séances "présente").
+        estExterne:   estExterne,
+        permisObtenu: permisObtenu,
       },
     });
   };
@@ -1168,7 +1192,14 @@ _formData: {
             <div style={{ padding:"10px 14px", borderRadius:10, background:"#eef2ff", border:"1.5px solid #c7d2fe", fontSize:"0.78rem", color:"#4338ca", fontWeight:600, display:"flex", alignItems:"center", gap:8 }}>
               <span style={{ fontSize:18 }}>🎓</span>
               <div>
-                <div>{estExterne ? "Personne externe" : `Formation terminée (${nbSeancesEffectuees}/${nbSeancesMax} séances)`} — séance hors forfait</div>
+                <div>
+                  {estExterne
+                    ? "Personne externe"
+                    : aReussiCirc
+                      ? "Permis obtenu (examen Circulation réussi)"
+                      : `Formation terminée (${nbSeancesEffectuees}/${nbSeancesMax} séances)`}
+                  {" — séance hors forfait"}
+                </div>
                 <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>
                   Séance de conduite disponible (créneau et circulation confondus). Le paiement se gère dans le module Paiements.
                 </div>
@@ -1179,24 +1210,33 @@ _formData: {
                       ✅ Crédit disponible : {credit} séance(s) déjà payée(s) — aucun paiement requis pour celle-ci.
                     </div>
                   ) : (
-                    <div style={{ marginTop:6, fontWeight:700, color:"#ea580c", fontSize:"0.72rem" }}>
-                      ⚠️ Aucun crédit restant — un paiement sera demandé après la création.
+                    <div style={{ marginTop:8, display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
+                      <div style={{ fontWeight:700, color:"#ea580c", fontSize:"0.72rem" }}>
+                        ⚠️ Aucun crédit restant pour ce candidat.
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const cid   = form.candidatId;
+                          const cname = form.candidat;
+                          onClose();
+                          navigate("/moniteur/paiements", {
+                            state: { openSeanceSup: true, candidatId: cid, candidatName: cname },
+                          });
+                        }}
+                        style={{
+                          display:"flex", alignItems:"center", gap:6, flexShrink:0,
+                          padding:"7px 14px", borderRadius:8, border:"none",
+                          background:"linear-gradient(135deg,#f59e0b,#d97706)", color:"#fff",
+                          fontFamily:"'Poppins',sans-serif", fontSize:"0.72rem", fontWeight:700,
+                          cursor:"pointer", boxShadow:"0 3px 10px rgba(217,119,6,0.35)",
+                        }}
+                      >
+                        💳 Aller au paiement
+                      </button>
                     </div>
                   );
                 })()}
-              </div>
-            </div>
-          )}
-
-          {/* Bannière forfait non soldé */}
-          {forfaitNonSolde && (
-            <div style={{ padding:"10px 14px", borderRadius:10, background:"#fef2f2", border:"1.5px solid #fca5a5", fontSize:"0.78rem", color:"#dc2626", fontWeight:700, display:"flex", alignItems:"center", gap:8 }}>
-              <span style={{ fontSize:18 }}>💳</span>
-              <div>
-                <div>Forfait de formation non soldé</div>
-                <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>
-                  Reste {montantRestant.toLocaleString("fr-DZ")} DA à régler. Enregistrez le paiement du forfait (module Paiements) avant de planifier une séance supplémentaire pour ce candidat.
-                </div>
               </div>
             </div>
           )}
@@ -1595,7 +1635,7 @@ export default function AgendaMoniteur() {
 
   const [seanceSupModal,    setSeanceSupModal]    = useState(null);
 
-  const [seanceSupPaiement, setSeanceSupPaiement] = useState(null); // { candidatId, candidatName }
+  const [seanceSupPaiement, setSeanceSupPaiement] = useState(null); // { candidatId, candidatName } — non utilisé pour le flux hors forfait, conservé pour compat
   const [prefillCandidatId, setPrefillCandidatId] = useState(null);
 
     // État pour s'assurer que les congés sont chargés
@@ -1676,7 +1716,6 @@ const isDateBloquee = useCallback((dateStr) => {
   const d = new Date(dateStr + "T12:00:00");
 
   const congePerso = getCongeActifMoniteur(currentUserId, d);
-  console.log("🔍 isDateBloquee", { dateStr, currentUserId, congePerso, d });
 
   if (congePerso) return congePerso;
 
@@ -1798,24 +1837,45 @@ const isDateBloquee = useCallback((dateStr) => {
       if (url) window.electron?.openExternal?.(url);
     }
 
-      const candidatId = _formData.candidatIds?.[0];
+    // ── Logique alignée sur l'admin : les candidats externes n'ont jamais
+    // de séances "présente" comptabilisées chez nous — on vérifie donc le
+    // crédit directement plutôt que de compter les séances pour eux.
+    const candidatId = _formData.candidatIds?.[0];
     if (candidatId) {
       const nomCandidat = sessionObj.name || "Ce candidat";
-      // On utilise freshSessions (juste récupéré ci-dessus), pas `sessions`
-      // qui reste l'ancien tableau dans cette fermeture tant que React
-      // n'a pas re-render le composant.
-      const compteApres = countSeancesFormation(freshSessions, candidatId, _formData.categoriePermis);
-      const vientDeFranchirLeSeuil = compteApres === nbSeancesMax;
 
-      if (vientDeFranchirLeSeuil) {
-        setMilestoneCandidat({ candidatId, nom: nomCandidat });
-      } else if (compteApres >= nbSeancesMax) {
+      const allerPayer = () => {
+        showToast(`💳 Aucun crédit — redirection vers le paiement pour ${nomCandidat}.`, "info");
+        navigate("/moniteur/paiements", {
+          state: { openSeanceSup: true, candidatId, candidatName: nomCandidat },
+        });
+      };
+
+      if (_formData.estExterne) {
         const credit = getCredit(candidatId);
         if (credit > 0) {
           const resteApres = consumeCredit(candidatId);
           showToast(`🎓 Séance supplémentaire créée — crédit restant : ${resteApres}.`, "info");
         } else {
-          setSeanceSupPaiement({ candidatId, candidatName: nomCandidat });
+          allerPayer();
+        }
+      } else {
+        // On utilise freshSessions (juste récupéré ci-dessus), pas `sessions`
+        // qui reste l'ancien tableau dans cette fermeture tant que React
+        // n'a pas re-render le composant.
+        const compteApres = countSeancesFormation(freshSessions, candidatId, _formData.categoriePermis);
+        const vientDeFranchirLeSeuil = compteApres === nbSeancesMax;
+
+        if (vientDeFranchirLeSeuil) {
+          setMilestoneCandidat({ candidatId, nom: nomCandidat });
+        } else if (_formData.permisObtenu) {
+          const credit = getCredit(candidatId);
+          if (credit > 0) {
+            const resteApres = consumeCredit(candidatId);
+            showToast(`🎓 Séance supplémentaire créée — crédit restant : ${resteApres}.`, "info");
+          } else {
+            allerPayer();
+          }
         }
       }
     }
@@ -2086,7 +2146,7 @@ const isDateBloquee = useCallback((dateStr) => {
           onConfirm={() => {
             const c = seanceSupModal;
             setSeanceSupModal(null);
-            navigate("/payments", {
+            navigate("/moniteur/paiements", {
               state: {
                 openSeanceSup: true,
                 candidatId:   c.idCandidat,
@@ -2114,7 +2174,7 @@ const isDateBloquee = useCallback((dateStr) => {
           onPayer={() => {
             const c = milestoneCandidat;
             setMilestoneCandidat(null);
-            navigate("/payments", {
+            navigate("/moniteur/paiements", {
               state: {
                 openSeanceSup: true,
                 candidatId:   c.candidatId,
