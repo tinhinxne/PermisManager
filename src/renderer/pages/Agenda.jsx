@@ -331,18 +331,25 @@ function GroupModal({
           <button onClick={onClose} style={{ background:"#f1f5f9", border:"none", color:"#64748b", width:32, height:32, borderRadius:8, cursor:"pointer", fontSize:14, display:"grid", placeItems:"center" }}>✕</button>
         </div>
         <div style={{ overflowY:"auto", padding:"16px 24px", display:"flex", flexDirection:"column", gap:12 }}>
-         {sessions.map((s) => {
+ {sessions.map((s) => {
   const col = COLORS[s.type] || COLORS.code;
   const sEnd = s.startH + s.dur;
 
   const handleMarquerPresence = async (presence) => {
     try {
+      const statutNorm = (s._raw?.statut || "")
+        .toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (statutNorm === "annulee" && window.electron?.updateStatutSeance) {
+        await window.electron.updateStatutSeance({ id: s.id, statut: "confirmée" });
+      }
+
       if (window.electron?.updatePresenceSeance) {
         await window.electron.updatePresenceSeance({ id: s.id, presence });
-        if (loadSeances) await loadSeances();
-        window.dispatchEvent(new CustomEvent("seance-updated"));
-        onClose();
       }
+
+      if (loadSeances) await loadSeances();
+      window.dispatchEvent(new CustomEvent("seance-updated"));
+      onClose();
     } catch (err) {
       console.error("Erreur mise à jour présence :", err);
     }
@@ -352,6 +359,9 @@ function GroupModal({
     try {
       if (window.electron?.updateStatutSeance) {
         await window.electron.updateStatutSeance({ id: s.id, statut: "annulée" });
+        if (window.electron?.updatePresenceSeance) {
+          await window.electron.updatePresenceSeance({ id: s.id, presence: null });
+        }
         if (loadSeances) await loadSeances();
         window.dispatchEvent(new CustomEvent("seance-updated"));
         onClose();
@@ -360,7 +370,6 @@ function GroupModal({
       console.error("Erreur mise à jour statut :", err);
     }
   };
-
   return (
     <div key={s.id} style={{ border:`1px solid ${col.border}`, borderLeft:`4px solid ${col.bg}`, borderRadius:12, padding:"14px 16px", background:col.light, display:"flex", flexDirection:"column", gap:10 }}>
       <div style={{ display:"flex", alignItems:"center", gap:16 }}>
@@ -430,16 +439,25 @@ function SessionPopup({
   const left = Math.min(anchor.left, window.innerWidth - 270);
  const col  = COLORS[session.type] || COLORS.code;
 
-  const handleMarquerPresence = async (presence) => {
+    const handleMarquerPresence = async (presence) => {
     try {
+      // 1) Si la séance était annulée, on la réactive d'abord...
+      const statutNorm = (session._raw?.statut || "")
+        .toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (statutNorm === "annulee" && window.electron?.updateStatutSeance) {
+        await window.electron.updateStatutSeance({ id: session.id, statut: "confirmée" });
+      }
+
+      // 2) ...puis on écrit la présence EN DERNIER, pour être sûr qu'elle ne soit pas écrasée.
       if (window.electron?.updatePresenceSeance) {
         await window.electron.updatePresenceSeance({ id: session.id, presence });
-        if (loadSeances) await loadSeances();
-        window.dispatchEvent(new CustomEvent("seance-updated"));
-        onClose();
       } else {
         console.warn("window.electron.updatePresenceSeance n'existe pas !");
       }
+
+      if (loadSeances) await loadSeances();
+      window.dispatchEvent(new CustomEvent("seance-updated"));
+      onClose();
     } catch (err) {
       console.error("Erreur mise à jour présence :", err);
     }
@@ -449,6 +467,9 @@ function SessionPopup({
     try {
       if (window.electron?.updateStatutSeance) {
         await window.electron.updateStatutSeance({ id: session.id, statut: "annulée" });
+        if (window.electron?.updatePresenceSeance) {
+          await window.electron.updatePresenceSeance({ id: session.id, presence: null });
+        }
         if (loadSeances) await loadSeances();
         window.dispatchEvent(new CustomEvent("seance-updated"));
         onClose();
@@ -603,6 +624,7 @@ function CongeAnnuelBanner({ congeAnnuel }) {
 
 // ── CREATE / EDIT MODAL ───────────────────────────────────────────────────────
 function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, prefillCandidatId, nbSeancesMax = 20 }) {
+  const navigate = useNavigate();
   const [candidats, setCandidats] = useState([]);
   const [moniteurs, setMoniteurs] = useState([]);
   const [alertInfo, setAlertInfo] = useState(null);
@@ -665,11 +687,14 @@ const montantRestant = Number(selectedCandidatObj?.montantRestant ?? 0);
   // Fin de formation = nombre de séances créneau+circulation (non annulées)
   // atteint le seuil défini dans Paramètres > Nombre de séances.
   // Une personne externe est directement considérée comme "hors forfait".
+  // ⚠️ On considère aussi le permis obtenu dès que l'examen de Circulation
+  // est "Passed", indépendamment du nombre de séances effectuées : réussir
+  // l'examen prime toujours sur le simple compteur de séances.
   const nbSeancesEffectuees = form.candidatId
     ? countSeancesFormation(sessions, form.candidatId, candidatCat)
     : 0;
   const seancesCompletes = nbSeancesEffectuees >= nbSeancesMax;
-  const permisObtenu = estExterne || seancesCompletes;
+  const permisObtenu = estExterne || seancesCompletes || aReussiCirc;
   // Un candidat externe n'a pas de forfait (30000 DA) à payer, donc pas concerné.
 const forfaitNonSolde = permisObtenu && !estExterne && montantRestant > 0;
 
@@ -880,6 +905,9 @@ if (forfaitNonSolde) {
     // ── AJOUT ──
     candidatTelephone: selectedCandidatObj?.telephone || null,
     candidatPrenom:    selectedCandidatObj?.prenom || null,
+      // ── AJOUT : pour que handleSave sache si c'est hors forfait ──
+    estExterne:   estExterne,
+    permisObtenu: permisObtenu,
   },
 });
   };
@@ -971,9 +999,16 @@ if (forfaitNonSolde) {
             <div style={{ padding:"10px 14px", borderRadius:10, background:"#eef2ff", border:"1.5px solid #c7d2fe", fontSize:"0.78rem", color:"#4338ca", fontWeight:600, display:"flex", alignItems:"center", gap:8 }}>
               <span style={{ fontSize:18 }}>🎓</span>
               <div>
-                <div>{estExterne ? "Personne externe" : `Formation terminée (${nbSeancesEffectuees}/${nbSeancesMax} séances)`} — séance hors forfait</div>
+                <div>
+                  {estExterne
+                    ? "Personne externe"
+                    : aReussiCirc
+                      ? "Permis obtenu (examen Circulation réussi)"
+                      : `Formation terminée (${nbSeancesEffectuees}/${nbSeancesMax} séances)`}
+                  {" — séance hors forfait"}
+                </div>
                 <div style={{ fontWeight:400, marginTop:2, fontSize:"0.72rem" }}>
-                  Séance de conduite disponible (créneau et circulation confondus).
+                  Séance de perfectionnement post-permis 
                 </div>
                 {form.candidatId && (() => {
                   const credit = getCredit(form.candidatId);
@@ -981,11 +1016,33 @@ if (forfaitNonSolde) {
                     <div style={{ marginTop:6, fontWeight:700, color:"#16a34a", fontSize:"0.72rem" }}>
                       ✅ Crédit disponible : {credit} séance(s) déjà payée(s) — aucun paiement requis pour celle-ci.
                     </div>
-                  ) : (
-                    <div style={{ marginTop:6, fontWeight:700, color:"#ea580c", fontSize:"0.72rem" }}>
-                      ⚠️ Aucun crédit restant — un paiement (par lot) sera demandé après la création.
-                    </div>
-                  );
+                 ) : (
+  <div style={{ marginTop:8, display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
+    <div style={{ fontWeight:700, color:"#ea580c", fontSize:"0.72rem" }}>
+      ⚠️ Aucun crédit restant pour ce candidat.
+    </div>
+    <button
+      type="button"
+      onClick={() => {
+        const cid   = form.candidatId;
+        const cname = form.candidat;
+        onClose();
+        navigate("/payments", {
+          state: { openSeanceSup: true, candidatId: cid, candidatName: cname },
+        });
+      }}
+      style={{
+        display:"flex", alignItems:"center", gap:6, flexShrink:0,
+        padding:"7px 14px", borderRadius:8, border:"none",
+        background:"linear-gradient(135deg,#f59e0b,#d97706)", color:"#fff",
+        fontFamily:"'Poppins',sans-serif", fontSize:"0.72rem", fontWeight:700,
+        cursor:"pointer", boxShadow:"0 3px 10px rgba(217,119,6,0.35)",
+      }}
+    >
+      💳 Aller au paiement
+    </button>
+  </div>
+);
                 })()}
               </div>
             </div>
@@ -1772,6 +1829,7 @@ const [nbSeancesMax, setNbSeancesMax] = useState(20);
   const [milestoneCandidat, setMilestoneCandidat] = useState(null); // { candidatId, nom }
 
   const { isMoniteurEnConge, isCongeAnnuel, congeAnnuel } = useCongeCtx();
+  
 
   const loadNbSeancesMax = useCallback(async () => {
     try {
@@ -1963,25 +2021,44 @@ const [nbSeancesMax, setNbSeancesMax] = useState(20);
       if (url) window.electron?.openExternal?.(url);
     }
 const candidatId = _formData.candidatIds?.[0];
-          if (candidatId) {
-            const nomCandidat = sessionObj.name || "Ce candidat";
-            // On utilise freshSessions (juste récupéré ci-dessus), pas `sessions`
-            // qui reste l'ancien tableau dans cette fermeture.
-            const compteApres = countSeancesFormation(freshSessions, candidatId, _formData.categoriePermis);
-            const vientDeFranchirLeSeuil = compteApres === nbSeancesMax;
+if (candidatId) {
+  const nomCandidat = sessionObj.name || "Ce candidat";
 
-            if (vientDeFranchirLeSeuil) {
-              setMilestoneCandidat({ candidatId, nom: nomCandidat });
-            } else if (compteApres >= nbSeancesMax) {
-              const credit = getCredit(candidatId);
-              if (credit > 0) {
-                const resteApres = consumeCredit(candidatId);
-                showToast(`🎓 Séance supplémentaire créée — crédit restant : ${resteApres}.`, "info");
-              } else {
-                setSeanceSupPaiement({ candidatId, candidatName: nomCandidat });
-              }
-            }
-          }
+  const allerPayer = () => {
+    showToast(`💳 Aucun crédit — redirection vers le paiement pour ${nomCandidat}.`, "info");
+    navigate("/payments", {
+      state: { openSeanceSup: true, candidatId, candidatName: nomCandidat },
+    });
+  };
+
+  if (_formData.estExterne) {
+    // Personne externe : toujours hors forfait, elle n'a jamais de séances
+    // "présente" enregistrées chez nous, donc on ne peut pas se fier au
+    // compteur de séances — on vérifie directement le crédit.
+    const credit = getCredit(candidatId);
+    if (credit > 0) {
+      const resteApres = consumeCredit(candidatId);
+      showToast(`🎓 Séance supplémentaire créée — crédit restant : ${resteApres}.`, "info");
+    } else {
+      allerPayer();
+    }
+  } else {
+    const compteApres = countSeancesFormation(freshSessions, candidatId, _formData.categoriePermis);
+    const vientDeFranchirLeSeuil = compteApres === nbSeancesMax;
+
+    if (vientDeFranchirLeSeuil) {
+      setMilestoneCandidat({ candidatId, nom: nomCandidat });
+    } else if (_formData.permisObtenu) {
+      const credit = getCredit(candidatId);
+      if (credit > 0) {
+        const resteApres = consumeCredit(candidatId);
+        showToast(`🎓 Séance supplémentaire créée — crédit restant : ${resteApres}.`, "info");
+      } else {
+        allerPayer();
+      }
+    }
+  }
+}
         } else {
           throw new Error(result?.message || "Erreur lors de la création.");
         }
