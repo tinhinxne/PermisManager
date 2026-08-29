@@ -38,6 +38,11 @@ const HISTORY_TABS = [
 const ABSENCE_CUTOFF_DAYS = 1;
 const DAYS_OPTIONS = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
 
+// ── AJOUT : normalisation de la catégorie de permis, utilisée pour ne
+// comparer les examens réussis/programmés qu'au sein d'une même catégorie
+// (voir AjouterCandidatsModal et ResultModal.onConfirm plus bas). ──
+const normCat = v => (v || "").toString().trim().toUpperCase();
+
 function formatDateAr(isoDate) {
   if (!isoDate) return "";
   const str = isoDate instanceof Date ? isoDate.toISOString() : String(isoDate);
@@ -718,13 +723,26 @@ function AjouterCandidatsModal({ session, candidats, examensList = [], onClose, 
 
   const TOUS_TYPES = ["Code", "Créneau", "Circulation"];
 
-  const getTypesDisponibles = (cid) => {
-    const reussis = examensList
-      .filter(e => String(e.candidatId) === String(cid) && e.status === "Passed")
-      .map(e => e.type);
-    const programmes = examensList
-      .filter(e => String(e.candidatId) === String(cid) && e.status === "Scheduled")
-      .map(e => e.type);
+  // ── AJOUT : ne retenir, pour un candidat donné, que les examens de la MÊME
+  // catégorie de permis que celle visée (categoriePermis). Sans ce filtre,
+  // un candidat réinscrit dans une nouvelle catégorie (ex. B → A) hériterait
+  // à tort des réussites/programmations de son ancienne catégorie et se
+  // verrait bloqué ou faussement dispensé de Code/Créneau. Les examens sans
+  // catégorie enregistrée (anciennes données) restent bloquants par défaut,
+  // pour ne pas changer le comportement sur l'historique existant. ──
+  const examensDuCandidatPourCategorie = (cid, categoriePermis) => {
+    const catCible = normCat(categoriePermis);
+    return examensList.filter(e => {
+      if (String(e.candidatId) !== String(cid)) return false;
+      const examCat = normCat(e.categoriePermis);
+      return !examCat || !catCible || examCat === catCible;
+    });
+  };
+
+  const getTypesDisponibles = (cid, categoriePermis) => {
+    const examsPertinents = examensDuCandidatPourCategorie(cid, categoriePermis);
+    const reussis    = examsPertinents.filter(e => e.status === "Passed").map(e => e.type);
+    const programmes = examsPertinents.filter(e => e.status === "Scheduled").map(e => e.type);
 
     const aReussiCode    = reussis.includes("Code");
     const aReussiCreneau = reussis.includes("Créneau");
@@ -744,13 +762,10 @@ function AjouterCandidatsModal({ session, candidats, examensList = [], onClose, 
   };
 
   // Explique pourquoi un candidat n'a aucun type disponible
-  const getRaisonIndisponible = (cid) => {
-    const reussis = examensList
-      .filter(e => String(e.candidatId) === String(cid) && e.status === "Passed")
-      .map(e => e.type);
-    const programmes = examensList
-      .filter(e => String(e.candidatId) === String(cid) && e.status === "Scheduled")
-      .map(e => e.type);
+  const getRaisonIndisponible = (cid, categoriePermis) => {
+    const examsPertinents = examensDuCandidatPourCategorie(cid, categoriePermis);
+    const reussis    = examsPertinents.filter(e => e.status === "Passed").map(e => e.type);
+    const programmes = examsPertinents.filter(e => e.status === "Scheduled").map(e => e.type);
 
     if (["Code", "Créneau", "Circulation"].every(t => reussis.includes(t))) {
       return "Les 3 examens sont déjà réussis 🎓";
@@ -767,14 +782,14 @@ function AjouterCandidatsModal({ session, candidats, examensList = [], onClose, 
     return `${c.prenom} ${c.nom}`.toLowerCase().includes(q);
   });
 
-  const eligibles    = candidatsFiltres.filter(c => getTypesDisponibles(c.id).length > 0);
-  const nonEligibles = candidatsFiltres.filter(c => getTypesDisponibles(c.id).length === 0);
+  const eligibles    = candidatsFiltres.filter(c => getTypesDisponibles(c.id, c.categoriePermis).length > 0);
+  const nonEligibles = candidatsFiltres.filter(c => getTypesDisponibles(c.id, c.categoriePermis).length === 0);
 
   const toggleCandidat = (c) => {
     setSelectedMap(prev => {
       const next = { ...prev };
       if (next[c.id]) delete next[c.id];
-      else next[c.id] = getTypesDisponibles(c.id)[0];
+      else next[c.id] = getTypesDisponibles(c.id, c.categoriePermis)[0];
       return next;
     });
   };
@@ -862,7 +877,7 @@ function AjouterCandidatsModal({ session, candidats, examensList = [], onClose, 
           )}
 
           {eligibles.map(c => {
-            const dispo = getTypesDisponibles(c.id);
+            const dispo = getTypesDisponibles(c.id, c.categoriePermis);
             const checked = !!selectedMap[c.id];
             return (
               <div
@@ -901,7 +916,7 @@ function AjouterCandidatsModal({ session, candidats, examensList = [], onClose, 
                   <input type="checkbox" disabled style={{ width: 15, height: 15 }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b" }}>{c.prenom} {c.nom}</div>
-                    <div style={{ fontSize: 11, color: "#94a3b8" }}>{getRaisonIndisponible(c.id)}</div>
+                    <div style={{ fontSize: 11, color: "#94a3b8" }}>{getRaisonIndisponible(c.id, c.categoriePermis)}</div>
                   </div>
                 </div>
               ))}
@@ -1662,9 +1677,21 @@ const handleConfirmExport = async () => {
             const examen = examensList.find((e) => e.id === id);
             if (examen) {
               const cid = examen.candidatId;
+              // ── AJOUT : on ne considère "réussi" que les examens de la MÊME
+              // catégorie de permis que celui qu'on vient de valider (catCible).
+              // Sans ce filtre, un candidat réinscrit dans une nouvelle
+              // catégorie serait déclaré "permis obtenu" dès que 3 types
+              // d'examens sont validés au total, même répartis sur d'anciennes
+              // catégories différentes. Les examens sans catégorie enregistrée
+              // (anciennes données) restent acceptés par défaut. ──
+              const catCible = normCat(examen.categoriePermis);
               const passe = (type) =>
                 type === examen.type ||
-                examensList.some((e) => e.candidatId === cid && e.type === type && e.status === "Passed");
+                examensList.some((e) => {
+                  if (e.candidatId !== cid || e.type !== type || e.status !== "Passed") return false;
+                  const examCat = normCat(e.categoriePermis);
+                  return !examCat || !catCible || examCat === catCible;
+                });
              if (passe("Code") && passe("Créneau") && passe("Circulation")) {
   window.electron.updateStatutCandidat({ candidatId: cid, statut: "obtenu" })
     .then((res) => {

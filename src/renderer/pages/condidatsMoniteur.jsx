@@ -851,6 +851,21 @@ function ConfirmAuditeurModal({ candidat, onConfirm, onClose }) {
 function CandidateActions({ candidat, canEdit, canRemove, onEdit, onHistorique, onEmail, onWhatsapp, onDelete }) {
   const [expanded, setExpanded] = useState(false);
   const hasEmail = !!candidat._raw?.email;
+  const wrapRef = React.useRef(null);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const handleClickOutside = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setExpanded(false);
+    };
+    const handleEscape = (e) => { if (e.key === "Escape") setExpanded(false); };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [expanded]);
 
   const actions = [];
   if (canEdit) {
@@ -871,7 +886,7 @@ function CandidateActions({ candidat, canEdit, canRemove, onEdit, onHistorique, 
   }
 
   return (
-    <div style={{ marginTop: 10 }}>
+    <div ref={wrapRef} style={{ marginTop: 10, position: "relative" }}>
       <button
         onClick={() => setExpanded((v) => !v)}
         style={{
@@ -891,26 +906,43 @@ function CandidateActions({ candidat, canEdit, canRemove, onEdit, onHistorique, 
 
       {expanded && (
         <div style={{
-          display: "grid",
-          gridTemplateColumns: `repeat(${Math.min(actions.length, 3)}, 1fr)`,
-          gap: 6, marginTop: 6,
+          position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, zIndex: 40,
+          display: "flex", flexDirection: "column", gap: 5,
+          background: "#fff", border: "1px solid #e6ebf2", borderRadius: 10,
+          padding: 5, boxShadow: "0 10px 26px rgba(15,23,42,0.16)",
         }}>
           {actions.map((a) => (
             <button
               key={a.key}
               onClick={a.onClick}
               disabled={a.disabled}
-              title={a.disabled ? "Pas d'email enregistré" : a.label}
+              title={a.disabled ? "Pas d'email enregistré" : undefined}
               style={{
-                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                gap: 3, padding: "8px 2px", borderRadius: 8,
-                background: a.bg, border: `1px solid ${a.border}`,
-                color: a.color, fontSize: 9.5, fontWeight: 700,
+                display: "flex", alignItems: "center", gap: 10,
+                width: "100%", padding: "8px 9px", borderRadius: 7,
+                background: "transparent", border: "none", textAlign: "left",
                 cursor: a.disabled ? "not-allowed" : "pointer",
+                opacity: a.disabled ? 0.55 : 1,
+                transition: "background .12s",
               }}
+              onMouseEnter={(e) => { if (!a.disabled) e.currentTarget.style.background = a.bg; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             >
-              {a.icon}
-              {a.label}
+              <span style={{
+                width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: a.bg, border: `1px solid ${a.border}`, color: a.color,
+              }}>
+                {a.icon}
+              </span>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: "#334155" }}>
+                {a.label}
+                {a.disabled && (
+                  <span style={{ display: "block", fontSize: 10.5, fontWeight: 500, color: "#94a3b8" }}>
+                    Pas d'email enregistré
+                  </span>
+                )}
+              </span>
             </button>
           ))}
         </div>

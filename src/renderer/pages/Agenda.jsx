@@ -673,13 +673,17 @@ const candidatCat  = selectedCandidatObj ? candidatCategorie(selectedCandidatObj
 const estExterne   = !!selectedCandidatObj?.externe;
 const montantRestant = Number(selectedCandidatObj?.montantRestant ?? 0);
 
-  // ── Examens du candidat ────────────────────────────────────────────────────
-  // RÈGLE STRICTE : on ne passe au stade suivant QUE quand l'examen précédent
-  // a le statut "Passed" (réussi). Le nombre de séances ou le fait qu'un
-  // examen soit simplement "Scheduled" (programmé) ne donne AUCUN accès.
-  const examsCandidat = (examensList || []).filter(
-    e => String(e.candidatId) === String(form.candidatId)
-  );
+ 
+  // ⚠️ On ne retient que les examens de la MÊME catégorie de permis que celle
+// visée par cette séance (candidatCat). Un candidat réinscrit dans une autre
+// catégorie (ex. B → A) ne doit pas hériter des réussites de son ancienne
+// catégorie. Les anciens examens sans catégorie enregistrée (créés avant ce
+// correctif) sont acceptés par défaut pour ne pas casser l'historique existant.
+const examsCandidat = (examensList || []).filter(e => {
+  if (String(e.candidatId) !== String(form.candidatId)) return false;
+  const examCat = normCat(e.categoriePermis || e.categorie || e.categorie_permis);
+  return !examCat || !candidatCat || examCat === candidatCat;
+});
  const aReussiCode    = examsCandidat.some(e => e.type === "Code"        && e.status === "Passed");
   const aReussiCreneau = examsCandidat.some(e => e.type === "Créneau"     && e.status === "Passed");
   const aReussiCirc    = examsCandidat.some(e => e.type === "Circulation" && e.status === "Passed");

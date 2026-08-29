@@ -5,15 +5,16 @@ import ConnexionImg from "../../assets/Connexion.png";
 import SmallCar from "../../assets/SmallCar.png";
 import {
   CalendarOff, Plus, Save, X, Trash2, Clock,
-  CheckCircle2, XCircle, AlertCircle, CalendarDays,
+  CheckCircle2, XCircle, AlertCircle, AlertTriangle, CalendarDays, Lock,
+  Thermometer, Plane, Users, ClipboardList,
 } from "lucide-react";
 import { usePermissionsCtx } from "../context/PermissionsContext";
 
 const RAISONS = [
-  { value: "maladie",  label: "🤒 Maladie",            color: "#ef4444" },
-  { value: "voyage",   label: "✈️ Voyage",              color: "#3b82f6" },
-  { value: "familial", label: "👨‍👩‍👧 Raison familiale",  color: "#f59e0b" },
-  { value: "autre",    label: "📋 Autre",               color: "#8b5cf6" },
+  { value: "maladie",  label: "Maladie",           icon: Thermometer,   color: "#ef4444" },
+  { value: "voyage",   label: "Voyage",            icon: Plane,         color: "#3b82f6" },
+  { value: "familial", label: "Raison familiale",  icon: Users,         color: "#f59e0b" },
+  { value: "autre",    label: "Autre",             icon: ClipboardList, color: "#8b5cf6" },
 ];
 
 const formatDate = (date) => {
@@ -30,9 +31,6 @@ const nbJours = (d1, d2) => {
   return Math.max(0, Math.round((new Date(d2) - new Date(d1)) / 86400000) + 1);
 };
 
-// const isActive  = (d, f) => { const now = new Date(); return new Date(d) <= now && now <= new Date(f + "T23:59:59"); };
-// const isExpired = (f)    => new Date(f + "T23:59:59") < new Date();
-
 const isDatePasse = (val) =>
   !!(val && new Date(val + "T12:00:00") < new Date(new Date().toDateString()));
 
@@ -42,7 +40,6 @@ const isDateFinInvalide = (debut, fin) =>
 const isActive   = (d, f) => { const now = new Date(); return new Date(d + "T00:00:00") <= now && now <= new Date(f + "T23:59:59"); };
 const isExpired  = (f)    => new Date(f + "T23:59:59") < new Date();
 const isUpcoming = (d)    => new Date(d + "T00:00:00") > new Date();
-
 
 // ── Vérifie si deux plages se chevauchent ─────────────────────────────────────
 const datesSeChevachent = (debut1, fin1, debut2, fin2) => {
@@ -56,154 +53,138 @@ const datesSeChevachent = (debut1, fin1, debut2, fin2) => {
 // ── Trouve un congé validé ou en_attente qui chevauche la plage ───────────────
 const trouverCongeEnConflit = (conges, newDebut, newFin) => {
   return conges.find(c => {
-    // On bloque aussi sur les congés en attente — pas de double demande
     if (c.statut !== "validee" && c.statut !== "en_attente") return false;
     return datesSeChevachent(c.dateDebut, c.dateFin, newDebut, newFin);
   }) || null;
 };
 
+/* ── Design tokens ──────────────────────────────────────────────────────── */
+const T = {
+  ink:      "#0f172a",
+  muted:    "#64748b",
+  faint:    "#94a3b8",
+  border:   "#e6ebf2",
+  surface:  "#ffffff",
+  bg:       "#f6f8fb",
+  accent:   "#2b537e",
+  accentSoft: "#eaf1f8",
+  radius:   16,
+};
+
 const inp = {
   width: "100%", boxSizing: "border-box",
-  padding: "9px 11px", border: "1.5px solid #e2e8f0", borderRadius: 9,
+  padding: "10px 12px", border: `1.5px solid ${T.border}`, borderRadius: 10,
   fontFamily: "'Poppins', sans-serif", fontSize: "0.85rem",
-  color: "#1e293b", background: "#f8fafc", outline: "none",
+  color: T.ink, background: "#f8fafc", outline: "none",
+  transition: "border-color .15s, background .15s",
 };
 
 /* ── Badge de statut ────────────────────────────────────────────────────── */
+const STATUT_STYLES = {
+  en_attente: { bg: "#fef9c3", color: "#a16207", icon: <Clock size={11} />,        label: "En attente" },
+  refusee:    { bg: "#fee2e2", color: "#dc2626", icon: <XCircle size={11} />,      label: "Refusé"     },
+  en_cours:   { bg: "#dcfce7", color: "#16a34a", icon: <CheckCircle2 size={11} />, label: "En cours"   },
+  expire:     { bg: "#f1f5f9", color: "#94a3b8", icon: null,                       label: "Expiré"     },
+  a_venir:    { bg: "#fff7ed", color: "#ea580c", icon: null,                       label: "À venir"    },
+};
+
+const resolveStatutKey = (conge) => {
+  if (conge.statut === "en_attente") return "en_attente";
+  if (conge.statut === "refusee")    return "refusee";
+  if (isActive(conge.dateDebut, conge.dateFin)) return "en_cours";
+  if (isExpired(conge.dateFin)) return "expire";
+  if (isUpcoming(conge.dateDebut)) return "a_venir";
+  return "expire";
+};
+
 const StatutBadge = ({ conge }) => {
-  if (conge.statut === "en_attente") {
-    return (
-      <span style={{
-        display: "inline-flex", alignItems: "center", gap: 4,
-        fontSize: "0.68rem", fontWeight: 700, padding: "3px 9px",
-        borderRadius: 20, background: "#fef9c3", color: "#a16207",
-        whiteSpace: "nowrap",
-      }}>
-        <Clock size={11} /> En attente de validation
-      </span>
-    );
-  }
-  if (conge.statut === "refusee") {
-    return (
-      <span style={{
-        display: "inline-flex", alignItems: "center", gap: 4,
-        fontSize: "0.68rem", fontWeight: 700, padding: "3px 9px",
-        borderRadius: 20, background: "#fee2e2", color: "#dc2626",
-        whiteSpace: "nowrap",
-      }}>
-        <XCircle size={11} /> Refusé
-      </span>
-    );
-  }
-  if (isActive(conge.dateDebut, conge.dateFin)) {
-    return (
-      <span style={{
-        display: "inline-flex", alignItems: "center", gap: 4,
-        fontSize: "0.68rem", fontWeight: 700, padding: "3px 9px",
-        borderRadius: 20, background: "#dcfce7", color: "#16a34a",
-        whiteSpace: "nowrap",
-      }}>
-        <CheckCircle2 size={11} /> En cours
-      </span>
-    );
-  }
-  if (isExpired(conge.dateFin)) {
-    return (
-      <span style={{
-        fontSize: "0.68rem", fontWeight: 700, padding: "3px 9px",
-        borderRadius: 20, background: "#f1f5f9", color: "#94a3b8",
-        whiteSpace: "nowrap",
-      }}>
-        ⚫ Expiré
-      </span>
-    );
-  }
-  if (isUpcoming(conge.dateDebut)) {
-    return (
-      <span style={{
-        display: "inline-flex", alignItems: "center", gap: 4,
-        fontSize: "0.68rem", fontWeight: 700, padding: "3px 9px",
-        borderRadius: 20, background: "#fff7ed", color: "#ea580c",
-        whiteSpace: "nowrap",
-      }}>
-        🟡 À venir
-      </span>
-    );
-  }
-  return null;
+  const key = resolveStatutKey(conge);
+  const s = STATUT_STYLES[key];
+  if (!s) return null;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      fontSize: "0.68rem", fontWeight: 700, padding: "3px 10px",
+      borderRadius: 20, background: s.bg, color: s.color,
+      whiteSpace: "nowrap",
+    }}>
+      {s.icon} {s.label}
+    </span>
+  );
 };
 
 /* ── Carte congé individuelle ──────────────────────────────────────────── */
 const CongeCard = ({ conge, onCancel }) => {
   const r     = RAISONS.find(x => x.value === conge.raison) || RAISONS[3];
-  const titre = conge.raison === "autre" && conge.precision ? conge.precision : r.label.slice(3);
+  const titre = conge.raison === "autre" && conge.precision ? conge.precision : r.label;
   const jours = nbJours(conge.dateDebut, conge.dateFin);
   const peutAnnuler = conge.statut === "en_attente";
-
-  const bgByStatut = {
-    en_attente: "#fffbeb",
-    refusee:    "#fef2f2",
-    validee:    isActive(conge.dateDebut, conge.dateFin) ? "#f0fdf4" : "#f8fafc",
-  };
-  const borderByStatut = {
-    en_attente: "#fde68a",
-    refusee:    "#fecaca",
-    validee:    isActive(conge.dateDebut, conge.dateFin) ? "#bbf7d0" : "#e2e8f0",
-  };
+  const statutKey = resolveStatutKey(conge);
+  const estAtone = statutKey === "expire" || statutKey === "refusee";
 
   return (
     <div style={{
-      padding: "14px 16px", borderRadius: 12,
-      background: bgByStatut[conge.statut] || "#f8fafc",
-      border: `1.5px solid ${borderByStatut[conge.statut] || "#e2e8f0"}`,
-      display: "flex", alignItems: "flex-start", gap: 12,
-    }}>
-      <div style={{
-        width: 38, height: 38, borderRadius: "50%", flexShrink: 0,
-        background: `${r.color}1A`,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 18,
-      }}>
-        {r.label.split(" ")[0]}
-      </div>
+      display: "flex", borderRadius: 14,
+      background: T.surface, border: `1px solid ${T.border}`,
+      boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
+      overflow: "hidden", opacity: estAtone ? 0.75 : 1,
+      transition: "box-shadow .15s, transform .15s",
+    }}
+    onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 8px 20px rgba(15,23,42,0.08)"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+    onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 1px 2px rgba(15,23,42,0.04)"; e.currentTarget.style.transform = "translateY(0)"; }}
+    >
+      {/* Liseré de couleur = raison */}
+      <div style={{ width: 4, flexShrink: 0, background: r.color }} />
 
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 5 }}>
-          <span style={{ fontSize: "0.92rem", fontWeight: 700, color: "#1e293b" }}>{titre}</span>
-          <StatutBadge conge={conge} />
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "14px 16px", flex: 1, minWidth: 0 }}>
+        <div style={{
+          width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+          background: `${r.color}14`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <r.icon size={17} color={r.color} />
         </div>
 
-        <div style={{ fontSize: "0.8rem", color: "#64748b", display: "flex", alignItems: "center", gap: 5 }}>
-          <CalendarDays size={13} />
-          {formatDate(conge.dateDebut)} → {formatDate(conge.dateFin)}
-          <span style={{ color: "#cbd5e1" }}>·</span>
-          {jours} jour{jours > 1 ? "s" : ""}
-        </div>
-
-        {conge.statut === "refusee" && conge.motif_refus && (
-          <div style={{
-            marginTop: 8, padding: "8px 10px", borderRadius: 8,
-            background: "#fff", border: "1px solid #fecaca",
-            fontSize: "0.78rem", color: "#991b1b",
-          }}>
-            <strong>Motif du refus :</strong> {conge.motif_refus}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 5 }}>
+            <span style={{ fontSize: "0.9rem", fontWeight: 700, color: T.ink }}>{titre}</span>
+            <StatutBadge conge={conge} />
           </div>
-        )}
 
-        {peutAnnuler && (
-          <button
-            onClick={() => onCancel(conge.id)}
-            style={{
-              marginTop: 9, display: "inline-flex", alignItems: "center", gap: 5,
-              background: "none", border: "1px solid #fca5a5",
-              color: "#dc2626", borderRadius: 7, padding: "4px 10px",
-              fontSize: "0.74rem", fontWeight: 600, cursor: "pointer",
-              fontFamily: "'Poppins', sans-serif",
-            }}
-          >
-            <Trash2 size={12} /> Annuler ma demande
-          </button>
-        )}
+          <div style={{ fontSize: "0.78rem", color: T.muted, display: "flex", alignItems: "center", gap: 5 }}>
+            <CalendarDays size={13} />
+            {formatDate(conge.dateDebut)} → {formatDate(conge.dateFin)}
+            <span style={{ color: "#cbd5e1" }}>·</span>
+            {jours} jour{jours > 1 ? "s" : ""}
+          </div>
+
+          {conge.statut === "refusee" && conge.motif_refus && (
+            <div style={{
+              marginTop: 8, padding: "8px 10px", borderRadius: 9,
+              background: "#fef2f2", border: "1px solid #fecaca",
+              fontSize: "0.76rem", color: "#991b1b",
+            }}>
+              <strong>Motif du refus :</strong> {conge.motif_refus}
+            </div>
+          )}
+
+          {peutAnnuler && (
+            <button
+              onClick={() => onCancel(conge.id)}
+              style={{
+                marginTop: 9, display: "inline-flex", alignItems: "center", gap: 5,
+                background: "none", border: "1px solid #fca5a5",
+                color: "#dc2626", borderRadius: 8, padding: "4px 10px",
+                fontSize: "0.73rem", fontWeight: 600, cursor: "pointer",
+                fontFamily: "'Poppins', sans-serif", transition: "background .15s",
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = "#fef2f2"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+            >
+              <Trash2 size={12} /> Annuler ma demande
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -220,7 +201,7 @@ const MesConges = () => {
   const [showForm,     setShowForm]     = useState(false);
   const [form,         setForm]         = useState({ dateDebut: "", dateFin: "", raison: "maladie", precision: "" });
   const [error,        setError]        = useState("");
-  const [conflit,      setConflit]      = useState(null); // congé en conflit détecté en temps réel
+  const [conflit,      setConflit]      = useState(null);
   const [submitting,   setSubmitting]   = useState(false);
   const [filter,       setFilter]       = useState("tous");
 
@@ -234,7 +215,6 @@ const MesConges = () => {
 
   const conges = getCongesMoniteur(moniteurId);
 
-  // ── Détection chevauchement en temps réel ─────────────────────────────────
   useEffect(() => {
     if (!form.dateDebut || !form.dateFin) { setConflit(null); return; }
     if (new Date(form.dateFin) < new Date(form.dateDebut)) { setConflit(null); return; }
@@ -244,7 +224,7 @@ const MesConges = () => {
 
   if (!moniteurId) {
     return (
-      <div style={{ padding: "28px 32px", textAlign: "center", color: "#94a3b8", fontSize: "0.85rem" }}>
+      <div style={{ padding: "28px 32px", textAlign: "center", color: T.faint, fontSize: "0.85rem" }}>
         Chargement du profil…
       </div>
     );
@@ -266,10 +246,6 @@ const MesConges = () => {
   const permissions = getPermissions(moniteurId);
   const peutDemanderConge = !!permissions.CAN_REQUEST_CONGE;
 
-  console.log("conges:", conges);
-console.log("form:", form.dateDebut, form.dateFin);
-const congeEnConflit = trouverCongeEnConflit(conges, form.dateDebut, form.dateFin);
-console.log("conflit:", congeEnConflit)
   const handleSubmit = async () => {
     if (!form.dateDebut || !form.dateFin) { setError("Renseignez les deux dates."); return; }
     if (new Date(form.dateFin) < new Date(form.dateDebut)) { setError("La date de fin doit être après le début."); return; }
@@ -277,7 +253,6 @@ console.log("conflit:", congeEnConflit)
     if (new Date(form.dateFin) < new Date(new Date().toDateString())) { setError("La date de fin ne peut pas être dans le passé."); return; }
     if (form.raison === "autre" && !form.precision.trim()) { setError("Précisez la raison de votre congé."); return; }
 
-    // ── Blocage chevauchement ─────────────────────────────────────────────
     const congeEnConflit = trouverCongeEnConflit(conges, form.dateDebut, form.dateFin);
     if (congeEnConflit) {
       const labelStatut = congeEnConflit.statut === "en_attente" ? "en attente de validation" : "déjà accordé";
@@ -310,15 +285,27 @@ console.log("conflit:", congeEnConflit)
 
   const isLoading = loading || localLoading;
 
-  // Le bouton Envoyer est bloqué si conflit détecté
- const formBloque =
+  const formBloque =
     isDatePasse(form.dateDebut)  ||
     isDatePasse(form.dateFin)    ||
     isDateFinInvalide(form.dateDebut, form.dateFin) ||
     !!conflit;
 
+  const FILTERS = [
+    ["tous", "Tous"],
+    ["en_attente", "En attente"],
+    ["validee", "Validés"],
+    ["refusee", "Refusés"],
+  ];
+
+  const STATS_DATA = [
+    { key: "enAttente", label: "En attente", value: stats.enAttente, color: "#a16207", bg: "#fefce8", icon: <Clock size={17} color="#a16207" /> },
+    { key: "valides",   label: "Validés",    value: stats.valides,   color: "#16a34a", bg: "#f0fdf4", icon: <CheckCircle2 size={17} color="#16a34a" /> },
+    { key: "refuses",   label: "Refusés",    value: stats.refuses,   color: "#dc2626", bg: "#fef2f2", icon: <XCircle size={17} color="#dc2626" /> },
+  ];
+
   return (
-    <div style={{ padding: "28px 32px", fontFamily: "'Poppins', sans-serif" }}>
+    <div style={{ padding: "28px 32px", fontFamily: "'Poppins', sans-serif", background: T.bg, minHeight: "100%" }}>
       {/* HEADER */}
       <div className="header">
         <img src={ConnexionImg} alt="illustration" className="header-img" />
@@ -334,23 +321,22 @@ console.log("conflit:", congeEnConflit)
 
       {!peutDemanderConge && (
         <div style={{
-          background: "#fef2f2", border: "1.5px solid #fecaca",
-          borderRadius: 10, padding: "10px 14px", marginBottom: 16,
-          fontSize: "0.78rem", color: "#991b1b",
-          display: "flex", alignItems: "center", gap: 8,
+          background: "#fef2f2", border: `1px solid #fecaca`,
+          borderRadius: 12, padding: "11px 16px", marginBottom: 18,
+          fontSize: "0.8rem", color: "#991b1b",
+          display: "flex", alignItems: "center", gap: 9,
         }}>
-          🔒 La demande de congé a été désactivée par l'administrateur pour votre compte.
+          <Lock size={15} /> La demande de congé a été désactivée par l'administrateur pour votre compte.
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <div style={{
-          display: "inline-flex", alignItems: "center", gap: 8,
-          background: "rgba(249,115,22,0.08)", border: "1px solid rgba(249,115,22,0.2)",
-          borderRadius: 10, padding: "6px 14px",
-          fontSize: "0.75rem", color: "#ea580c", fontWeight: 600,
-        }}>
-          📅 Suivi de vos demandes de congé
+      {/* ── Barre titre + action ── */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: "1.05rem", fontWeight: 800, color: T.ink }}>Suivi de vos demandes</div>
+          <div style={{ fontSize: "0.78rem", color: T.muted, marginTop: 2 }}>
+            {conges.length} congé{conges.length !== 1 ? "s" : ""} au total
+          </div>
         </div>
 
         <button
@@ -359,13 +345,14 @@ console.log("conflit:", congeEnConflit)
           title={!peutDemanderConge ? "Cette action a été désactivée par l'administrateur" : undefined}
           style={{
             display: "flex", alignItems: "center", gap: 7,
-            padding: "10px 20px", borderRadius: 10,
-            background: !peutDemanderConge ? "#cbd5e1" : "#2b537e",
-            border: "none", color: "#fff", fontFamily: "inherit",
-            fontSize: "0.85rem", fontWeight: 700,
+            padding: "11px 22px", borderRadius: 12,
+            background: !peutDemanderConge ? "#cbd5e1" : (showForm ? "#fff" : T.accent),
+            border: showForm && peutDemanderConge ? `1.5px solid ${T.border}` : "none",
+            color: !peutDemanderConge ? "#fff" : (showForm ? T.muted : "#fff"),
+            fontFamily: "inherit", fontSize: "0.85rem", fontWeight: 700,
             cursor: !peutDemanderConge ? "not-allowed" : "pointer",
-            boxShadow: !peutDemanderConge ? "none" : "0 4px 14px rgba(43,83,126,0.3)",
-            opacity: !peutDemanderConge ? 0.7 : 1,
+            boxShadow: (!peutDemanderConge || showForm) ? "none" : "0 6px 16px rgba(43,83,126,0.28)",
+            transition: "all .15s",
           }}
         >
           {showForm ? <X size={15} /> : <Plus size={15} />}
@@ -374,26 +361,27 @@ console.log("conflit:", congeEnConflit)
       </div>
 
       {/* ── Stats rapides ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 22 }}>
-        {[
-          { label: "En attente", value: stats.enAttente, color: "#a16207", bg: "#fefce8", border: "#fde68a", icon: <Clock size={16} color="#a16207" /> },
-          { label: "Validés",    value: stats.valides,   color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0", icon: <CheckCircle2 size={16} color="#16a34a" /> },
-          { label: "Refusés",    value: stats.refuses,   color: "#dc2626", bg: "#fef2f2", border: "#fecaca", icon: <XCircle size={16} color="#dc2626" /> },
-        ].map(s => (
-          <div key={s.label} style={{
-            background: s.bg, border: `1.5px solid ${s.border}`,
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 24 }}>
+        {STATS_DATA.map(s => (
+          <div key={s.key} style={{
+            background: T.surface, border: `1px solid ${T.border}`,
             borderRadius: 14, padding: "16px 18px",
-            display: "flex", alignItems: "center", gap: 12,
-          }}>
+            display: "flex", alignItems: "center", gap: 13,
+            boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
+            transition: "box-shadow .15s, transform .15s",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 10px 22px rgba(15,23,42,0.08)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 1px 2px rgba(15,23,42,0.04)"; e.currentTarget.style.transform = "translateY(0)"; }}
+          >
             <div style={{
-              width: 38, height: 38, borderRadius: 10, background: "#fff",
+              width: 42, height: 42, borderRadius: 12, background: s.bg,
               display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
             }}>
               {s.icon}
             </div>
             <div>
-              <div style={{ fontSize: "1.4rem", fontWeight: 800, color: s.color, lineHeight: 1 }}>{s.value}</div>
-              <div style={{ fontSize: "0.74rem", color: "#64748b", marginTop: 2 }}>{s.label}</div>
+              <div style={{ fontSize: "1.55rem", fontWeight: 800, color: s.color, lineHeight: 1 }}>{s.value}</div>
+              <div style={{ fontSize: "0.75rem", color: T.muted, marginTop: 3, fontWeight: 500 }}>{s.label}</div>
             </div>
           </div>
         ))}
@@ -402,16 +390,25 @@ console.log("conflit:", congeEnConflit)
       {/* ── Formulaire nouvelle demande ── */}
       {showForm && (
         <div style={{
-          background: "#f8faff", border: "1.5px solid #c7d2fe",
-          borderRadius: 16, padding: 20, marginBottom: 22,
+          background: T.surface, border: `1px solid ${T.border}`,
+          borderRadius: 18, padding: 22, marginBottom: 24,
+          boxShadow: "0 10px 28px rgba(15,23,42,0.06)",
         }}>
-          <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "#4338ca", marginBottom: 14, display: "flex", alignItems: "center", gap: 7 }}>
-            <Plus size={16} /> Nouvelle demande de congé
+          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 16 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 9, background: T.accentSoft,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <Plus size={16} color={T.accent} />
+            </div>
+            <div style={{ fontSize: "0.92rem", fontWeight: 700, color: T.ink }}>
+              Nouvelle demande de congé
+            </div>
           </div>
 
           <div style={{
-            background: "#eef2ff", border: "1px solid #c7d2fe", borderRadius: 9,
-            padding: "9px 12px", marginBottom: 14, fontSize: "0.76rem", color: "#4338ca",
+            background: T.accentSoft, borderRadius: 10,
+            padding: "10px 13px", marginBottom: 16, fontSize: "0.76rem", color: T.accent,
             display: "flex", alignItems: "flex-start", gap: 7,
           }}>
             <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
@@ -419,33 +416,40 @@ console.log("conflit:", congeEnConflit)
           </div>
 
           {/* Raisons */}
-          <div style={{ marginBottom: 14 }}>
-            <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4, display: "block", marginBottom: 7 }}>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: "0.7rem", fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 8 }}>
               Raison
             </label>
-            <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-              {RAISONS.map(r => (
-                <button
-                  key={r.value}
-                  onClick={() => setForm(f => ({ ...f, raison: r.value }))}
-                  style={{
-                    padding: "5px 12px", borderRadius: 20, fontSize: "0.78rem", cursor: "pointer",
-                    border: `1.5px solid ${form.raison === r.value ? r.color : "#e2e8f0"}`,
-                    background: form.raison === r.value ? r.color + "18" : "white",
-                    color: form.raison === r.value ? r.color : "#64748b",
-                    fontWeight: form.raison === r.value ? 700 : 400,
-                    fontFamily: "'Poppins', sans-serif",
-                  }}
-                >
-                  {r.label}
-                </button>
-              ))}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+              {RAISONS.map(r => {
+                const active = form.raison === r.value;
+                return (
+                  <button
+                    key={r.value}
+                    onClick={() => setForm(f => ({ ...f, raison: r.value }))}
+                    style={{
+                      display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                      padding: "10px 6px", borderRadius: 11, cursor: "pointer",
+                      border: `1.5px solid ${active ? r.color : T.border}`,
+                      background: active ? `${r.color}12` : "#fff",
+                      color: active ? r.color : T.muted,
+                      fontWeight: active ? 700 : 500,
+                      fontFamily: "'Poppins', sans-serif",
+                      fontSize: "0.7rem", textAlign: "center",
+                      transition: "all .15s",
+                    }}
+                  >
+                    <r.icon size={17} color={active ? r.color : T.muted} />
+                    {r.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           {form.raison === "autre" && (
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4, display: "block", marginBottom: 5 }}>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: "0.7rem", fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 6 }}>
                 Précisez la raison
               </label>
               <input
@@ -457,49 +461,34 @@ console.log("conflit:", congeEnConflit)
           )}
 
           {/* Dates */}
-          {/* <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
             {[["dateDebut", "Date de début"], ["dateFin", "Date de fin"]].map(([key, lbl]) => (
-              <div key={key}>
-                <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4, display: "block", marginBottom: 5 }}>
-                  {lbl}
-                </label>
-                <input
-                  style={inp} type="date" value={form[key]}
-                  onChange={e => { setForm(f => ({ ...f, [key]: e.target.value })); setError(""); }}
-                />
-              </div>
-            ))}
-          </div> */}
-
-          {/* Dates */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-            {[["dateDebut", "Date de début"], ["dateFin", "Date de fin"]].map(([key, lbl]) => (
-              <div key={key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <label style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4 }}>
+              <div key={key} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <label style={{ fontSize: "0.7rem", fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>
                   {lbl}
                 </label>
                 <input
                   style={{
                     ...inp,
-                    borderColor: isDatePasse(form[key]) ? "#fca5a5" : "#e2e8f0",
+                    borderColor: isDatePasse(form[key]) ? "#fca5a5" : T.border,
                     background:  isDatePasse(form[key]) ? "#fef2f2" : "#f8fafc",
                   }}
                   type="date" value={form[key]}
                   onChange={e => { setForm(f => ({ ...f, [key]: e.target.value })); setError(""); }}
                 />
                 {key === "dateDebut" && isDatePasse(form.dateDebut) && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#dc2626", fontWeight: 600, marginTop: 3 }}>
-                    <span>📅</span> Date dans le passé
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#dc2626", fontWeight: 600, marginTop: 2 }}>
+                    <CalendarOff size={12} /> Date dans le passé
                   </div>
                 )}
                 {key === "dateFin" && isDatePasse(form.dateFin) && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#dc2626", fontWeight: 600, marginTop: 3 }}>
-                    <span>📅</span> Date dans le passé
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#dc2626", fontWeight: 600, marginTop: 2 }}>
+                    <CalendarOff size={12} /> Date dans le passé
                   </div>
                 )}
                 {key === "dateFin" && isDateFinInvalide(form.dateDebut, form.dateFin) && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#dc2626", fontWeight: 600, marginTop: 3 }}>
-                    <span>📅</span> Doit être après la date de début
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#dc2626", fontWeight: 600, marginTop: 2 }}>
+                    <CalendarOff size={12} /> Doit être après la date de début
                   </div>
                 )}
               </div>
@@ -508,21 +497,26 @@ console.log("conflit:", congeEnConflit)
 
           {/* Résumé durée */}
           {form.dateDebut && form.dateFin && new Date(form.dateFin) >= new Date(form.dateDebut) && (
-            <div style={{ fontSize: "0.78rem", color: "#6366f1", marginBottom: 14, fontWeight: 600 }}>
-              📅 {formatDate(form.dateDebut)} → {formatDate(form.dateFin)} · {nbJours(form.dateDebut, form.dateFin)} jour(s)
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8,
+              padding: "10px 13px", borderRadius: 10, marginBottom: 16,
+              background: T.accentSoft, fontSize: "0.79rem", color: T.accent, fontWeight: 600,
+            }}>
+              <CalendarDays size={14} />
+              {formatDate(form.dateDebut)} → {formatDate(form.dateFin)} · {nbJours(form.dateDebut, form.dateFin)} jour(s)
             </div>
           )}
 
           {/* ── Alerte chevauchement en temps réel ── */}
           {conflit && (
             <div style={{
-              padding: "10px 12px", borderRadius: 8, marginBottom: 14,
+              padding: "11px 13px", borderRadius: 10, marginBottom: 16,
               background: "#fef2f2", border: "1.5px solid #fca5a5",
-              display: "flex", alignItems: "flex-start", gap: 8,
+              display: "flex", alignItems: "flex-start", gap: 9,
             }}>
-              <span style={{ fontSize: 16, flexShrink: 0 }}>🚫</span>
+              <AlertTriangle size={16} color="#dc2626" style={{ flexShrink: 0, marginTop: 1 }} />
               <div>
-                <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#dc2626" }}>
+                <div style={{ fontSize: "0.79rem", fontWeight: 700, color: "#dc2626" }}>
                   {conflit.statut === "en_attente"
                     ? "Vous avez déjà une demande en attente sur cette période"
                     : "Vous avez déjà un congé accordé sur cette période"}
@@ -540,10 +534,11 @@ console.log("conflit:", congeEnConflit)
           {/* Erreur générique */}
           {error && !conflit && (
             <div style={{
-              fontSize: "0.78rem", color: "#dc2626", marginBottom: 14, fontWeight: 600,
-              background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px",
+              display: "flex", alignItems: "center", gap: 7,
+              fontSize: "0.78rem", color: "#dc2626", marginBottom: 16, fontWeight: 600,
+              background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 9, padding: "9px 13px",
             }}>
-              ⚠️ {error}
+              <AlertTriangle size={14} style={{ flexShrink: 0 }} /> {error}
             </div>
           )}
 
@@ -551,10 +546,10 @@ console.log("conflit:", congeEnConflit)
             <button
               onClick={() => { setShowForm(false); setError(""); setConflit(null); }}
               style={{
-                flex: 1, padding: "10px", borderRadius: 9,
-                border: "1px solid #e2e8f0", background: "white",
-                color: "#64748b", fontSize: "0.84rem", cursor: "pointer",
-                fontFamily: "'Poppins', sans-serif",
+                flex: 1, padding: "11px", borderRadius: 11,
+                border: `1.5px solid ${T.border}`, background: "white",
+                color: T.muted, fontSize: "0.84rem", cursor: "pointer",
+                fontFamily: "'Poppins', sans-serif", fontWeight: 600,
               }}
             >
               Annuler
@@ -563,12 +558,13 @@ console.log("conflit:", congeEnConflit)
               onClick={handleSubmit}
               disabled={submitting || formBloque}
               style={{
-                flex: 2, padding: "10px", borderRadius: 9, border: "none",
-                background: (submitting || formBloque) ? "#94a3b8" : "#f97316",
+                flex: 2, padding: "11px", borderRadius: 11, border: "none",
+                background: (submitting || formBloque) ? "#cbd5e1" : T.accent,
                 color: "white", fontSize: "0.84rem", fontWeight: 700,
                 cursor: (submitting || formBloque) ? "not-allowed" : "pointer",
                 fontFamily: "'Poppins', sans-serif",
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                boxShadow: (submitting || formBloque) ? "none" : "0 6px 16px rgba(43,83,126,0.28)",
                 transition: "background 0.2s",
               }}
             >
@@ -579,21 +575,20 @@ console.log("conflit:", congeEnConflit)
       )}
 
       {/* ── Filtres ── */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {[
-          ["tous", "Tous"],
-          ["en_attente", "En attente"],
-          ["validee", "Validés"],
-          ["refusee", "Refusés"],
-        ].map(([key, lbl]) => (
+      <div style={{
+        display: "inline-flex", gap: 4, marginBottom: 18,
+        background: T.surface, border: `1px solid ${T.border}`,
+        borderRadius: 12, padding: 4,
+      }}>
+        {FILTERS.map(([key, lbl]) => (
           <button
             key={key}
             onClick={() => setFilter(key)}
             style={{
-              padding: "6px 14px", borderRadius: 20, fontSize: "0.78rem",
-              border: `1.5px solid ${filter === key ? "#f97316" : "#e2e8f0"}`,
-              background: filter === key ? "#fff7ed" : "white",
-              color: filter === key ? "#ea580c" : "#64748b",
+              padding: "7px 15px", borderRadius: 9, fontSize: "0.78rem",
+              border: "none",
+              background: filter === key ? T.accent : "transparent",
+              color: filter === key ? "#fff" : T.muted,
               fontWeight: filter === key ? 700 : 500,
               cursor: "pointer", fontFamily: "'Poppins', sans-serif",
               transition: "all 0.15s",
@@ -606,13 +601,13 @@ console.log("conflit:", congeEnConflit)
 
       {/* ── Liste des congés ── */}
       {isLoading ? (
-        <div style={{ textAlign: "center", padding: "50px 0", color: "#94a3b8", fontSize: "0.85rem" }}>
+        <div style={{ textAlign: "center", padding: "50px 0", color: T.faint, fontSize: "0.85rem" }}>
           Chargement…
         </div>
       ) : filtered.length === 0 ? (
         <div style={{
-          textAlign: "center", padding: "50px 20px", borderRadius: 16,
-          background: "#f8fafc", border: "1.5px dashed #e2e8f0",
+          textAlign: "center", padding: "50px 20px", borderRadius: 18,
+          background: T.surface, border: `1.5px dashed ${T.border}`,
         }}>
           <div style={{
             width: 60, height: 60, borderRadius: "50%", background: "#fff7ed",
@@ -624,7 +619,7 @@ console.log("conflit:", congeEnConflit)
           <div style={{ fontSize: "0.92rem", fontWeight: 700, color: "#475569" }}>
             {filter === "tous" ? "Aucun congé pour le moment" : "Aucun résultat pour ce filtre"}
           </div>
-          <div style={{ fontSize: "0.8rem", color: "#94a3b8", marginTop: 5 }}>
+          <div style={{ fontSize: "0.8rem", color: T.faint, marginTop: 5 }}>
             {filter === "tous" && "Cliquez sur \"Demander un congé\" pour faire votre première demande."}
           </div>
         </div>
