@@ -10,6 +10,7 @@
   forgotPasswordVerifyOtp: (data) => ipcRenderer.invoke("forgot-password-verify-otp", data),
   forgotPasswordReset:     (data) => ipcRenderer.invoke("forgot-password-reset",       data),
   addCandidat:     (data)   => ipcRenderer.invoke('add-candidat', data),
+  reinscrireCandidat: (data) => ipcRenderer.invoke('reinscrire-candidat', data),
   updateCandidat:  (data)   => ipcRenderer.invoke('update-candidat', data),
   deleteCandidat:  (id)     => ipcRenderer.invoke('delete-candidat', id),
   // Moniteurs
@@ -122,5 +123,7 @@ deleteCandidatExterne: (idCandidat) => ipcRenderer.invoke("delete-candidat-exter
 addCandidatAuditeurLibre: (data) => ipcRenderer.invoke('add-candidat-auditeur-libre', data),
 getAuditeursLibres: () => ipcRenderer.invoke('get-auditeurs-libres'),
 convertirAuditeurLibre: (idCandidat) => ipcRenderer.invoke('convertir-auditeur-libre', idCandidat),
+getProgressionCode: () => ipcRenderer.invoke('get-progression-code'),
+getProgressionCodeMoniteur: (moniteurId) => ipcRenderer.invoke('get-progression-code-moniteur', moniteurId),
 });
 

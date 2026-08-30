@@ -8,7 +8,7 @@ import {
   GraduationCap, Plus, Users, Clock,
   Trash2, PenLine, UserPlus,
   Search, RotateCcw, AlertCircle, CheckCircle2, XCircle,
-  CalendarDays, Repeat, Lock,UserCog,
+  CalendarDays, Repeat, Lock, UserCog, BarChart3, ListVideo,
 } from "lucide-react";
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -491,7 +491,6 @@ function ManageCoursModal({ seance, onClose, onRefreshList, canMarkPresence, isO
   const [replanifId, setReplanifId] = useState(null);
   const [seancesDispo, setSeancesDispo] = useState([]);
   const [toast, setToast] = useState(null);
-  // ── Ajout d'une personne "auditeur libre" (uniquement sur mes propres cours) ──
   const [showAddLibre, setShowAddLibre] = useState(false);
   const [libreForm, setLibreForm] = useState({ nom: "", prenom: "", telephone: "", dateNaissance: "", sexe: "M" });
   const [savingLibre, setSavingLibre] = useState(false);
@@ -565,7 +564,8 @@ function ManageCoursModal({ seance, onClose, onRefreshList, canMarkPresence, isO
       showToast("Candidat désinscrit.");
     } catch { showToast("Erreur lors de la désinscription.", "error"); }
   };
-    const resetLibreForm = () => {
+
+  const resetLibreForm = () => {
     setShowAddLibre(false);
     setLibreForm({ nom: "", prenom: "", telephone: "", dateNaissance: "", sexe: "M" });
     setErrorLibre("");
@@ -627,6 +627,7 @@ function ManageCoursModal({ seance, onClose, onRefreshList, canMarkPresence, isO
     try {
       await window.electron.updatePresenceCode(idCandidat, seance.id, statut, currentUser?.id);
       await loadInscrits();
+      onRefreshList();
       showToast("Présence mise à jour.");
       if (statut === "present") {
         generateExamens?.();
@@ -689,7 +690,7 @@ function ManageCoursModal({ seance, onClose, onRefreshList, canMarkPresence, isO
             </div>
           )}
 
-                  {inscrits.map(c => {
+          {inscrits.map(c => {
             const meta = STATUT_PRESENCE_META[c.statutPresence];
             const estAuditeurLibre = !!c.estAuditeurLibre;
             return (
@@ -808,7 +809,7 @@ function ManageCoursModal({ seance, onClose, onRefreshList, canMarkPresence, isO
                   Cette séance est déjà passée — inscription impossible.
                 </span>
               </div>
-                      ) : showAdd ? (
+            ) : showAdd ? (
               <div style={{ border:"1px dashed #C4B5FD", borderRadius:12, padding:12, background:"#FAF5FF" }}>
                 <div style={{ position:"relative", marginBottom:8 }}>
                   <Search size={13} color="#94a3b8" style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)" }}/>
@@ -837,7 +838,6 @@ function ManageCoursModal({ seance, onClose, onRefreshList, canMarkPresence, isO
                   )}
                 </div>
 
-                {/* ── Ajout d'un auditeur libre — uniquement sur mes propres cours ── */}
                 {isOwn && (
                   <div style={{ borderTop:"1px solid #E9D5FF", marginTop:10, paddingTop:10 }}>
                     {showAddLibre ? (
@@ -990,6 +990,62 @@ function CoursCard({ seance, onManage, onEdit, onDelete, canManage, isOwn }) {
   );
 }
 
+// ── LIGNE PROGRESSION CANDIDAT ────────────────────────────────────────────────
+function ProgressionRow({ candidat }) {
+  const {
+    nom, prenom, telephone, categoriePermis, estAuditeurLibre,
+    nbPresent, nbAbsentJustifie, nbAbsentNonJustifie, nbTotalInscrit, derniereSeance,
+  } = candidat;
+
+  return (
+    <div style={{
+      display:"flex", alignItems:"center", gap:14, padding:"12px 16px",
+      border:"1px solid #e2e8f0", borderRadius:12, background:"#fff",
+    }}>
+      <div style={{ width:38, height:38, borderRadius:"50%", background:"#EEEDFE", color:"#5B21B6", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"0.8rem", fontWeight:700, flexShrink:0 }}>
+        {(prenom?.[0]||"")+(nom?.[0]||"")}
+      </div>
+
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:7, flexWrap:"wrap" }}>
+          <span style={{ fontSize:"0.86rem", fontWeight:700, color:"#1e293b" }}>{cap(`${nom} ${prenom}`)}</span>
+          <span style={{ fontSize:"0.65rem", fontWeight:700, padding:"1px 8px", borderRadius:20, background:"#F3E8FF", color:"#5B21B6", border:"1px solid #C4B5FD" }}>
+            {categoriePermis}
+          </span>
+          {!!estAuditeurLibre && (
+            <span style={{ fontSize:"0.62rem", fontWeight:700, padding:"1px 8px", borderRadius:20, background:"#FFF7ED", color:"#c2410c", border:"1px solid #fdba74" }}>
+              Auditeur libre
+            </span>
+          )}
+        </div>
+        <div style={{ display:"flex", gap:12, fontSize:"0.72rem", color:"#94a3b8", marginTop:3, flexWrap:"wrap" }}>
+          {telephone && <span>📞 {telephone}</span>}
+          <span>Dernier cours : {derniereSeance ? formatDateCourt(derniereSeance) : "—"}</span>
+        </div>
+      </div>
+
+      <div style={{ display:"flex", gap:8, flexShrink:0 }}>
+        <div style={{ textAlign:"center", minWidth:56, padding:"6px 10px", borderRadius:9, background:"#f0fdf4", border:"1px solid #86efac" }}>
+          <div style={{ fontSize:"1rem", fontWeight:800, color:"#16a34a", lineHeight:1 }}>{nbPresent}</div>
+          <div style={{ fontSize:"0.58rem", fontWeight:700, color:"#16a34a", textTransform:"uppercase", marginTop:2 }}>Présent</div>
+        </div>
+        <div style={{ textAlign:"center", minWidth:56, padding:"6px 10px", borderRadius:9, background:"#fffbeb", border:"1px solid #fcd34d" }}>
+          <div style={{ fontSize:"1rem", fontWeight:800, color:"#d97706", lineHeight:1 }}>{nbAbsentJustifie}</div>
+          <div style={{ fontSize:"0.58rem", fontWeight:700, color:"#d97706", textTransform:"uppercase", marginTop:2 }}>Abs. just.</div>
+        </div>
+        <div style={{ textAlign:"center", minWidth:56, padding:"6px 10px", borderRadius:9, background:"#fef2f2", border:"1px solid #fca5a5" }}>
+          <div style={{ fontSize:"1rem", fontWeight:800, color:"#dc2626", lineHeight:1 }}>{nbAbsentNonJustifie}</div>
+          <div style={{ fontSize:"0.58rem", fontWeight:700, color:"#dc2626", textTransform:"uppercase", marginTop:2 }}>Abs. non j.</div>
+        </div>
+        <div style={{ textAlign:"center", minWidth:56, padding:"6px 10px", borderRadius:9, background:"#f8fafc", border:"1px solid #e2e8f0" }}>
+          <div style={{ fontSize:"1rem", fontWeight:800, color:"#64748b", lineHeight:1 }}>{nbTotalInscrit}</div>
+          <div style={{ fontSize:"0.58rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", marginTop:2 }}>Inscrit</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────────
 export default function CoursCodeMoniteur() {
   const location = useLocation();
@@ -1014,6 +1070,15 @@ export default function CoursCodeMoniteur() {
   const [search, setSearch]       = useState("");
   const [filterCat, setFilterCat] = useState("");
 
+  // ── Vue "Progression par candidat" ────────────────────────────────────────
+  // Si CAN_VIEW_ALL_COURS_CODE est true → tous les candidats de l'auto-école
+  // (comme côté admin). Sinon → uniquement les candidats de MES cours.
+  const [activeView, setActiveView] = useState("cours"); // "cours" | "progression"
+  const [progression, setProgression] = useState([]);
+  const [loadingProgression, setLoadingProgression] = useState(false);
+  const [searchProgression, setSearchProgression] = useState("");
+  const [filterCatProgression, setFilterCatProgression] = useState("");
+
   const showToast = (message, type="success") => setToast({ message, type });
 
   const loadSeances = useCallback(async () => {
@@ -1027,9 +1092,36 @@ export default function CoursCodeMoniteur() {
     finally { setLoading(false); }
   }, []);
 
+  const loadProgression = useCallback(async () => {
+    if (!currentUserId) return;
+    setLoadingProgression(true);
+    try {
+      if (CAN_VIEW_ALL_COURS_CODE) {
+        // Permission globale → tous les candidats de l'auto-école
+        if (window.electron?.getProgressionCode) {
+          const rows = await window.electron.getProgressionCode();
+          setProgression(Array.isArray(rows) ? rows : []);
+        }
+      } else {
+        // Sinon → uniquement les candidats de mes propres cours
+        if (window.electron?.getProgressionCodeMoniteur) {
+          const rows = await window.electron.getProgressionCodeMoniteur(currentUserId);
+          setProgression(Array.isArray(rows) ? rows : []);
+        }
+      }
+    } catch (e) { console.error(e); }
+    finally { setLoadingProgression(false); }
+  }, [currentUserId, CAN_VIEW_ALL_COURS_CODE]);
+
+  const refreshAll = useCallback(() => {
+    loadSeances();
+    loadProgression();
+  }, [loadSeances, loadProgression]);
+
   useEffect(() => {
     loadSeances();
-  }, [loadSeances]);
+    loadProgression();
+  }, [loadSeances, loadProgression]);
 
   useEffect(() => {
     if (location.state?.prefillCandidatId) {
@@ -1071,6 +1163,7 @@ export default function CoursCodeMoniteur() {
     try {
       await window.electron.deleteSeanceCode(id);
       await loadSeances();
+      await loadProgression();
       showToast("Cours supprimé.");
     } catch { showToast("Erreur lors de la suppression.", "error"); }
   };
@@ -1089,7 +1182,6 @@ export default function CoursCodeMoniteur() {
       && (!filterCat || s.categoriePermis === filterCat);
   }).sort((a, b) => (a.date + a.heure).localeCompare(b.date + b.heure));
 
-  // ── Séparation mes cours / autres moniteurs ──
   const mesCours = filtered.filter(s => String(s.moniteur_id) === String(currentUserId));
   const autresCours = CAN_VIEW_ALL_COURS_CODE
     ? filtered.filter(s => String(s.moniteur_id) !== String(currentUserId))
@@ -1101,6 +1193,15 @@ export default function CoursCodeMoniteur() {
   const autresUpcoming = autresCours.filter(s => new Date(s.date + "T" + (s.heure||"23:59")) >= new Date());
 
   const categoriesFiltre = [...new Set(seances.map(s => s.categoriePermis).filter(Boolean))];
+
+  const progressionFiltree = progression.filter(c => {
+    const q = searchProgression.toLowerCase().trim();
+    const matchesSearch = !q
+      || `${c.nom} ${c.prenom}`.toLowerCase().includes(q)
+      || (c.telephone || "").toLowerCase().includes(q);
+    const matchesCat = !filterCatProgression || c.categoriePermis === filterCatProgression;
+    return matchesSearch && matchesCat;
+  });
 
   return (
     <>
@@ -1119,120 +1220,209 @@ export default function CoursCodeMoniteur() {
                 {CAN_VIEW_ALL_COURS_CODE ? "Vos cours et ceux des autres moniteurs (lecture seule)" : "Vos cours collectifs de code"}
               </div>
             </div>
-            {CAN_MANAGE_COURS_CODE ? (
-              <button onClick={() => { setEditing(null); setShowCreate(true); }} style={{
-                marginLeft:"auto", padding:"10px 18px", borderRadius:10, background:"#7C3AED", border:"none",
-                color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", fontWeight:600, cursor:"pointer",
-                display:"flex", alignItems:"center", gap:8, boxShadow:"0 4px 14px rgba(124,58,237,0.3)",
-              }}>
-                <Plus size={16}/> Nouveau cours
-              </button>
-            ) : (
-              <LockedTooltip>
-                <button disabled style={{
-                  marginLeft:"auto", padding:"10px 18px", borderRadius:10, background:"#e2e8f0", border:"1px solid #cbd5e1",
-                  color:"#94a3b8", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", fontWeight:600, cursor:"not-allowed",
-                  display:"flex", alignItems:"center", gap:8,
+            {activeView === "cours" && (
+              CAN_MANAGE_COURS_CODE ? (
+                <button onClick={() => { setEditing(null); setShowCreate(true); }} style={{
+                  marginLeft:"auto", padding:"10px 18px", borderRadius:10, background:"#7C3AED", border:"none",
+                  color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", fontWeight:600, cursor:"pointer",
+                  display:"flex", alignItems:"center", gap:8, boxShadow:"0 4px 14px rgba(124,58,237,0.3)",
                 }}>
-                  <Lock size={14}/> Nouveau cours
+                  <Plus size={16}/> Nouveau cours
                 </button>
-              </LockedTooltip>
+              ) : (
+                <LockedTooltip>
+                  <button disabled style={{
+                    marginLeft:"auto", padding:"10px 18px", borderRadius:10, background:"#e2e8f0", border:"1px solid #cbd5e1",
+                    color:"#94a3b8", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", fontWeight:600, cursor:"not-allowed",
+                    display:"flex", alignItems:"center", gap:8,
+                  }}>
+                    <Lock size={14}/> Nouveau cours
+                  </button>
+                </LockedTooltip>
+              )
             )}
           </div>
         </div>
 
-        {/* FILTRES */}
-        <div style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 28px", borderBottom:"1px solid #e2e8f0", background:"#fff", flexShrink:0, flexWrap:"wrap" }}>
-          <div style={{ position:"relative", flex:1, minWidth:200, maxWidth:280 }}>
-            <Search size={14} color="#94a3b8" style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)" }}/>
-            <input style={{ width:"100%", boxSizing:"border-box", padding:"8px 12px 8px 32px", background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:8, fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", outline:"none" }}
-              type="text" placeholder="Rechercher un moniteur..." value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
-          <span style={{ fontSize:"0.75rem", color:"#94a3b8", fontWeight:500 }}>Catégorie :</span>
-          <select style={{ padding:"7px 10px", borderRadius:8, background:"#f8fafc", border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", cursor:"pointer" }}
-            value={filterCat} onChange={e => setFilterCat(e.target.value)}>
-            <option value="">Toutes</option>
-            {categoriesFiltre.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <div style={{ marginLeft:"auto", fontSize:"0.72rem", color:"#94a3b8", background:"#f8fafc", border:"1px solid #e2e8f0", padding:"3px 12px", borderRadius:20 }}>
-            {mesCours.length} de mes cours
-          </div>
+        {/* ── SEGMENTED CONTROL : Cours / Progression ── */}
+        <div style={{ display:"flex", gap:6, padding:"12px 28px 0", background:"#fff", borderBottom:"1px solid #e2e8f0", flexShrink:0 }}>
+          {[
+            { key:"cours",       label:"Cours planifiés", Icon: ListVideo, count: mesCours.length + autresCours.length },
+            { key:"progression", label: CAN_VIEW_ALL_COURS_CODE ? "Progression par candidat" : "Mes candidats — progression", Icon: BarChart3, count: progression.length },
+          ].map(({ key, label, Icon, count }) => {
+            const active = activeView === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setActiveView(key)}
+                style={{
+                  display:"flex", alignItems:"center", gap:7,
+                  padding:"10px 16px", borderRadius:"10px 10px 0 0", cursor:"pointer",
+                  border:"none", borderBottom: active ? "2.5px solid #7C3AED" : "2.5px solid transparent",
+                  background: active ? "#F5F3FF" : "transparent",
+                  color: active ? "#5B21B6" : "#64748b",
+                  fontFamily:"'Poppins',sans-serif", fontSize:"0.82rem", fontWeight:700,
+                  transition:"all 0.15s",
+                }}
+              >
+                <Icon size={14}/> {label}
+                <span style={{
+                  background: active ? "#7C3AED" : "#e2e8f0",
+                  color: active ? "#fff" : "#64748b",
+                  borderRadius:20, padding:"1px 8px", fontSize:"0.68rem", fontWeight:700,
+                }}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* LISTE */}
-        <div style={{ flex:1, overflowY:"auto", padding:"20px 28px", position:"relative" }}>
-          {loading && (
-            <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8" }}>
-              <div style={{ width:32, height:32, margin:"0 auto 10px", borderRadius:"50%", border:"3px solid #e2e8f0", borderTop:"3px solid #7C3AED", animation:"spin 0.75s linear infinite" }}/>
-              Chargement des cours...
-              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        {activeView === "cours" ? (
+          <>
+            {/* FILTRES */}
+            <div style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 28px", borderBottom:"1px solid #e2e8f0", background:"#fff", flexShrink:0, flexWrap:"wrap" }}>
+              <div style={{ position:"relative", flex:1, minWidth:200, maxWidth:280 }}>
+                <Search size={14} color="#94a3b8" style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)" }}/>
+                <input style={{ width:"100%", boxSizing:"border-box", padding:"8px 12px 8px 32px", background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:8, fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", outline:"none" }}
+                  type="text" placeholder="Rechercher un moniteur..." value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
+              <span style={{ fontSize:"0.75rem", color:"#94a3b8", fontWeight:500 }}>Catégorie :</span>
+              <select style={{ padding:"7px 10px", borderRadius:8, background:"#f8fafc", border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", cursor:"pointer" }}
+                value={filterCat} onChange={e => setFilterCat(e.target.value)}>
+                <option value="">Toutes</option>
+                {categoriesFiltre.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <div style={{ marginLeft:"auto", fontSize:"0.72rem", color:"#94a3b8", background:"#f8fafc", border:"1px solid #e2e8f0", padding:"3px 12px", borderRadius:20 }}>
+                {mesCours.length} de mes cours
+              </div>
             </div>
-          )}
 
-          {!loading && mesCours.length === 0 && autresCours.length === 0 && (
-            <div style={{ textAlign:"center", padding:"50px 0", color:"#94a3b8" }}>
-              <GraduationCap size={40} style={{ opacity:0.3, marginBottom:10 }}/>
-              <div style={{ fontSize:"0.9rem" }}>Aucun cours de code programmé.</div>
-            </div>
-          )}
+            {/* LISTE */}
+            <div style={{ flex:1, overflowY:"auto", padding:"20px 28px", position:"relative" }}>
+              {loading && (
+                <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8" }}>
+                  <div style={{ width:32, height:32, margin:"0 auto 10px", borderRadius:"50%", border:"3px solid #e2e8f0", borderTop:"3px solid #7C3AED", animation:"spin 0.75s linear infinite" }}/>
+                  Chargement des cours...
+                  <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+                </div>
+              )}
 
-          {!loading && mesUpcoming.length > 0 && (
-            <div style={{ marginBottom:24 }}>
-              <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>
-                Mes cours à venir ({mesUpcoming.length})
-              </div>
-              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                {mesUpcoming.map(s => (
-                  <CoursCard key={s.id} seance={s}
-                    isOwn={true}
-                    canManage={CAN_MANAGE_COURS_CODE}
-                    onManage={setManaging}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
+              {!loading && mesCours.length === 0 && autresCours.length === 0 && (
+                <div style={{ textAlign:"center", padding:"50px 0", color:"#94a3b8" }}>
+                  <GraduationCap size={40} style={{ opacity:0.3, marginBottom:10 }}/>
+                  <div style={{ fontSize:"0.9rem" }}>Aucun cours de code programmé.</div>
+                </div>
+              )}
 
-          {!loading && mesPast.length > 0 && (
-            <div style={{ marginBottom:24 }}>
-              <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>
-                Mes cours passés ({mesPast.length})
-              </div>
-              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                {mesPast.map(s => (
-                  <CoursCard key={s.id} seance={s}
-                    isOwn={true}
-                    canManage={CAN_MANAGE_COURS_CODE}
-                    onManage={setManaging}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
+              {!loading && mesUpcoming.length > 0 && (
+                <div style={{ marginBottom:24 }}>
+                  <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>
+                    Mes cours à venir ({mesUpcoming.length})
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                    {mesUpcoming.map(s => (
+                      <CoursCard key={s.id} seance={s}
+                        isOwn={true}
+                        canManage={CAN_MANAGE_COURS_CODE}
+                        onManage={setManaging}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
 
-          {!loading && CAN_VIEW_ALL_COURS_CODE && autresUpcoming.length > 0 && (
-            <div>
-              <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>
-                <Lock size={11}/> Autres moniteurs ({autresUpcoming.length})
+              {!loading && mesPast.length > 0 && (
+                <div style={{ marginBottom:24 }}>
+                  <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>
+                    Mes cours passés ({mesPast.length})
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                    {mesPast.map(s => (
+                      <CoursCard key={s.id} seance={s}
+                        isOwn={true}
+                        canManage={CAN_MANAGE_COURS_CODE}
+                        onManage={setManaging}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!loading && CAN_VIEW_ALL_COURS_CODE && autresUpcoming.length > 0 && (
+                <div>
+                  <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>
+                    <Lock size={11}/> Autres moniteurs ({autresUpcoming.length})
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                    {autresUpcoming.map(s => (
+                      <CoursCard key={s.id} seance={s}
+                        isOwn={false}
+                        canManage={false}
+                        onManage={setManaging}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            {/* FILTRES — vue Progression */}
+            <div style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 28px", borderBottom:"1px solid #e2e8f0", background:"#fff", flexShrink:0, flexWrap:"wrap" }}>
+              <div style={{ position:"relative", flex:1, minWidth:200, maxWidth:280 }}>
+                <Search size={14} color="#94a3b8" style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)" }}/>
+                <input style={{ width:"100%", boxSizing:"border-box", padding:"8px 12px 8px 32px", background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:8, fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", outline:"none" }}
+                  type="text" placeholder="Rechercher un candidat (nom, téléphone)..." value={searchProgression} onChange={e => setSearchProgression(e.target.value)} />
               </div>
-              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                {autresUpcoming.map(s => (
-                  <CoursCard key={s.id} seance={s}
-                    isOwn={false}
-                    canManage={false}
-                    onManage={setManaging}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                  />
-                ))}
+              <span style={{ fontSize:"0.75rem", color:"#94a3b8", fontWeight:500 }}>Catégorie :</span>
+              <select style={{ padding:"7px 10px", borderRadius:8, background:"#f8fafc", border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", cursor:"pointer" }}
+                value={filterCatProgression} onChange={e => setFilterCatProgression(e.target.value)}>
+                <option value="">Toutes</option>
+                {CATEGORIES_PERMIS_ALL.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <div style={{ marginLeft:"auto", fontSize:"0.72rem", color:"#94a3b8", background:"#f8fafc", border:"1px solid #e2e8f0", padding:"3px 12px", borderRadius:20 }}>
+                {progressionFiltree.length} candidat{progressionFiltree.length !== 1 ? "s" : ""} · trié par nb. de présences
               </div>
             </div>
-          )}
-        </div>
+
+            {/* LISTE — vue Progression */}
+            <div style={{ flex:1, overflowY:"auto", padding:"20px 28px" }}>
+              {loadingProgression && (
+                <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8" }}>
+                  <div style={{ width:32, height:32, margin:"0 auto 10px", borderRadius:"50%", border:"3px solid #e2e8f0", borderTop:"3px solid #7C3AED", animation:"spin 0.75s linear infinite" }}/>
+                  Chargement de la progression...
+                </div>
+              )}
+
+              {!loadingProgression && progressionFiltree.length === 0 && (
+                <div style={{ textAlign:"center", padding:"50px 0", color:"#94a3b8" }}>
+                  <BarChart3 size={40} style={{ opacity:0.3, marginBottom:10 }}/>
+                  <div style={{ fontSize:"0.9rem" }}>
+                    {CAN_VIEW_ALL_COURS_CODE
+                      ? "Aucun candidat inscrit à un cours de code pour l'instant."
+                      : "Aucun candidat inscrit à l'un de vos cours de code pour l'instant."}
+                  </div>
+                </div>
+              )}
+
+              {!loadingProgression && progressionFiltree.length > 0 && (
+                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                  {progressionFiltree.map(c => (
+                    <ProgressionRow key={c.idCandidat} candidat={c} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {showCreate && (
@@ -1249,7 +1439,7 @@ export default function CoursCodeMoniteur() {
         <ManageCoursModal
           seance={managing}
           onClose={() => setManaging(null)}
-          onRefreshList={loadSeances}
+          onRefreshList={refreshAll}
           isOwn={String(managing.moniteur_id) === String(currentUserId)}
           canMarkPresence={CAN_MARK_PRESENCE_CODE && String(managing.moniteur_id) === String(currentUserId)}
         />

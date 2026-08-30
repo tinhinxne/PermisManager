@@ -592,6 +592,85 @@ ipcMain.handle("add-candidat", async (event, data) => {
     });
   });
 });
+ipcMain.handle("reinscrire-candidat", async (event, data) => {
+  const {
+    idCandidat,
+    nom, prenom, nom_ar, prenom_ar,
+    telephone, date_naissance, date_inscription,
+    sexe, email, categoriePermis,
+  } = data;
+
+  if (!idCandidat) {
+    return { success: false, message: "idCandidat manquant." };
+  }
+
+  const categorie = (categoriePermis && categoriePermis.trim() !== "")
+    ? categoriePermis.trim().toUpperCase()
+    : "B";
+
+  return new Promise((resolve) => {
+    // 1) Vérifie que le candidat existe bien (sécurité)
+    db.query(
+      "SELECT idCandidat FROM Candidat WHERE idCandidat = ? AND deleted_at IS NULL",
+      [idCandidat],
+      (errCheck, resCheck) => {
+        if (errCheck) {
+          console.error("reinscrire-candidat check error:", errCheck.message);
+          return resolve({ success: false, message: "Erreur base de données." });
+        }
+        if (!resCheck.length) {
+          return resolve({ success: false, message: "Candidat introuvable." });
+        }
+
+        // 2) UPDATE sur le MÊME idCandidat → même matricule, même historique conservés.
+        //    Jamais d'INSERT ici, sinon on créerait une nouvelle personne.
+        const sqlUpdate = `
+          UPDATE Candidat
+          SET nom = ?, prenom = ?, nom_ar = ?, prenom_ar = ?,
+              telephone = ?, date_naissance = ?,
+              date_inscription = COALESCE(?, CURDATE()),
+              sexe = ?, email = ?, categoriePermis = ?, statut = 'actif'
+          WHERE idCandidat = ?
+        `;
+        db.query(
+          sqlUpdate,
+          [
+            nom, prenom, nom_ar || null, prenom_ar || null,
+            telephone, date_naissance || null,
+            date_inscription || null,
+            sexe, email || null, categorie,
+            idCandidat,
+          ],
+          async (errUpdate) => {
+            if (errUpdate) {
+              console.error("reinscrire-candidat update error:", errUpdate.message);
+              return resolve({ success: false, message: "Erreur lors de la mise à jour." });
+            }
+
+            // 3) Ouvre un nouveau dossier de paiement pour cette nouvelle catégorie
+            //    (l'ancien dossier reste en base, donc l'historique de paiement de
+            //     la catégorie précédente n'est jamais perdu)
+            try {
+              const prixActuel = await getPrixFormationFromDB();
+              db.query(
+                `INSERT INTO Paiement (montantTotal, montantRestant, typePaiement, statutPaiement, idCandidat)
+                 VALUES (?, ?, 'tranche', 'en_cours', ?)`,
+                [prixActuel, prixActuel, idCandidat],
+                (errPaiement) => {
+                  if (errPaiement) console.error("Erreur création dossier Paiement (réinscription):", errPaiement.message);
+                  resolve({ success: true, idCandidat, categoriePermis: categorie });
+                }
+              );
+            } catch (e) {
+              console.error("Erreur récupération prix formation:", e.message);
+              resolve({ success: true, idCandidat, categoriePermis: categorie });
+            }
+          }
+        );
+      }
+    );
+  });
+});
 ipcMain.handle('add-candidat-auditeur-libre', async (event, data) => {
   const { nom, prenom, telephone, dateNaissance, sexe, categoriePermis } = data;
   if (!nom || !prenom || !dateNaissance || !sexe) return null;
@@ -635,6 +714,61 @@ ipcMain.handle('get-auditeurs-libres', async () => {
   });
 });
 
+ipcMain.handle('get-progression-code', async () => {
+  return new Promise((resolve) => {
+    const sql = `
+      SELECT
+        c.idCandidat,
+        c.nom,
+        c.prenom,
+        c.telephone,
+        c.categoriePermis,
+        c.est_auditeur_libre AS estAuditeurLibre,
+        COUNT(CASE WHEN csc.statutPresence = 'present' THEN 1 END)             AS nbPresent,
+        COUNT(CASE WHEN csc.statutPresence = 'absent_justifie' THEN 1 END)     AS nbAbsentJustifie,
+        COUNT(CASE WHEN csc.statutPresence = 'absent_non_justifie' THEN 1 END) AS nbAbsentNonJustifie,
+        COUNT(*) AS nbTotalInscrit,
+        MAX(sc.date) AS derniereSeance
+      FROM CandidatSeanceCode csc
+      JOIN Candidat c ON c.idCandidat = csc.idCandidat
+      JOIN SeanceCode sc ON sc.idSeanceCode = csc.idSeanceCode
+      WHERE c.deleted_at IS NULL
+      GROUP BY c.idCandidat
+      ORDER BY nbPresent DESC, c.nom ASC
+    `;
+    db.query(sql, (err, rows) => {
+      if (err) { console.error("get-progression-code:", err); return resolve([]); }
+      resolve(rows.map(r => ({
+        ...r,
+        derniereSeance: r.derniereSeance ? new Date(r.derniereSeance).toISOString().split("T")[0] : null,
+      })));
+    });
+  });
+});
+ipcMain.handle('get-progression-code-moniteur', async (event, moniteurId) => {
+  return new Promise((resolve) => {
+    const sql = `
+      SELECT
+        c.idCandidat, c.nom, c.prenom, c.telephone, c.categoriePermis,
+        c.est_auditeur_libre AS estAuditeurLibre,
+        COUNT(CASE WHEN csc.statutPresence = 'present' THEN 1 END)             AS nbPresent,
+        COUNT(CASE WHEN csc.statutPresence = 'absent_justifie' THEN 1 END)     AS nbAbsentJustifie,
+        COUNT(CASE WHEN csc.statutPresence = 'absent_non_justifie' THEN 1 END) AS nbAbsentNonJustifie,
+        COUNT(*) AS nbTotalInscrit,
+        MAX(sc.date) AS derniereSeance
+      FROM CandidatSeanceCode csc
+      JOIN Candidat c ON c.idCandidat = csc.idCandidat
+      JOIN SeanceCode sc ON sc.idSeanceCode = csc.idSeanceCode
+      WHERE c.deleted_at IS NULL AND sc.moniteur_id = ?
+      GROUP BY c.idCandidat
+      ORDER BY nbPresent DESC, c.nom ASC
+    `;
+    db.query(sql, [moniteurId], (err, rows) => {
+      if (err) { console.error("get-progression-code-moniteur:", err); return resolve([]); }
+      resolve(rows.map(r => ({ ...r, derniereSeance: r.derniereSeance ? new Date(r.derniereSeance).toISOString().split("T")[0] : null })));
+    });
+  });
+});
 ipcMain.handle('convertir-auditeur-libre', async (event, idCandidat) => {
   return new Promise((resolve) => {
     db.query(

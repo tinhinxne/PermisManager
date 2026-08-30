@@ -161,8 +161,9 @@ const css = `
     padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;
     letter-spacing: .4px; text-transform: uppercase;
   }
-  .mode-badge.edit { background: var(--orange-light); color: var(--orange); }
-  .mode-badge.add  { background: var(--blue-light);   color: var(--blue);   }
+  .mode-badge.edit  { background: var(--orange-light); color: var(--orange); }
+  .mode-badge.add   { background: var(--blue-light);   color: var(--blue);   }
+  .mode-badge.reins { background: var(--green-light);  color: #166534;       }
 
   .modal-close {
     width: 32px; height: 32px; border-radius: 8px;
@@ -225,6 +226,14 @@ const css = `
   .age-banner.ok      { background: var(--green-light);  color: #065f46;            border: 1px solid #6ee7b7; }
   .age-banner .banner-icon { font-size: 18px; flex-shrink: 0; }
 
+  .reins-banner {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 12px 14px; border-radius: 10px;
+    background: var(--green-light); border: 1px solid #6ee7b7;
+    font-size: 13px; font-weight: 500; line-height: 1.45; color: #065f46;
+  }
+  .reins-banner .banner-icon { font-size: 18px; flex-shrink: 0; }
+
   .upload-section { display: flex; flex-direction: column; gap: 10px; animation: fadeIn .2s ease; }
 
   .upload-zone {
@@ -282,10 +291,12 @@ const css = `
   .btn-save:hover:not(:disabled) { background: var(--blue-dark); }
   .btn-save.edit-mode            { background: var(--orange); }
   .btn-save.edit-mode:hover:not(:disabled) { background: var(--orange-dark); }
+  .btn-save.reins-mode           { background: #166534; }
+  .btn-save.reins-mode:hover:not(:disabled) { background: #14532d; }
   .btn-save:disabled { background: var(--gray-200); color: var(--gray-400); cursor: not-allowed; }
 `;
 
-export default function AddCandidatModal({ showModal, setShowModal, candidat = null, onSave }) {
+export default function AddCandidatModal({ showModal, setShowModal, candidat = null, isReinscription = false, onSave }) {
   const isEdit = !!candidat;
   const { inscriptionRules } = useRulesCtx();
 
@@ -402,33 +413,38 @@ const { blocked, needsParent, age } = evaluateRules(inscriptionRules, form.dob, 
       setParentAuthFile(null);
       setErrors({});
       setTouched({});
-      
+
       if (candidat) {
         // 🌟 SÉCURITÉ EXTRA : Récupération et conversion automatique en Majuscules
         const dbCategory = candidat.categoriePermis || candidat.categorie || candidat.categorie_permis || "";
-        
+        const today = new Date().toISOString().split("T")[0];
+
         setForm({
           nom:         candidat.nom         || "",
           prenom:      candidat.prenom      || "",
           nom_ar:      candidat.nom_ar      || "",
           prenom_ar:   candidat.prenom_ar   || "",
-          // dob:         candidat.date_naissance ? new Date(candidat.date_naissance).toISOString().split("T")[0] : "",
-          // inscription: candidat.date_inscription ? new Date(candidat.date_inscription).toISOString().split("T")[0] : "",
           dob: candidat.date_naissance
-  ? new Date(candidat.date_naissance).toLocaleDateString("en-CA") : "",
-inscription: candidat.date_inscription
-  ? new Date(candidat.date_inscription).toLocaleDateString("en-CA") : "",
+            ? new Date(candidat.date_naissance).toLocaleDateString("en-CA") : "",
+          // ── Réinscription : nouvelle date d'inscription = aujourd'hui,
+          // ── on ne réutilise pas l'ancienne date de la catégorie précédente.
+          inscription: isReinscription
+            ? today
+            : (candidat.date_inscription ? new Date(candidat.date_inscription).toLocaleDateString("en-CA") : ""),
           tel:         candidat.telephone    || "",
           sexe:        candidat.sexe === "M" ? "homme" : candidat.sexe === "F" ? "femme" : "",
           email:       candidat.email        || "",
-          categoriePermis: String(dbCategory).toUpperCase().trim(), 
+          // ── Réinscription : catégorie vidée pour forcer un choix explicite
+          // ── de la NOUVELLE catégorie (on ne veut pas présélectionner celle
+          // ── déjà obtenue par erreur).
+          categoriePermis: isReinscription ? "" : String(dbCategory).toUpperCase().trim(),
         });
       } else {
         const today = new Date().toISOString().split("T")[0];
         setForm({ nom: "", prenom: "", nom_ar: "", prenom_ar: "", dob: "", inscription: today, tel: "", sexe: "", email: "", categoriePermis: "" });
       }
     }
-  }, [candidat, showModal]);
+  }, [candidat, showModal, isReinscription]);
 
   const handleSave = () => {
     const allTouched = { nom: true, prenom: true, nom_ar: true, prenom_ar: true, dob: true, inscription: true, tel: true, sexe: true, email: true, parentFile: true, categoriePermis: true };
@@ -441,6 +457,7 @@ inscription: candidat.date_inscription
 
     onSave?.({
       idCandidat:            candidat?.idCandidat,
+      isReinscription:       isReinscription, // ← AJOUT indispensable : sans ça, Condidats.jsx appelle updateCandidat au lieu de reinscrireCandidat
       nom:                   form.nom,
       prenom:                form.prenom,
       nom_ar:                form.nom_ar    || null,
@@ -449,7 +466,7 @@ inscription: candidat.date_inscription
       date_naissance:        form.dob,
       date_inscription:      form.inscription,
       sexe:                  form.sexe === "homme" ? "M" : "F",
-      statut:                candidat?.statut || "actif",
+      statut:                isReinscription ? "actif" : (candidat?.statut || "actif"),
       categoriePermis:       String(form.categoriePermis).toUpperCase(), // Force Majuscules vers l'IpcRenderer !
       autorisationParentale: needsParent && parentAuthFile !== null,
       parentAuthFile:        parentAuthFile ?? null,
@@ -458,6 +475,16 @@ inscription: candidat.date_inscription
   };
 
   if (!showModal) return null;
+
+  const modeLabel = isReinscription ? "Réinscription" : isEdit ? "Dossier Unique" : "Nouveau";
+  const modeBadgeClass = isReinscription ? "reins" : isEdit ? "edit" : "add";
+  const titleLabel = isReinscription
+    ? "Réinscrire — nouvelle catégorie"
+    : isEdit ? "Fiche Candidat / Apprentissage" : "Ajouter un candidat";
+  const saveButtonClass = isReinscription ? "reins-mode" : isEdit ? "edit-mode" : "";
+  const saveButtonLabel = isReinscription
+    ? "Réinscrire le candidat"
+    : isEdit ? "Enregistrer l'apprentissage" : "Inscrire le candidat";
 
   return (
     <>
@@ -468,9 +495,9 @@ inscription: candidat.date_inscription
           {/* Header */}
           <div className="modal-header">
             <div className="modal-title-wrap">
-              <h2>{isEdit ? "Fiche Candidat / Apprentissage" : "Ajouter un candidat"}</h2>
-              <span className={`mode-badge ${isEdit ? "edit" : "add"}`}>
-                {isEdit ? "Dossier Unique" : "Nouveau"}
+              <h2>{titleLabel}</h2>
+              <span className={`mode-badge ${modeBadgeClass}`}>
+                {modeLabel}
               </span>
             </div>
             <button className="modal-close" onClick={() => setShowModal(false)}><IconX /></button>
@@ -479,6 +506,16 @@ inscription: candidat.date_inscription
 
           {/* Body */}
           <div className="modal-body">
+
+            {isReinscription && (
+              <div className="reins-banner">
+                <span className="banner-icon">🛡️</span>
+                <span>
+                  {form.nom || form.prenom ? `${form.prenom} ${form.nom}` : "Ce candidat"} possède déjà un dossier chez vous.
+                  Son matricule et l'historique de ses examens précédents sont conservés — choisissez simplement la nouvelle catégorie visée ci-dessous.
+                </span>
+              </div>
+            )}
 
             {/* Sélection de la catégorie de permis exacte */}
             <div className="field">
@@ -633,11 +670,11 @@ inscription: candidat.date_inscription
           <div className="modal-footer">
             <button className="btn-cancel" onClick={() => setShowModal(false)}>Annuler</button>
             <button
-              className={`btn-save ${isEdit ? "edit-mode" : ""}`}
+              className={`btn-save ${saveButtonClass}`}
               onClick={handleSave}
               disabled={!canSave}
             >
-              {isEdit ? "Enregistrer l'apprentissage" : "Inscrire le candidat"}
+              {saveButtonLabel}
             </button>
           </div>
 

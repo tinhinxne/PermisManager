@@ -1,18 +1,18 @@
-// src/renderer/pages/CoursCode.jsx
+// src/renderer/pages/CoursCodeMoniteur.jsx
 import React, { useState, useEffect, useCallback } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { usePermissionsCtx } from "../context/PermissionsContext";
+import { useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useMyPermissions } from "../context/PermissionsContext";
 import { useExamenCtx } from "../context/ExamenContext";
 import {
-  GraduationCap, Plus, X, Check, Users, Calendar, Clock,
-  ChevronLeft, ChevronRight, Trash2, PenLine, UserPlus,
+  GraduationCap, Plus, Users, Clock,
+  Trash2, PenLine, UserPlus,
   Search, RotateCcw, AlertCircle, CheckCircle2, XCircle,
-  HelpCircle, CalendarDays, Repeat, UserCog,
+  CalendarDays, Repeat, Lock, UserCog, BarChart3, ListVideo,
 } from "lucide-react";
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
-const CATEGORIES_PERMIS = ["A1","A","B","C1","C","D","F","BE","C1E","CE","DE"];
+const CATEGORIES_PERMIS_ALL = ["A1","A","B","C1","C","D","F","BE","C1E","CE","DE"];
 const DAYS_OPTIONS       = ["Dim","Lun","Mar","Mer","Jeu","Ven","Sam"];
 const DAYS_ORDER         = ["Dim","Lun","Mar","Mer","Jeu","Ven","Sam"];
 const JOURS_FULL = { Dim:"dimanche", Lun:"lundi", Mar:"mardi", Mer:"mercredi", Jeu:"jeudi", Ven:"vendredi", Sam:"samedi" };
@@ -38,8 +38,6 @@ const moniteurCategories = (m) => {
   const arr = Array.isArray(raw) ? raw : String(raw).split(",");
   return arr.map(normCat).filter(Boolean);
 };
-
-const candidatCategorie = (c) => normCat(c?.categoriePermis || c?.categorie || c?.categorie_permis || "B");
 
 const cap = s => (s || "").split(" ").map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(" ");
 
@@ -80,7 +78,6 @@ function countSeancesSerie(dateDebut, dateFin, jours) {
   let cur = new Date(dateDebut + "T12:00:00");
   const fin = new Date(dateFin + "T12:00:00");
   let count = 0;
-  // Garde-fou : évite une boucle infinie si les dates sont incohérentes
   let safety = 0;
   while (cur <= fin && safety < 5000) {
     if (idx.includes(cur.getDay())) count++;
@@ -144,6 +141,28 @@ function LoadingOverlay() {
   );
 }
 
+// ── LOCKED TOOLTIP ────────────────────────────────────────────────────────────
+function LockedTooltip({ children }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div style={{ position:"relative", display:"inline-block" }}
+      onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+      {children}
+      {show && (
+        <div style={{ position:"absolute", bottom:"110%", left:"50%", transform:"translateX(-50%)",
+          background:"#1e293b", color:"#fff", padding:"7px 13px", borderRadius:8,
+          fontSize:"0.72rem", fontWeight:500, whiteSpace:"nowrap", zIndex:999,
+          boxShadow:"0 8px 24px rgba(0,0,0,0.25)", pointerEvents:"none" }}>
+          🔒 Permission requise par l'admin
+          <div style={{ position:"absolute", top:"100%", left:"50%", transform:"translateX(-50%)",
+            width:0, height:0, borderLeft:"6px solid transparent",
+            borderRight:"6px solid transparent", borderTop:"6px solid #1e293b" }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── ALERTE MODALE ─────────────────────────────────────────────────────────────
 function AlertModal({ icon, title, message, color = "#ef4444", onClose }) {
   return (
@@ -163,29 +182,29 @@ function AlertModal({ icon, title, message, color = "#ef4444", onClose }) {
   );
 }
 
-// ── CREATE / EDIT MODAL ───────────────────────────────────────────────────────
-function CreateCoursCodeModal({ onClose, onSave, moniteurs, editing, saving, prefillCandidatId }) {
+// ── CREATE / EDIT MODAL (moniteur — pas de choix de moniteur) ────────────────
+function CreateCoursCodeModal({ onClose, onSave, currentUser, editing, saving }) {
   const [mode, setMode] = useState("unique"); // "unique" | "serie"
   const [alertInfo, setAlertInfo] = useState(null);
   const [dureeCustom, setDureeCustom] = useState(false);
 
+  const mesCategories = moniteurCategories(currentUser);
+  const categoriesDisponibles = mesCategories.length > 0 ? mesCategories : CATEGORIES_PERMIS_ALL;
+
   const [form, setForm] = useState(editing ? {
-    categoriePermis: editing.categoriePermis || "B",
-    moniteur_id:     String(editing.moniteur_id || ""),
+    categoriePermis: editing.categoriePermis || categoriesDisponibles[0] || "B",
     date:            toLocalISO(editing.date),
     heure:           editing.heure?.slice(0,5) || "17:00",
     duree:           String(editing.duree || 1.5),
     notes:           editing.notes || "",
   } : {
-    categoriePermis: "B",
-    moniteur_id: "",
+    categoriePermis: categoriesDisponibles[0] || "B",
     date: toLocalISO(new Date()),
     heure: "17:00",
     duree: "1.5",
     notes: "",
   });
 
-  // Si la durée initiale ne correspond à aucun preset, on ouvre direct le mode personnalisé
   useEffect(() => {
     const isPreset = DUREE_PRESETS.some(p => p.value === parseFloat(form.duree));
     if (!isPreset) setDureeCustom(true);
@@ -206,8 +225,6 @@ function CreateCoursCodeModal({ onClose, onSave, moniteurs, editing, saving, pre
     jours: p.jours.includes(j) ? p.jours.filter(d => d !== j) : [...p.jours, j],
   }));
 
-  const moniteursHabilites = moniteurs.filter(m => moniteurCategories(m).includes(form.categoriePermis));
-
   const inpS = {
     width:"100%", boxSizing:"border-box",
     background:"#fff", border:"1px solid #cbd5e1",
@@ -218,7 +235,6 @@ function CreateCoursCodeModal({ onClose, onSave, moniteurs, editing, saving, pre
 
   const labelS = { fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 };
 
-  // ── Récap dynamique de la série ──────────────────────────────────────────
   const joursTries = DAYS_ORDER.filter(j => serie.jours.includes(j));
   const nbSeancesEstime = countSeancesSerie(serie.dateDebut, serie.dateFin, serie.jours);
   const recapSerie = joursTries.length > 0 && serie.dateDebut && serie.dateFin
@@ -226,10 +242,6 @@ function CreateCoursCodeModal({ onClose, onSave, moniteurs, editing, saving, pre
     : null;
 
   const handleSubmit = () => {
-    if (!form.moniteur_id) {
-      setAlertInfo({ icon:"🧑‍🏫", title:"Moniteur manquant", message:"Veuillez sélectionner un moniteur habilité pour cette catégorie.", color:"#ef4444" });
-      return;
-    }
     if (mode === "unique") {
       if (!form.date || !form.heure) return;
       onSave({
@@ -237,7 +249,7 @@ function CreateCoursCodeModal({ onClose, onSave, moniteurs, editing, saving, pre
         data: {
           id: editing?.id,
           categoriePermis: form.categoriePermis,
-          moniteur_id: parseInt(form.moniteur_id),
+          moniteur_id: currentUser.id, // ← forcé, jamais choisi
           date: form.date,
           heure: form.heure,
           duree: parseFloat(form.duree) || 1.5,
@@ -253,7 +265,7 @@ function CreateCoursCodeModal({ onClose, onSave, moniteurs, editing, saving, pre
         mode: "serie",
         data: {
           categoriePermis: form.categoriePermis,
-          moniteur_id: parseInt(form.moniteur_id),
+          moniteur_id: currentUser.id, // ← forcé
           heure: form.heure,
           duree: parseFloat(form.duree) || 1.5,
           notes: form.notes || null,
@@ -274,7 +286,7 @@ function CreateCoursCodeModal({ onClose, onSave, moniteurs, editing, saving, pre
         <div style={{ padding:"20px 24px 16px", borderBottom:"1px solid #e2e8f0", display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
           <div>
             <div style={{ fontSize:"1.05rem", fontWeight:700, color:"#1e293b" }}>
-              {editing ? "Modifier le cours de code" : "Nouveau cours de code"}
+              {editing ? "Modifier mon cours de code" : "Nouveau cours de code"}
             </div>
             <div style={{ fontSize:"0.72rem", color:"#94a3b8", marginTop:3 }}>Cours collectif — code de la route</div>
           </div>
@@ -283,7 +295,7 @@ function CreateCoursCodeModal({ onClose, onSave, moniteurs, editing, saving, pre
 
         <div style={{ padding:"18px 24px", overflowY:"auto", display:"flex", flexDirection:"column", gap:14 }}>
 
-          {/* ── TOGGLE MODE (redesign avec description) ── */}
+          {/* ── TOGGLE MODE ── */}
           {!editing && (
             <div style={{ display:"flex", gap:10 }}>
               {[
@@ -324,22 +336,25 @@ function CreateCoursCodeModal({ onClose, onSave, moniteurs, editing, saving, pre
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={labelS}>Catégorie <span style={{ color:"#ef4444" }}>*</span></label>
-              <select style={inpS} value={form.categoriePermis} onChange={e => { set("categoriePermis", e.target.value); set("moniteur_id",""); }}>
-                {CATEGORIES_PERMIS.map(c => <option key={c} value={c}>{c}</option>)}
+              <select style={inpS} value={form.categoriePermis} onChange={e => set("categoriePermis", e.target.value)}>
+                {categoriesDisponibles.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
+            {/* ── Moniteur : lecture seule, pas de select ── */}
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
-              <label style={labelS}>Moniteur <span style={{ color:"#ef4444" }}>*</span></label>
-              <select style={inpS} value={form.moniteur_id} onChange={e => set("moniteur_id", e.target.value)}>
-                <option value="">Sélectionner...</option>
-                {moniteursHabilites.map(m => <option key={m.id} value={m.id}>{m.nom} {m.prenom}</option>)}
-              </select>
+              <label style={labelS}>Moniteur</label>
+              <div style={{
+                ...inpS, background:"#f8fafc", color:"#475569",
+                display:"flex", alignItems:"center", gap:7, cursor:"default",
+              }}>
+                👤 {currentUser?.nom} {currentUser?.prenom}
+              </div>
             </div>
           </div>
 
-          {moniteursHabilites.length === 0 && (
-            <div style={{ padding:"8px 12px", borderRadius:8, background:"#fef2f2", border:"1px solid #fca5a5", fontSize:"0.73rem", color:"#dc2626", fontWeight:600 }}>
-              ⚠️ Aucun moniteur habilité pour la catégorie {form.categoriePermis}.
+          {mesCategories.length === 0 && (
+            <div style={{ padding:"8px 12px", borderRadius:8, background:"#fff7ed", border:"1px solid #fed7aa", fontSize:"0.73rem", color:"#c2410c", fontWeight:600 }}>
+              ⚠️ Aucune catégorie habilitée trouvée sur votre profil — contactez l'administrateur.
             </div>
           )}
 
@@ -384,7 +399,6 @@ function CreateCoursCodeModal({ onClose, onSave, moniteurs, editing, saving, pre
                 </div>
               </div>
 
-              {/* ── RÉCAP DYNAMIQUE DE LA SÉRIE ── */}
               {recapSerie && (
                 <div style={{
                   display:"flex", alignItems:"flex-start", gap:8, padding:"10px 12px",
@@ -402,7 +416,7 @@ function CreateCoursCodeModal({ onClose, onSave, moniteurs, editing, saving, pre
             </>
           )}
 
-          {/* ── DURÉE FLEXIBLE (chips + personnalisé) ── */}
+          {/* ── DURÉE FLEXIBLE ── */}
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
             <label style={labelS}>Durée</label>
             <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
@@ -465,55 +479,43 @@ function CreateCoursCodeModal({ onClose, onSave, moniteurs, editing, saving, pre
   );
 }
 
-
-function ManageCoursModal({ seance, onClose, onRefreshList, canMarkPresence }) {
+// ── GESTION DES INSCRITS (accessible en lecture pour cours d'un autre moniteur) ──
+function ManageCoursModal({ seance, onClose, onRefreshList, canMarkPresence, isOwn }) {
   const { currentUser } = useAuth();
-  const { generateExamens } = useExamenCtx(); 
+  const { generateExamens } = useExamenCtx();
   const [inscrits, setInscrits] = useState([]);
   const [eligibles, setEligibles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [searchAdd, setSearchAdd] = useState("");
-  const [replanifId, setReplanifId] = useState(null); // idCandidat en cours de replanification
+  const [replanifId, setReplanifId] = useState(null);
   const [seancesDispo, setSeancesDispo] = useState([]);
   const [toast, setToast] = useState(null);
-
-  // ── Ajout d'une personne "auditeur libre" (vient juste suivre le cours de code,
-  // sans être inscrite comme candidat de l'auto-école) ──────────────────────────
   const [showAddLibre, setShowAddLibre] = useState(false);
   const [libreForm, setLibreForm] = useState({ nom: "", prenom: "", telephone: "", dateNaissance: "", sexe: "M" });
   const [savingLibre, setSavingLibre] = useState(false);
   const [errorLibre, setErrorLibre] = useState("");
-
   const showToast = (message, type="success") => setToast({ message, type });
-const envoyerWhatsAppInscription = async (candidat) => {
-  console.log("📱 Candidat pour WhatsApp:", candidat); // ← ajoute
-  if (!candidat.telephone) {
-    console.log("⚠️ Pas de téléphone pour ce candidat"); // ← ajoute
-    return;
-  }
 
-  let message = `Bonjour ${candidat.prenom}, vous êtes inscrit(e) au cours de code du ${formatDateFr(seance.date)} à ${seance.heure?.slice(0,5)} avec ${seance.moniteurNom}.`;
-
-  try {
-    const autres = await window.electron.getSeancesCandidatCode(
-      candidat.idCandidat, seance.categoriePermis, seance.moniteur_id
-    );
-    console.log("📅 Autres séances trouvées:", autres); // ← ajoute
-    const futures = (autres || []).filter(s => s.date !== seance.date);
-    if (futures.length > 0) {
-      const jours = [...new Set(futures.map(s => JOURS_FR[new Date(s.date + "T12:00:00").getDay()]))];
-      message += ` Ce cours fait partie d'une série récurrente : vous avez également des séances chaque ${jours.join(", ")}, la prochaine étant le ${formatDateCourt(futures[0].date)}.`;
+  const envoyerWhatsAppInscription = async (candidat) => {
+    if (!candidat.telephone) return;
+    let message = `Bonjour ${candidat.prenom}, vous êtes inscrit(e) au cours de code du ${formatDateFr(seance.date)} à ${seance.heure?.slice(0,5)} avec ${seance.moniteurNom}.`;
+    try {
+      const autres = await window.electron.getSeancesCandidatCode(
+        candidat.idCandidat, seance.categoriePermis, seance.moniteur_id
+      );
+      const futures = (autres || []).filter(s => s.date !== seance.date);
+      if (futures.length > 0) {
+        const jours = [...new Set(futures.map(s => JOURS_FR[new Date(s.date + "T12:00:00").getDay()]))];
+        message += ` Ce cours fait partie d'une série récurrente : vous avez également des séances chaque ${jours.join(", ")}, la prochaine étant le ${formatDateCourt(futures[0].date)}.`;
+      }
+    } catch (e) {
+      console.error("Erreur récupération séances série:", e);
     }
-  } catch (e) {
-    console.error("Erreur récupération séances série:", e);
-  }
+    const url = formatWhatsAppUrl(candidat.telephone, message);
+    if (url) window.electron.openExternal(url);
+  };
 
-  const url = formatWhatsAppUrl(candidat.telephone, message);
-  console.log("🔗 URL WhatsApp générée:", url); // ← ajoute
-  if (url) window.electron.openExternal(url);
-};
-  
   const loadInscrits = useCallback(async () => {
     if (!window.electron?.getInscritsSeanceCode) return;
     try {
@@ -534,14 +536,17 @@ const envoyerWhatsAppInscription = async (candidat) => {
     setLoading(true);
     Promise.all([loadInscrits(), loadEligibles()]).finally(() => setLoading(false));
   }, [loadInscrits, loadEligibles]);
-const handleInscrire = async (idCandidat) => {
+
+  const isSeancePassee = new Date(`${seance.date}T${seance.heure || "23:59"}`) < new Date();
+
+  const handleInscrire = async (idCandidat) => {
+    if (!isOwn) return;
     if (isSeancePassee) {
       showToast("Impossible d'inscrire un candidat à une séance déjà passée.", "error");
       return;
     }
     try {
       const candidat = eligibles.find(c => c.idCandidat === idCandidat);
-      console.log("👤 Candidat trouvé dans eligibles:", candidat);
       await window.electron.inscrireCandidatCode(idCandidat, seance.id);
       await Promise.all([loadInscrits(), loadEligibles()]);
       onRefreshList();
@@ -549,7 +554,9 @@ const handleInscrire = async (idCandidat) => {
       if (candidat) await envoyerWhatsAppInscription(candidat);
     } catch { showToast("Erreur lors de l'inscription.", "error"); }
   };
+
   const handleDesinscrire = async (idCandidat) => {
+    if (!isOwn) return;
     try {
       await window.electron.desinscrireCandidatCode(idCandidat, seance.id);
       await Promise.all([loadInscrits(), loadEligibles()]);
@@ -558,38 +565,6 @@ const handleInscrire = async (idCandidat) => {
     } catch { showToast("Erreur lors de la désinscription.", "error"); }
   };
 
-  const handlePresence = async (idCandidat, statut) => {
-    try {
-      await window.electron.updatePresenceCode(idCandidat, seance.id, statut, currentUser?.id);
-      await loadInscrits();
-      showToast("Présence mise à jour.");
-      // ✅ Recalcule immédiatement si ce candidat vient d'atteindre le seuil Code
-      if (statut === "present") {
-        generateExamens?.(); // sans arguments → il fetch lui-même seances + candidats
-      }
-    } catch { showToast("Erreur lors de la mise à jour.", "error"); }
-  };
-
-  const openReplanif = async (idCandidat) => {
-    setReplanifId(idCandidat);
-    try {
-      const list = await window.electron.getSeancesCodeDisponibles(seance.categoriePermis, seance.id);
-      setSeancesDispo(Array.isArray(list) ? list : []);
-    } catch { setSeancesDispo([]); }
-  };
-
-  const confirmReplanif = async (nouvelleSeanceId) => {
-    try {
-      await window.electron.replanifierCandidatCode(replanifId, seance.id, nouvelleSeanceId);
-      await loadInscrits();
-      setReplanifId(null);
-      showToast("Candidat replanifié sur le nouveau cours.");
-    } catch { showToast("Erreur lors de la replanification.", "error"); }
-  };
-
-  // ── Ajout d'un auditeur libre : on crée une fiche minimale, puis on l'inscrit
-  // directement à ce cours. Pensé pour les personnes qui viennent juste "voir"
-  // le cours de code sans être inscrites comme candidates de l'auto-école. ────
   const resetLibreForm = () => {
     setShowAddLibre(false);
     setLibreForm({ nom: "", prenom: "", telephone: "", dateNaissance: "", sexe: "M" });
@@ -597,6 +572,7 @@ const handleInscrire = async (idCandidat) => {
   };
 
   const handleAjouterAuditeurLibre = async () => {
+    if (!isOwn) return;
     if (isSeancePassee) {
       showToast("Impossible d'inscrire un candidat à une séance déjà passée.", "error");
       return;
@@ -646,10 +622,41 @@ const handleInscrire = async (idCandidat) => {
     }
   };
 
+  const handlePresence = async (idCandidat, statut) => {
+    if (!canMarkPresence) return;
+    try {
+      await window.electron.updatePresenceCode(idCandidat, seance.id, statut, currentUser?.id);
+      await loadInscrits();
+      onRefreshList();
+      showToast("Présence mise à jour.");
+      if (statut === "present") {
+        generateExamens?.();
+      }
+    } catch { showToast("Erreur lors de la mise à jour.", "error"); }
+  };
+
+  const openReplanif = async (idCandidat) => {
+    if (!isOwn) return;
+    setReplanifId(idCandidat);
+    try {
+      const list = await window.electron.getSeancesCodeDisponibles(seance.categoriePermis, seance.id);
+      setSeancesDispo(Array.isArray(list) ? list : []);
+    } catch { setSeancesDispo([]); }
+  };
+
+  const confirmReplanif = async (nouvelleSeanceId) => {
+    try {
+      await window.electron.replanifierCandidatCode(replanifId, seance.id, nouvelleSeanceId);
+      await loadInscrits();
+      setReplanifId(null);
+      showToast("Candidat replanifié sur le nouveau cours.");
+    } catch { showToast("Erreur lors de la replanification.", "error"); }
+  };
+
   const filteredEligibles = eligibles.filter(c =>
     `${c.nom} ${c.prenom}`.toLowerCase().includes(searchAdd.toLowerCase())
   );
-  const isSeancePassee = new Date(`${seance.date}T${seance.heure || "23:59"}`) < new Date();
+
   return (
     <div style={{ position:"fixed", inset:0, zIndex:400, background:"rgba(15,23,42,0.55)", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Poppins',sans-serif" }}
       onClick={e => e.target === e.currentTarget && onClose()}>
@@ -665,6 +672,11 @@ const handleInscrire = async (idCandidat) => {
               <div style={{ fontSize:"0.75rem", color:"#7C3AED", marginTop:4 }}>
                 {seance.heure?.slice(0,5)} · {seance.moniteurNom} · Catégorie {seance.categoriePermis} · {inscrits.length} inscrit{inscrits.length!==1?"s":""}
               </div>
+              {!isOwn && (
+                <div style={{ fontSize:"0.7rem", color:"#94a3b8", marginTop:4, fontStyle:"italic", display:"flex", alignItems:"center", gap:4 }}>
+                  <Lock size={11}/> Cours d'un autre moniteur — vue lecture seule
+                </div>
+              )}
             </div>
             <button onClick={onClose} style={{ background:"rgba(124,58,237,0.1)", border:"none", color:"#7C3AED", width:32, height:32, borderRadius:8, cursor:"pointer", fontSize:14, display:"grid", placeItems:"center" }}>✕</button>
           </div>
@@ -705,12 +717,14 @@ const handleInscrire = async (idCandidat) => {
                       </div>
                     )}
                   </div>
-                  <button onClick={() => handleDesinscrire(c.idCandidat)} title="Désinscrire" style={{ background:"none", border:"none", color:"#cbd5e1", cursor:"pointer", padding:4 }}>
-                    <Trash2 size={15}/>
-                  </button>
+                  {isOwn && (
+                    <button onClick={() => handleDesinscrire(c.idCandidat)} title="Désinscrire" style={{ background:"none", border:"none", color:"#cbd5e1", cursor:"pointer", padding:4 }}>
+                      <Trash2 size={15}/>
+                    </button>
+                  )}
                 </div>
 
-                {canMarkPresence && (
+                {canMarkPresence ? (
                   <div style={{ display:"flex", gap:6, marginTop:10 }}>
                     {Object.entries(STATUT_PRESENCE_META).map(([key, m]) => (
                       <button
@@ -729,9 +743,15 @@ const handleInscrire = async (idCandidat) => {
                       </button>
                     ))}
                   </div>
+                ) : (
+                  !isOwn && (
+                    <div style={{ marginTop:8, fontSize:"0.68rem", color:"#94a3b8", fontStyle:"italic", display:"flex", alignItems:"center", gap:4 }}>
+                      <Lock size={10}/> Présence gérée par {seance.moniteurNom}
+                    </div>
+                  )
                 )}
 
-                {canMarkPresence && c.statutPresence === "absent_justifie" && (
+                {isOwn && canMarkPresence && c.statutPresence === "absent_justifie" && (
                   <div style={{ marginTop:8 }}>
                     {replanifId === c.idCandidat ? (
                       <div style={{ background:"#fff", border:"1px solid #fcd34d", borderRadius:8, padding:8 }}>
@@ -767,9 +787,19 @@ const handleInscrire = async (idCandidat) => {
             );
           })}
 
-        {/* Ajout candidat */}
+          {/* Ajout candidat — uniquement si c'est mon cours */}
           <div style={{ marginTop:6 }}>
-            {isSeancePassee ? (
+            {!isOwn ? (
+              <div style={{
+                display:"flex", alignItems:"center", gap:8, padding:"10px 14px",
+                borderRadius:10, background:"#f1f5f9", border:"1px solid #e2e8f0",
+              }}>
+                <Lock size={14} color="#94a3b8"/>
+                <span style={{ fontSize:"0.75rem", color:"#64748b" }}>
+                  Vous ne pouvez pas inscrire de candidat sur le cours d'un autre moniteur.
+                </span>
+              </div>
+            ) : isSeancePassee ? (
               <div style={{
                 display:"flex", alignItems:"center", gap:8, padding:"10px 14px",
                 borderRadius:10, background:"#f1f5f9", border:"1px solid #e2e8f0",
@@ -808,75 +838,76 @@ const handleInscrire = async (idCandidat) => {
                   )}
                 </div>
 
-                {/* ── Séparateur + bouton pour ajouter un auditeur libre ── */}
-                <div style={{ borderTop:"1px solid #E9D5FF", marginTop:10, paddingTop:10 }}>
-                  {showAddLibre ? (
-                    <div style={{ background:"#fff", border:"1.5px solid #C4B5FD", borderRadius:10, padding:12 }}>
-                      <div style={{ fontSize:"0.72rem", fontWeight:700, color:"#5B21B6", marginBottom:8, display:"flex", alignItems:"center", gap:6 }}>
-                        <UserCog size={13}/> Personne non inscrite (juste pour ce cours)
-                      </div>
-                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
-                        <input
-                          type="text" placeholder="Prénom *" value={libreForm.prenom}
-                          onChange={e => setLibreForm(p => ({ ...p, prenom: e.target.value }))}
-                          style={{ width:"100%", boxSizing:"border-box", padding:"7px 9px", borderRadius:7, border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.78rem", outline:"none" }}
-                        />
-                        <input
-                          type="text" placeholder="Nom *" value={libreForm.nom}
-                          onChange={e => setLibreForm(p => ({ ...p, nom: e.target.value }))}
-                          style={{ width:"100%", boxSizing:"border-box", padding:"7px 9px", borderRadius:7, border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.78rem", outline:"none" }}
-                        />
-                      </div>
-                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
-                        <div>
-                          <label style={{ fontSize:"0.62rem", fontWeight:600, color:"#94a3b8", display:"block", marginBottom:3 }}>Date de naissance *</label>
+                {isOwn && (
+                  <div style={{ borderTop:"1px solid #E9D5FF", marginTop:10, paddingTop:10 }}>
+                    {showAddLibre ? (
+                      <div style={{ background:"#fff", border:"1.5px solid #C4B5FD", borderRadius:10, padding:12 }}>
+                        <div style={{ fontSize:"0.72rem", fontWeight:700, color:"#5B21B6", marginBottom:8, display:"flex", alignItems:"center", gap:6 }}>
+                          <UserCog size={13}/> Personne non inscrite (juste pour ce cours)
+                        </div>
+                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
                           <input
-                            type="date" value={libreForm.dateNaissance}
-                            onChange={e => setLibreForm(p => ({ ...p, dateNaissance: e.target.value }))}
+                            type="text" placeholder="Prénom *" value={libreForm.prenom}
+                            onChange={e => setLibreForm(p => ({ ...p, prenom: e.target.value }))}
+                            style={{ width:"100%", boxSizing:"border-box", padding:"7px 9px", borderRadius:7, border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.78rem", outline:"none" }}
+                          />
+                          <input
+                            type="text" placeholder="Nom *" value={libreForm.nom}
+                            onChange={e => setLibreForm(p => ({ ...p, nom: e.target.value }))}
                             style={{ width:"100%", boxSizing:"border-box", padding:"7px 9px", borderRadius:7, border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.78rem", outline:"none" }}
                           />
                         </div>
-                        <div>
-                          <label style={{ fontSize:"0.62rem", fontWeight:600, color:"#94a3b8", display:"block", marginBottom:3 }}>Sexe *</label>
-                          <select
-                            value={libreForm.sexe}
-                            onChange={e => setLibreForm(p => ({ ...p, sexe: e.target.value }))}
-                            style={{ width:"100%", boxSizing:"border-box", padding:"7px 9px", borderRadius:7, border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.78rem", outline:"none" }}
-                          >
-                            <option value="M">Masculin</option>
-                            <option value="F">Féminin</option>
-                          </select>
+                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
+                          <div>
+                            <label style={{ fontSize:"0.62rem", fontWeight:600, color:"#94a3b8", display:"block", marginBottom:3 }}>Date de naissance *</label>
+                            <input
+                              type="date" value={libreForm.dateNaissance}
+                              onChange={e => setLibreForm(p => ({ ...p, dateNaissance: e.target.value }))}
+                              style={{ width:"100%", boxSizing:"border-box", padding:"7px 9px", borderRadius:7, border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.78rem", outline:"none" }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ fontSize:"0.62rem", fontWeight:600, color:"#94a3b8", display:"block", marginBottom:3 }}>Sexe *</label>
+                            <select
+                              value={libreForm.sexe}
+                              onChange={e => setLibreForm(p => ({ ...p, sexe: e.target.value }))}
+                              style={{ width:"100%", boxSizing:"border-box", padding:"7px 9px", borderRadius:7, border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.78rem", outline:"none" }}
+                            >
+                              <option value="M">Masculin</option>
+                              <option value="F">Féminin</option>
+                            </select>
+                          </div>
+                        </div>
+                        <input
+                          type="text" placeholder="Téléphone (optionnel)" value={libreForm.telephone}
+                          onChange={e => setLibreForm(p => ({ ...p, telephone: e.target.value }))}
+                          style={{ width:"100%", boxSizing:"border-box", padding:"7px 9px", borderRadius:7, border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.78rem", outline:"none", marginBottom:8 }}
+                        />
+                        {errorLibre && <div style={{ fontSize:"0.7rem", color:"#dc2626", fontWeight:600, marginBottom:8 }}>{errorLibre}</div>}
+                        <div style={{ display:"flex", gap:8 }}>
+                          <button onClick={resetLibreForm} disabled={savingLibre} style={{
+                            flex:1, padding:"8px 0", borderRadius:8, border:"1px solid #e2e8f0", background:"#fff",
+                            color:"#64748b", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600, cursor:"pointer",
+                          }}>Annuler</button>
+                          <button onClick={handleAjouterAuditeurLibre} disabled={savingLibre} style={{
+                            flex:2, padding:"8px 0", borderRadius:8, border:"none",
+                            background: savingLibre ? "#c4b5fd" : "#7C3AED",
+                            color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:700,
+                            cursor: savingLibre ? "not-allowed" : "pointer",
+                          }}>{savingLibre ? "Ajout..." : "Ajouter et inscrire"}</button>
                         </div>
                       </div>
-                      <input
-                        type="text" placeholder="Téléphone (optionnel)" value={libreForm.telephone}
-                        onChange={e => setLibreForm(p => ({ ...p, telephone: e.target.value }))}
-                        style={{ width:"100%", boxSizing:"border-box", padding:"7px 9px", borderRadius:7, border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.78rem", outline:"none", marginBottom:8 }}
-                      />
-                      {errorLibre && <div style={{ fontSize:"0.7rem", color:"#dc2626", fontWeight:600, marginBottom:8 }}>{errorLibre}</div>}
-                      <div style={{ display:"flex", gap:8 }}>
-                        <button onClick={resetLibreForm} disabled={savingLibre} style={{
-                          flex:1, padding:"8px 0", borderRadius:8, border:"1px solid #e2e8f0", background:"#fff",
-                          color:"#64748b", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600, cursor:"pointer",
-                        }}>Annuler</button>
-                        <button onClick={handleAjouterAuditeurLibre} disabled={savingLibre} style={{
-                          flex:2, padding:"8px 0", borderRadius:8, border:"none",
-                          background: savingLibre ? "#c4b5fd" : "#7C3AED",
-                          color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:700,
-                          cursor: savingLibre ? "not-allowed" : "pointer",
-                        }}>{savingLibre ? "Ajout..." : "Ajouter et inscrire"}</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button onClick={() => setShowAddLibre(true)} style={{
-                      width:"100%", padding:"8px 0", borderRadius:8, border:"1px dashed #C4B5FD",
-                      background:"#fff", color:"#7C3AED", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem",
-                      fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6,
-                    }}>
-                      <UserCog size={13}/> Ajouter une personne non inscrite (juste pour le code)
-                    </button>
-                  )}
-                </div>
+                    ) : (
+                      <button onClick={() => setShowAddLibre(true)} style={{
+                        width:"100%", padding:"8px 0", borderRadius:8, border:"1px dashed #C4B5FD",
+                        background:"#fff", color:"#7C3AED", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem",
+                        fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+                      }}>
+                        <UserCog size={13}/> Ajouter une personne non inscrite (juste pour le code)
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 <button onClick={() => { setShowAdd(false); resetLibreForm(); }} style={{ marginTop:8, background:"none", border:"none", color:"#94a3b8", fontSize:"0.72rem", cursor:"pointer" }}>Fermer la recherche</button>
               </div>
@@ -902,32 +933,40 @@ const handleInscrire = async (idCandidat) => {
 }
 
 // ── CARTE COURS ────────────────────────────────────────────────────────────────
-function CoursCard({ seance, onManage, onEdit, onDelete, canManage }) {
+function CoursCard({ seance, onManage, onEdit, onDelete, canManage, isOwn }) {
   const isPast = new Date(seance.date + "T" + (seance.heure || "00:00")) < new Date();
   return (
     <div style={{
-      border:"1px solid #e2e8f0", borderLeft:"4px solid #7C3AED", borderRadius:12,
+      border:"1px solid #e2e8f0", borderLeft: isOwn ? "4px solid #7C3AED" : "4px solid #cbd5e1", borderRadius:12,
       padding:"14px 16px", background: isPast ? "#f8fafc" : "#fff",
-      display:"flex", alignItems:"center", gap:16, opacity: isPast ? 0.75 : 1,
+      display:"flex", alignItems:"center", gap:16, opacity: isPast ? 0.75 : (isOwn ? 1 : 0.85),
     }}>
-      <div style={{ width:52, height:52, borderRadius:12, background:"#F3E8FF", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-        <div style={{ fontSize:"0.65rem", fontWeight:700, color:"#7C3AED", textTransform:"uppercase" }}>
+      <div style={{ width:52, height:52, borderRadius:12, background: isOwn ? "#F3E8FF" : "#f1f5f9", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+        <div style={{ fontSize:"0.65rem", fontWeight:700, color: isOwn ? "#7C3AED" : "#94a3b8", textTransform:"uppercase" }}>
           {new Date(seance.date + "T12:00:00").toLocaleDateString("fr-FR", { month:"short" })}
         </div>
-        <div style={{ fontSize:"1.1rem", fontWeight:800, color:"#5B21B6" }}>
+        <div style={{ fontSize:"1.1rem", fontWeight:800, color: isOwn ? "#5B21B6" : "#64748b" }}>
           {new Date(seance.date + "T12:00:00").getDate()}
         </div>
       </div>
       <div style={{ flex:1, minWidth:0 }}>
         <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
           <span style={{ fontSize:"0.9rem", fontWeight:700, color:"#1e293b" }}>Cours de Code</span>
-          <span style={{ fontSize:"0.68rem", fontWeight:700, padding:"2px 9px", borderRadius:20, background:"#F3E8FF", color:"#5B21B6", border:"1px solid #C4B5FD" }}>
+          <span style={{ fontSize:"0.68rem", fontWeight:700, padding:"2px 9px", borderRadius:20, background: isOwn ? "#F3E8FF" : "#f1f5f9", color: isOwn ? "#5B21B6" : "#64748b", border: `1px solid ${isOwn ? "#C4B5FD" : "#e2e8f0"}` }}>
             Cat. {seance.categoriePermis}
           </span>
+          {isOwn ? (
+            <span style={{ fontSize:"0.65rem", fontWeight:700, padding:"2px 9px", borderRadius:20, background:"#dcfce7", color:"#166534" }}>
+              Mon cours
+            </span>
+          ) : (
+            <span style={{ fontSize:"0.65rem", fontWeight:600, padding:"2px 9px", borderRadius:20, background:"#f1f5f9", color:"#94a3b8", display:"inline-flex", alignItems:"center", gap:3 }}>
+              <Lock size={9}/> {seance.moniteurNom}
+            </span>
+          )}
         </div>
         <div style={{ display:"flex", gap:14, fontSize:"0.75rem", color:"#64748b", flexWrap:"wrap" }}>
           <span>🕐 {seance.heure?.slice(0,5)} ({formatDureeLabel(seance.duree)})</span>
-          <span>👤 {seance.moniteurNom}</span>
           <span>👥 {seance.nbInscrits ?? 0} inscrit{(seance.nbInscrits ?? 0) !== 1 ? "s" : ""}</span>
         </div>
         {seance.notes && <div style={{ fontSize:"0.72rem", color:"#94a3b8", marginTop:4 }}>📋 {seance.notes}</div>}
@@ -951,20 +990,75 @@ function CoursCard({ seance, onManage, onEdit, onDelete, canManage }) {
   );
 }
 
-// ── MAIN PAGE ─────────────────────────────────────────────────────────────────
-export default function CoursCode() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const { getPermissions } = usePermissionsCtx();
-  const { currentUser } = useAuth(); // ← FIX : source de vérité unique (AuthContext), plus de lecture directe localStorage
+// ── LIGNE PROGRESSION CANDIDAT ────────────────────────────────────────────────
+function ProgressionRow({ candidat }) {
+  const {
+    nom, prenom, telephone, categoriePermis, estAuditeurLibre,
+    nbPresent, nbAbsentJustifie, nbAbsentNonJustifie, nbTotalInscrit, derniereSeance,
+  } = candidat;
 
-  const isAdmin = currentUser?.type_utilisateur === "administrateur";
-  const monPerms = (!isAdmin && currentUser) ? getPermissions(currentUser.id) : {};
-  const canManage        = isAdmin || !!monPerms.CAN_MANAGE_COURS_CODE;
-  const canMarkPresence  = isAdmin || !!monPerms.CAN_MARK_PRESENCE_CODE;
+  return (
+    <div style={{
+      display:"flex", alignItems:"center", gap:14, padding:"12px 16px",
+      border:"1px solid #e2e8f0", borderRadius:12, background:"#fff",
+    }}>
+      <div style={{ width:38, height:38, borderRadius:"50%", background:"#EEEDFE", color:"#5B21B6", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"0.8rem", fontWeight:700, flexShrink:0 }}>
+        {(prenom?.[0]||"")+(nom?.[0]||"")}
+      </div>
+
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:7, flexWrap:"wrap" }}>
+          <span style={{ fontSize:"0.86rem", fontWeight:700, color:"#1e293b" }}>{cap(`${nom} ${prenom}`)}</span>
+          <span style={{ fontSize:"0.65rem", fontWeight:700, padding:"1px 8px", borderRadius:20, background:"#F3E8FF", color:"#5B21B6", border:"1px solid #C4B5FD" }}>
+            {categoriePermis}
+          </span>
+          {!!estAuditeurLibre && (
+            <span style={{ fontSize:"0.62rem", fontWeight:700, padding:"1px 8px", borderRadius:20, background:"#FFF7ED", color:"#c2410c", border:"1px solid #fdba74" }}>
+              Auditeur libre
+            </span>
+          )}
+        </div>
+        <div style={{ display:"flex", gap:12, fontSize:"0.72rem", color:"#94a3b8", marginTop:3, flexWrap:"wrap" }}>
+          {telephone && <span>📞 {telephone}</span>}
+          <span>Dernier cours : {derniereSeance ? formatDateCourt(derniereSeance) : "—"}</span>
+        </div>
+      </div>
+
+      <div style={{ display:"flex", gap:8, flexShrink:0 }}>
+        <div style={{ textAlign:"center", minWidth:56, padding:"6px 10px", borderRadius:9, background:"#f0fdf4", border:"1px solid #86efac" }}>
+          <div style={{ fontSize:"1rem", fontWeight:800, color:"#16a34a", lineHeight:1 }}>{nbPresent}</div>
+          <div style={{ fontSize:"0.58rem", fontWeight:700, color:"#16a34a", textTransform:"uppercase", marginTop:2 }}>Présent</div>
+        </div>
+        <div style={{ textAlign:"center", minWidth:56, padding:"6px 10px", borderRadius:9, background:"#fffbeb", border:"1px solid #fcd34d" }}>
+          <div style={{ fontSize:"1rem", fontWeight:800, color:"#d97706", lineHeight:1 }}>{nbAbsentJustifie}</div>
+          <div style={{ fontSize:"0.58rem", fontWeight:700, color:"#d97706", textTransform:"uppercase", marginTop:2 }}>Abs. just.</div>
+        </div>
+        <div style={{ textAlign:"center", minWidth:56, padding:"6px 10px", borderRadius:9, background:"#fef2f2", border:"1px solid #fca5a5" }}>
+          <div style={{ fontSize:"1rem", fontWeight:800, color:"#dc2626", lineHeight:1 }}>{nbAbsentNonJustifie}</div>
+          <div style={{ fontSize:"0.58rem", fontWeight:700, color:"#dc2626", textTransform:"uppercase", marginTop:2 }}>Abs. non j.</div>
+        </div>
+        <div style={{ textAlign:"center", minWidth:56, padding:"6px 10px", borderRadius:9, background:"#f8fafc", border:"1px solid #e2e8f0" }}>
+          <div style={{ fontSize:"1rem", fontWeight:800, color:"#64748b", lineHeight:1 }}>{nbTotalInscrit}</div>
+          <div style={{ fontSize:"0.58rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", marginTop:2 }}>Inscrit</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── MAIN PAGE ─────────────────────────────────────────────────────────────────
+export default function CoursCodeMoniteur() {
+  const location = useLocation();
+  const { currentUser } = useAuth();
+  const {
+    CAN_MANAGE_COURS_CODE,
+    CAN_MARK_PRESENCE_CODE,
+    CAN_VIEW_ALL_COURS_CODE,
+  } = useMyPermissions();
+
+  const currentUserId = currentUser?.id;
 
   const [seances, setSeances]   = useState([]);
-  const [moniteurs, setMoniteurs] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [toast, setToast]       = useState(null);
   const [saving, setSaving]     = useState(false);
@@ -975,7 +1069,15 @@ export default function CoursCode() {
 
   const [search, setSearch]       = useState("");
   const [filterCat, setFilterCat] = useState("");
-  const [filterMon, setFilterMon] = useState("");
+
+  // ── Vue "Progression par candidat" ────────────────────────────────────────
+  // Si CAN_VIEW_ALL_COURS_CODE est true → tous les candidats de l'auto-école
+  // (comme côté admin). Sinon → uniquement les candidats de MES cours.
+  const [activeView, setActiveView] = useState("cours"); // "cours" | "progression"
+  const [progression, setProgression] = useState([]);
+  const [loadingProgression, setLoadingProgression] = useState(false);
+  const [searchProgression, setSearchProgression] = useState("");
+  const [filterCatProgression, setFilterCatProgression] = useState("");
 
   const showToast = (message, type="success") => setToast({ message, type });
 
@@ -990,12 +1092,37 @@ export default function CoursCode() {
     finally { setLoading(false); }
   }, []);
 
+  const loadProgression = useCallback(async () => {
+    if (!currentUserId) return;
+    setLoadingProgression(true);
+    try {
+      if (CAN_VIEW_ALL_COURS_CODE) {
+        // Permission globale → tous les candidats de l'auto-école
+        if (window.electron?.getProgressionCode) {
+          const rows = await window.electron.getProgressionCode();
+          setProgression(Array.isArray(rows) ? rows : []);
+        }
+      } else {
+        // Sinon → uniquement les candidats de mes propres cours
+        if (window.electron?.getProgressionCodeMoniteur) {
+          const rows = await window.electron.getProgressionCodeMoniteur(currentUserId);
+          setProgression(Array.isArray(rows) ? rows : []);
+        }
+      }
+    } catch (e) { console.error(e); }
+    finally { setLoadingProgression(false); }
+  }, [currentUserId, CAN_VIEW_ALL_COURS_CODE]);
+
+  const refreshAll = useCallback(() => {
+    loadSeances();
+    loadProgression();
+  }, [loadSeances, loadProgression]);
+
   useEffect(() => {
     loadSeances();
-    window.electron?.getMoniteurs?.().then(m => setMoniteurs(Array.isArray(m) ? m : [])).catch(() => {});
-  }, [loadSeances]);
+    loadProgression();
+  }, [loadSeances, loadProgression]);
 
-  // Ouverture automatique si on vient de l'Agenda avec un candidat bloqué
   useEffect(() => {
     if (location.state?.prefillCandidatId) {
       setShowCreate(true);
@@ -1028,23 +1155,53 @@ export default function CoursCode() {
   };
 
   const handleDelete = async (id) => {
+    const s = seances.find(x => x.id === id);
+    if (!s || String(s.moniteur_id) !== String(currentUserId)) {
+      showToast("Vous ne pouvez supprimer que vos propres cours.", "error");
+      return;
+    }
     try {
       await window.electron.deleteSeanceCode(id);
       await loadSeances();
+      await loadProgression();
       showToast("Cours supprimé.");
     } catch { showToast("Erreur lors de la suppression.", "error"); }
   };
 
-  const monitors = [...new Map(moniteurs.map(m => [m.id, `${m.nom} ${m.prenom}`])).entries()];
+  const handleEdit = (s) => {
+    if (String(s.moniteur_id) !== String(currentUserId)) {
+      showToast("Vous ne pouvez modifier que vos propres cours.", "error");
+      return;
+    }
+    setEditing(s);
+    setShowCreate(true);
+  };
 
   const filtered = seances.filter(s => {
     return (!search || (s.moniteurNom || "").toLowerCase().includes(search.toLowerCase()))
-      && (!filterCat || s.categoriePermis === filterCat)
-      && (!filterMon || String(s.moniteur_id) === String(filterMon));
+      && (!filterCat || s.categoriePermis === filterCat);
   }).sort((a, b) => (a.date + a.heure).localeCompare(b.date + b.heure));
 
-  const upcoming = filtered.filter(s => new Date(s.date + "T" + (s.heure||"23:59")) >= new Date());
-  const past     = filtered.filter(s => new Date(s.date + "T" + (s.heure||"23:59")) < new Date());
+  const mesCours = filtered.filter(s => String(s.moniteur_id) === String(currentUserId));
+  const autresCours = CAN_VIEW_ALL_COURS_CODE
+    ? filtered.filter(s => String(s.moniteur_id) !== String(currentUserId))
+    : [];
+
+  const mesUpcoming = mesCours.filter(s => new Date(s.date + "T" + (s.heure||"23:59")) >= new Date());
+  const mesPast     = mesCours.filter(s => new Date(s.date + "T" + (s.heure||"23:59")) < new Date());
+
+  const autresUpcoming = autresCours.filter(s => new Date(s.date + "T" + (s.heure||"23:59")) >= new Date());
+
+  const categoriesFiltre = [...new Set(seances.map(s => s.categoriePermis).filter(Boolean))];
+
+  const progressionFiltree = progression.filter(c => {
+    const q = searchProgression.toLowerCase().trim();
+    const matchesSearch = !q
+      || `${c.nom} ${c.prenom}`.toLowerCase().includes(q)
+      || (c.telephone || "").toLowerCase().includes(q);
+    const matchesCat = !filterCatProgression || c.categoriePermis === filterCatProgression;
+    return matchesSearch && matchesCat;
+  });
 
   return (
     <>
@@ -1058,106 +1215,223 @@ export default function CoursCode() {
               <GraduationCap size={24} color="#fff"/>
             </div>
             <div>
-              <h1 style={{ fontSize:"1.5rem", fontWeight:800, color:"#4C1D95", margin:0, letterSpacing:-0.5 }}>Cours de Code</h1>
-              <div style={{ fontSize:"0.78rem", color:"#7C3AED", marginTop:2 }}>Cours collectifs — jusqu'à une dizaine de candidats par session</div>
+              <h1 style={{ fontSize:"1.5rem", fontWeight:800, color:"#4C1D95", margin:0, letterSpacing:-0.5 }}>Mes Cours de Code</h1>
+              <div style={{ fontSize:"0.78rem", color:"#7C3AED", marginTop:2 }}>
+                {CAN_VIEW_ALL_COURS_CODE ? "Vos cours et ceux des autres moniteurs (lecture seule)" : "Vos cours collectifs de code"}
+              </div>
             </div>
-            {canManage && (
-              <button onClick={() => { setEditing(null); setShowCreate(true); }} style={{
-                marginLeft:"auto", padding:"10px 18px", borderRadius:10, background:"#7C3AED", border:"none",
-                color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", fontWeight:600, cursor:"pointer",
-                display:"flex", alignItems:"center", gap:8, boxShadow:"0 4px 14px rgba(124,58,237,0.3)",
-              }}>
-                <Plus size={16}/> Nouveau cours
-              </button>
+            {activeView === "cours" && (
+              CAN_MANAGE_COURS_CODE ? (
+                <button onClick={() => { setEditing(null); setShowCreate(true); }} style={{
+                  marginLeft:"auto", padding:"10px 18px", borderRadius:10, background:"#7C3AED", border:"none",
+                  color:"#fff", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", fontWeight:600, cursor:"pointer",
+                  display:"flex", alignItems:"center", gap:8, boxShadow:"0 4px 14px rgba(124,58,237,0.3)",
+                }}>
+                  <Plus size={16}/> Nouveau cours
+                </button>
+              ) : (
+                <LockedTooltip>
+                  <button disabled style={{
+                    marginLeft:"auto", padding:"10px 18px", borderRadius:10, background:"#e2e8f0", border:"1px solid #cbd5e1",
+                    color:"#94a3b8", fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem", fontWeight:600, cursor:"not-allowed",
+                    display:"flex", alignItems:"center", gap:8,
+                  }}>
+                    <Lock size={14}/> Nouveau cours
+                  </button>
+                </LockedTooltip>
+              )
             )}
           </div>
         </div>
 
-        {/* FILTRES */}
-        <div style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 28px", borderBottom:"1px solid #e2e8f0", background:"#fff", flexShrink:0, flexWrap:"wrap" }}>
-          <div style={{ position:"relative", flex:1, minWidth:200, maxWidth:280 }}>
-            <Search size={14} color="#94a3b8" style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)" }}/>
-            <input style={{ width:"100%", boxSizing:"border-box", padding:"8px 12px 8px 32px", background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:8, fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", outline:"none" }}
-              type="text" placeholder="Rechercher un moniteur..." value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
-          <span style={{ fontSize:"0.75rem", color:"#94a3b8", fontWeight:500 }}>Catégorie :</span>
-          <select style={{ padding:"7px 10px", borderRadius:8, background:"#f8fafc", border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", cursor:"pointer" }}
-            value={filterCat} onChange={e => setFilterCat(e.target.value)}>
-            <option value="">Toutes</option>
-            {CATEGORIES_PERMIS.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <span style={{ fontSize:"0.75rem", color:"#94a3b8", fontWeight:500 }}>Moniteur :</span>
-          <select style={{ padding:"7px 10px", borderRadius:8, background:"#f8fafc", border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", cursor:"pointer" }}
-            value={filterMon} onChange={e => setFilterMon(e.target.value)}>
-            <option value="">Tous</option>
-            {monitors.map(([id, nom]) => <option key={id} value={id}>{nom}</option>)}
-          </select>
-          <div style={{ marginLeft:"auto", fontSize:"0.72rem", color:"#94a3b8", background:"#f8fafc", border:"1px solid #e2e8f0", padding:"3px 12px", borderRadius:20 }}>
-            {filtered.length} cours
-          </div>
+        {/* ── SEGMENTED CONTROL : Cours / Progression ── */}
+        <div style={{ display:"flex", gap:6, padding:"12px 28px 0", background:"#fff", borderBottom:"1px solid #e2e8f0", flexShrink:0 }}>
+          {[
+            { key:"cours",       label:"Cours planifiés", Icon: ListVideo, count: mesCours.length + autresCours.length },
+            { key:"progression", label: CAN_VIEW_ALL_COURS_CODE ? "Progression par candidat" : "Mes candidats — progression", Icon: BarChart3, count: progression.length },
+          ].map(({ key, label, Icon, count }) => {
+            const active = activeView === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setActiveView(key)}
+                style={{
+                  display:"flex", alignItems:"center", gap:7,
+                  padding:"10px 16px", borderRadius:"10px 10px 0 0", cursor:"pointer",
+                  border:"none", borderBottom: active ? "2.5px solid #7C3AED" : "2.5px solid transparent",
+                  background: active ? "#F5F3FF" : "transparent",
+                  color: active ? "#5B21B6" : "#64748b",
+                  fontFamily:"'Poppins',sans-serif", fontSize:"0.82rem", fontWeight:700,
+                  transition:"all 0.15s",
+                }}
+              >
+                <Icon size={14}/> {label}
+                <span style={{
+                  background: active ? "#7C3AED" : "#e2e8f0",
+                  color: active ? "#fff" : "#64748b",
+                  borderRadius:20, padding:"1px 8px", fontSize:"0.68rem", fontWeight:700,
+                }}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* LISTE */}
-        <div style={{ flex:1, overflowY:"auto", padding:"20px 28px", position:"relative" }}>
-          {loading && (
-            <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8" }}>
-              <div style={{ width:32, height:32, margin:"0 auto 10px", borderRadius:"50%", border:"3px solid #e2e8f0", borderTop:"3px solid #7C3AED", animation:"spin 0.75s linear infinite" }}/>
-              Chargement des cours...
-              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        {activeView === "cours" ? (
+          <>
+            {/* FILTRES */}
+            <div style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 28px", borderBottom:"1px solid #e2e8f0", background:"#fff", flexShrink:0, flexWrap:"wrap" }}>
+              <div style={{ position:"relative", flex:1, minWidth:200, maxWidth:280 }}>
+                <Search size={14} color="#94a3b8" style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)" }}/>
+                <input style={{ width:"100%", boxSizing:"border-box", padding:"8px 12px 8px 32px", background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:8, fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", outline:"none" }}
+                  type="text" placeholder="Rechercher un moniteur..." value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
+              <span style={{ fontSize:"0.75rem", color:"#94a3b8", fontWeight:500 }}>Catégorie :</span>
+              <select style={{ padding:"7px 10px", borderRadius:8, background:"#f8fafc", border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", cursor:"pointer" }}
+                value={filterCat} onChange={e => setFilterCat(e.target.value)}>
+                <option value="">Toutes</option>
+                {categoriesFiltre.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <div style={{ marginLeft:"auto", fontSize:"0.72rem", color:"#94a3b8", background:"#f8fafc", border:"1px solid #e2e8f0", padding:"3px 12px", borderRadius:20 }}>
+                {mesCours.length} de mes cours
+              </div>
             </div>
-          )}
 
-          {!loading && filtered.length === 0 && (
-            <div style={{ textAlign:"center", padding:"50px 0", color:"#94a3b8" }}>
-              <GraduationCap size={40} style={{ opacity:0.3, marginBottom:10 }}/>
-              <div style={{ fontSize:"0.9rem" }}>Aucun cours de code programmé.</div>
-            </div>
-          )}
+            {/* LISTE */}
+            <div style={{ flex:1, overflowY:"auto", padding:"20px 28px", position:"relative" }}>
+              {loading && (
+                <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8" }}>
+                  <div style={{ width:32, height:32, margin:"0 auto 10px", borderRadius:"50%", border:"3px solid #e2e8f0", borderTop:"3px solid #7C3AED", animation:"spin 0.75s linear infinite" }}/>
+                  Chargement des cours...
+                  <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+                </div>
+              )}
 
-          {!loading && upcoming.length > 0 && (
-            <div style={{ marginBottom:24 }}>
-              <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>
-                À venir ({upcoming.length})
-              </div>
-              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                {upcoming.map(s => (
-                  <CoursCard key={s.id} seance={s} canManage={canManage}
-                    onManage={setManaging}
-                    onEdit={(s) => { setEditing(s); setShowCreate(true); }}
-                    onDelete={handleDelete}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
+              {!loading && mesCours.length === 0 && autresCours.length === 0 && (
+                <div style={{ textAlign:"center", padding:"50px 0", color:"#94a3b8" }}>
+                  <GraduationCap size={40} style={{ opacity:0.3, marginBottom:10 }}/>
+                  <div style={{ fontSize:"0.9rem" }}>Aucun cours de code programmé.</div>
+                </div>
+              )}
 
-          {!loading && past.length > 0 && (
-            <div>
-              <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>
-                Passés ({past.length})
+              {!loading && mesUpcoming.length > 0 && (
+                <div style={{ marginBottom:24 }}>
+                  <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>
+                    Mes cours à venir ({mesUpcoming.length})
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                    {mesUpcoming.map(s => (
+                      <CoursCard key={s.id} seance={s}
+                        isOwn={true}
+                        canManage={CAN_MANAGE_COURS_CODE}
+                        onManage={setManaging}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!loading && mesPast.length > 0 && (
+                <div style={{ marginBottom:24 }}>
+                  <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>
+                    Mes cours passés ({mesPast.length})
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                    {mesPast.map(s => (
+                      <CoursCard key={s.id} seance={s}
+                        isOwn={true}
+                        canManage={CAN_MANAGE_COURS_CODE}
+                        onManage={setManaging}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!loading && CAN_VIEW_ALL_COURS_CODE && autresUpcoming.length > 0 && (
+                <div>
+                  <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>
+                    <Lock size={11}/> Autres moniteurs ({autresUpcoming.length})
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                    {autresUpcoming.map(s => (
+                      <CoursCard key={s.id} seance={s}
+                        isOwn={false}
+                        canManage={false}
+                        onManage={setManaging}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            {/* FILTRES — vue Progression */}
+            <div style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 28px", borderBottom:"1px solid #e2e8f0", background:"#fff", flexShrink:0, flexWrap:"wrap" }}>
+              <div style={{ position:"relative", flex:1, minWidth:200, maxWidth:280 }}>
+                <Search size={14} color="#94a3b8" style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)" }}/>
+                <input style={{ width:"100%", boxSizing:"border-box", padding:"8px 12px 8px 32px", background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:8, fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", outline:"none" }}
+                  type="text" placeholder="Rechercher un candidat (nom, téléphone)..." value={searchProgression} onChange={e => setSearchProgression(e.target.value)} />
               </div>
-              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                {past.map(s => (
-                  <CoursCard key={s.id} seance={s} canManage={canManage}
-                    onManage={setManaging}
-                    onEdit={(s) => { setEditing(s); setShowCreate(true); }}
-                    onDelete={handleDelete}
-                  />
-                ))}
+              <span style={{ fontSize:"0.75rem", color:"#94a3b8", fontWeight:500 }}>Catégorie :</span>
+              <select style={{ padding:"7px 10px", borderRadius:8, background:"#f8fafc", border:"1px solid #e2e8f0", fontFamily:"'Poppins',sans-serif", fontSize:"0.8rem", cursor:"pointer" }}
+                value={filterCatProgression} onChange={e => setFilterCatProgression(e.target.value)}>
+                <option value="">Toutes</option>
+                {CATEGORIES_PERMIS_ALL.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <div style={{ marginLeft:"auto", fontSize:"0.72rem", color:"#94a3b8", background:"#f8fafc", border:"1px solid #e2e8f0", padding:"3px 12px", borderRadius:20 }}>
+                {progressionFiltree.length} candidat{progressionFiltree.length !== 1 ? "s" : ""} · trié par nb. de présences
               </div>
             </div>
-          )}
-        </div>
+
+            {/* LISTE — vue Progression */}
+            <div style={{ flex:1, overflowY:"auto", padding:"20px 28px" }}>
+              {loadingProgression && (
+                <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8" }}>
+                  <div style={{ width:32, height:32, margin:"0 auto 10px", borderRadius:"50%", border:"3px solid #e2e8f0", borderTop:"3px solid #7C3AED", animation:"spin 0.75s linear infinite" }}/>
+                  Chargement de la progression...
+                </div>
+              )}
+
+              {!loadingProgression && progressionFiltree.length === 0 && (
+                <div style={{ textAlign:"center", padding:"50px 0", color:"#94a3b8" }}>
+                  <BarChart3 size={40} style={{ opacity:0.3, marginBottom:10 }}/>
+                  <div style={{ fontSize:"0.9rem" }}>
+                    {CAN_VIEW_ALL_COURS_CODE
+                      ? "Aucun candidat inscrit à un cours de code pour l'instant."
+                      : "Aucun candidat inscrit à l'un de vos cours de code pour l'instant."}
+                  </div>
+                </div>
+              )}
+
+              {!loadingProgression && progressionFiltree.length > 0 && (
+                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                  {progressionFiltree.map(c => (
+                    <ProgressionRow key={c.idCandidat} candidat={c} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {showCreate && (
         <CreateCoursCodeModal
           onClose={() => { setShowCreate(false); setEditing(null); }}
           onSave={handleSave}
-          moniteurs={moniteurs}
+          currentUser={currentUser}
           editing={editing}
           saving={saving}
-          prefillCandidatId={location.state?.prefillCandidatId}
         />
       )}
 
@@ -1165,8 +1439,9 @@ export default function CoursCode() {
         <ManageCoursModal
           seance={managing}
           onClose={() => setManaging(null)}
-          onRefreshList={loadSeances}
-          canMarkPresence={canMarkPresence}
+          onRefreshList={refreshAll}
+          isOwn={String(managing.moniteur_id) === String(currentUserId)}
+          canMarkPresence={CAN_MARK_PRESENCE_CODE && String(managing.moniteur_id) === String(currentUserId)}
         />
       )}
 

@@ -63,7 +63,7 @@ export function ExamenProvider({ children }) {
     catch { return []; }
   });
 
-  // ── Sessions d'examen (date/heure/lieu) créées à l'avance, sans candidat ──
+  // ── Sessions d'examen (date/heure/lieu/catégorie) créées à l'avance, sans candidat ──
   const [sessionsExamens, setSessionsExamens] = useState(() => {
     try { const s = localStorage.getItem(LS_SESSIONS_KEY); return s ? JSON.parse(s) : []; }
     catch { return []; }
@@ -536,15 +536,19 @@ export function ExamenProvider({ children }) {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
-  // ── Sessions d'examen (date/heure/lieu, créées avant tout candidat) ──────
+  // ── Sessions d'examen (date/heure/lieu/catégorie, créées avant tout candidat) ──
   // ─────────────────────────────────────────────────────────────────────────
 
   // Crée une session vide — aucun candidat pour l'instant.
   // Apparaît immédiatement dans la liste des sessions (SessionsExamenList).
-  const creerSessionExamen = ({ date, heure, lieu }) => {
+  // `categoriePermis` : "Tous" (par défaut) = ouverte à toutes les catégories,
+  // sinon une catégorie précise (ex. "B") — utilisée pour filtrer les
+  // candidats proposables dans AjouterCandidatsModal.
+  const creerSessionExamen = ({ date, heure, lieu, categoriePermis }) => {
     const nouvelleSession = {
       id: `session-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       date, heure, lieu: (lieu || "").trim(),
+      categoriePermis: (categoriePermis || "Tous").trim() || "Tous",
       createdAt: new Date().toISOString(),
     };
     setSessionsExamens(prev => [...prev, nouvelleSession]);
@@ -631,6 +635,6 @@ export function ExamenProvider({ children }) {
       {children}
     </ExamenContext.Provider>
   );
-}//asma ad i3eddi un examen o ne peut plus lui ajouter des candidats ou modifier quoi que ce soit
+}
 
 export const useExamenCtx = () => useContext(ExamenContext);

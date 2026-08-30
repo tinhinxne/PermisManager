@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Users, Plus, Trash2, FileText, X, Filter, History, SquarePen, Mail, Phone, Send, Paperclip, MoreHorizontal, ChevronDown, ChevronUp } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { Users, Plus, Trash2, FileText, X, Filter, History, SquarePen, Mail, Phone, Send, Paperclip, MoreHorizontal, ChevronDown, ChevronUp, PlusCircle } from "lucide-react";
 import ConnexionImg from "../../assets/Connexion.png";
 import SmallCar from "../../assets/SmallCar.png";
 import { useAuth } from "../context/AuthContext";
@@ -17,15 +17,59 @@ const TOUTES_CATEGORIES = [
 // Taille maximale autorisée pour la pièce jointe PDF (10 Mo)
 const MAX_PIECE_JOINTE_BYTES = 10 * 1024 * 1024;
 
+// Types d'examen requis pour considérer une catégorie comme "obtenue"
+const TYPES_EXAMEN_REQUIS = ["Code", "Créneau", "Circulation"];
+
 const getInitialsCandidat = (prenom, nom) =>
   `${prenom?.[0] || ""}${nom?.[0] || ""}`.toUpperCase();
 
-function getDateObtention(candidatId, examensList) {
-  if (!Array.isArray(examensList)) return null;
-  const reussis = examensList
-    .filter((e) => String(e.candidatId) === String(candidatId) && e.status === "Passed")
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
-  return reussis[0]?.date || null;
+// ── Historique des catégories obtenues, reconstruit depuis les examens ─────
+// Une catégorie est "obtenue" dès que Code + Créneau + Circulation sont
+// "Passed" pour CETTE catégorie précise. Contrairement à candidat.status
+// (un seul champ, écrasé à chaque réinscription), ceci se base sur les
+// examens eux-mêmes, qui restent permanents en base — donc réinscrire un
+// candidat à une nouvelle catégorie n'efface JAMAIS l'historique des
+// catégories déjà obtenues.
+function getCategoriesObtenues(candidatId, examensList) {
+  if (!Array.isArray(examensList)) return [];
+
+  const examsCandidat = examensList.filter(
+    (e) => String(e.candidatId) === String(candidatId)
+  );
+
+  const categories = [
+    ...new Set(
+      examsCandidat
+        .map((e) => (e.categoriePermis || "").toString().trim().toUpperCase())
+        .filter(Boolean)
+    ),
+  ];
+
+  return categories
+    .map((cat) => {
+      const examsCat = examsCandidat.filter(
+        (e) => (e.categoriePermis || "").toString().trim().toUpperCase() === cat
+      );
+
+      const datesReussite = {};
+      TYPES_EXAMEN_REQUIS.forEach((type) => {
+        const dernierReussi = examsCat
+          .filter((e) => e.type === type && e.status === "Passed")
+          .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+        if (dernierReussi) datesReussite[type] = dernierReussi.date;
+      });
+
+      const complet = TYPES_EXAMEN_REQUIS.every((t) => datesReussite[t]);
+      if (!complet) return null;
+
+      const dateObtention = Object.values(datesReussite).sort(
+        (a, b) => new Date(b) - new Date(a)
+      )[0];
+
+      return { categorie: cat, dateObtention };
+    })
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.dateObtention) - new Date(a.dateObtention));
 }
 
 const STATUS_CONFIG_HISTO = {
@@ -692,7 +736,14 @@ function HistoriqueExamensModal({ candidat, examensList, onClose }) {
                 return (
                   <div key={ex.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#f8fafc" }}>
                     <div>
-                      <div style={{ fontSize: 13.5, fontWeight: 700, color: "#1e293b" }}>{ex.type}</div>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, color: "#1e293b" }}>
+                        {ex.type}
+                        {ex.categoriePermis && (
+                          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: "#0369a1", background: "#e0f2fe", padding: "1px 7px", borderRadius: 10 }}>
+                            {ex.categoriePermis}
+                          </span>
+                        )}
+                      </div>
                       <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
                         {ex.date} {ex.heure ? `· ${ex.heure}` : ""} {ex.lieu ? `· ${ex.lieu}` : ""}
                       </div>
@@ -845,6 +896,144 @@ function ConfirmAuditeurModal({ candidat, onConfirm, onClose }) {
   );
 }
 
+// ── MODAL de sélection : quel candidat réinscrire à une nouvelle catégorie ──
+// Permet de rechercher parmi tous les candidats du moniteur ayant déjà
+// obtenu un permis, quels que soient les filtres actifs sur l'onglet.
+function SelectReinscriptionModal({ candidats, onSelect, onClose }) {
+  const [query, setQuery] = useState("");
+
+  const resultats = useMemo(() => {
+    const q = query.toLowerCase().trim();
+    const base = !q
+      ? candidats
+      : candidats.filter((c) =>
+          c.nom.toLowerCase().includes(q) ||
+          c.prenom.toLowerCase().includes(q) ||
+          (c._raw?.matricule && c._raw.matricule.toLowerCase().includes(q)) ||
+          c.categoriePermisObtenue.toLowerCase().includes(q)
+        );
+    return base.slice(0, 50);
+  }, [candidats, query]);
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{ background: "#fff", borderRadius: 16, width: 520, maxWidth: "94vw", maxHeight: "82vh", display: "flex", flexDirection: "column", boxShadow: "0 25px 60px rgba(0,0,0,0.2)", overflow: "hidden" }}>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 22px 14px", borderBottom: "1px solid #e2e8f0" }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>Réinscrire un candidat</div>
+            <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>Recherchez parmi vos candidats ayant déjà obtenu un permis</div>
+          </div>
+          <button onClick={onClose} style={{ background: "#f1f5f9", border: "none", borderRadius: 8, width: 32, height: 32, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b" }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <div style={{ padding: "16px 22px 12px" }}>
+          <input
+            autoFocus
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="🔍 Nom, prénom, matricule ou catégorie…"
+            style={{
+              width: "100%", boxSizing: "border-box", padding: "10px 14px",
+              border: "1.5px solid #e2e8f0", borderRadius: 9, fontSize: 13.5,
+              color: "#1e293b", background: "#f8fafc", outline: "none",
+            }}
+          />
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "0 12px 12px" }}>
+          {resultats.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "30px 0", color: "#94a3b8", fontSize: 13 }}>
+              Aucun candidat trouvé.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {resultats.map((c) => (
+                <button
+                  key={`${c.id}-${c.categoriePermisObtenue}`}
+                  onClick={() => onSelect(c)}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+                    padding: "10px 12px", borderRadius: 10, border: "1px solid #e2e8f0",
+                    background: "#fff", cursor: "pointer", textAlign: "left", width: "100%",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: "#1e293b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {c.nom}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: "#94a3b8", marginTop: 2 }}>
+                      {c._raw?.matricule ? `Mat. ${c._raw.matricule} · ` : ""}
+                      Obtenu le {c.dateObtention ? new Date(c.dateObtention).toLocaleDateString("fr-FR") : "—"}
+                    </div>
+                  </div>
+                  <span style={{ flexShrink: 0, fontSize: 11, background: "#e0f2fe", color: "#0369a1", padding: "3px 10px", borderRadius: 20, fontWeight: 700 }}>
+                    {c.categoriePermisObtenue}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── MODAL confirmation de réinscription à une nouvelle catégorie ───────────
+// Rassure explicitement que l'historique de l'ancienne catégorie n'est pas
+// perdu — juste masqué de "Mes candidats" puisqu'elle est déjà obtenue.
+function ConfirmReinscriptionModal({ candidat, onConfirm, onClose }) {
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 1500, background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div style={{ background: "#fff", borderRadius: 16, width: 440, maxWidth: "92vw", padding: 24, boxShadow: "0 25px 60px rgba(0,0,0,0.2)" }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b", marginBottom: 8 }}>
+          Inscrire à une nouvelle catégorie ?
+        </div>
+        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 14, lineHeight: 1.55 }}>
+          <strong>{candidat.nom}</strong> repassera au statut "en formation" pour la nouvelle catégorie choisie.
+        </div>
+        <div style={{
+          display: "flex", alignItems: "flex-start", gap: 8,
+          background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10,
+          padding: "10px 12px", marginBottom: 20, fontSize: 12.5, color: "#166534",
+        }}>
+          <span style={{ fontSize: 15, marginTop: 1 }}>🛡️</span>
+          <span>
+            Son historique — y compris <strong>{candidat.categoriePermisObtenue}</strong> déjà obtenu le{" "}
+            {candidat.dateObtention ? new Date(candidat.dateObtention).toLocaleDateString("fr-FR") : "—"} —
+            reste conservé et consultable dans l'onglet <strong>Permis obtenus</strong>. Rien n'est effacé.
+          </span>
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={onClose}
+            style={{ flex: 1, padding: "10px 0", borderRadius: 9, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", cursor: "pointer", fontWeight: 600, fontSize: 13 }}
+          >
+            Annuler
+          </button>
+          <button
+            onClick={() => onConfirm(candidat)}
+            style={{ flex: 2, padding: "10px 0", borderRadius: 9, border: "none", background: "#166534", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13 }}
+          >
+            ✓ Continuer la réinscription
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────
 // Menu d'actions dépliable pour une card candidat
 // ─────────────────────────────────────────────
@@ -936,7 +1125,7 @@ function CandidateActions({ candidat, canEdit, canRemove, onEdit, onHistorique, 
                 {a.icon}
               </span>
               <span style={{ fontSize: 12.5, fontWeight: 600, color: "#334155" }}>
-                {a.label}
+           {a.label}
                 {a.disabled && (
                   <span style={{ display: "block", fontSize: 10.5, fontWeight: 500, color: "#94a3b8" }}>
                     Pas d'email enregistré
@@ -969,6 +1158,7 @@ const condidatsMoniteur = () => {
   const [loading,        setLoading]        = useState(true);
   const [showModal,      setShowModal]      = useState(false);
   const [editCandidat,   setEditCandidat]   = useState(null);
+  const [isReinscription, setIsReinscription] = useState(false);
   const [showEnvoiModal, setShowEnvoiModal] = useState(false);
   const [nbSeancesMax,   setNbSeancesMax]   = useState(SESSIONS_NORMALES_MAX);
   const [contactCandidat, setContactCandidat] = useState(null);
@@ -990,6 +1180,10 @@ const condidatsMoniteur = () => {
   const [selectedCategorieObtenu, setSelectedCategorieObtenu] = useState("Tous");
   const [dateObtentionDebut, setDateObtentionDebut] = useState("");
   const [dateObtentionFin,   setDateObtentionFin]   = useState("");
+
+  // ── Réinscription à une nouvelle catégorie ──────────────────────────────
+  const [confirmReinscription, setConfirmReinscription] = useState(null);
+  const [showSelectReinscriptionModal, setShowSelectReinscriptionModal] = useState(false);
 
   // ── Chargement ───────────────────────────────────────────────────────────────
 const loadData = async (maxOverride) => {
@@ -1156,20 +1350,43 @@ const loadData = async (maxOverride) => {
   }, [nbSeancesMax]);
 
 
-  // ── Ajouter ──────────────────────────────────────────────────────────────────
+  // ── Ajouter / Modifier ──────────────────────────────────────────────────
   const handleAdd = () => {
     if (!CAN_ADD_CANDIDAT) return;
+    setIsReinscription(false);
     setEditCandidat(null);
     setShowModal(true);
   };
   const handleEdit = (candidat) => {
-  if (!CAN_EDIT_CANDIDAT) return;
-  setEditCandidat(candidat);
-  setShowModal(true);
-};
+    if (!CAN_EDIT_CANDIDAT) return;
+    setIsReinscription(false);
+    setEditCandidat(candidat);
+    setShowModal(true);
+  };
+
+  // Demande de réinscription : passe d'abord par une confirmation explicite
+  // qui rassure sur la conservation de l'historique (voir ConfirmReinscriptionModal).
+  const handleDemandeReinscription = (candidat) => {
+    setShowSelectReinscriptionModal(false);
+    setConfirmReinscription(candidat);
+  };
+
+  const handleConfirmerReinscription = (candidat) => {
+    setConfirmReinscription(null);
+    setIsReinscription(true);
+    setEditCandidat(candidat._raw);
+    setShowModal(true);
+  };
+
 const handleSave = async (data) => {
   if (!CAN_ADD_CANDIDAT) return;
-  if (data.idCandidat) {
+  if (data.isReinscription) {
+    // reinscrireCandidat ne modifie QUE categoriePermis et statut (retour à
+    // "en cours") — les examens déjà passés pour l'ancienne catégorie ne
+    // sont jamais touchés côté base, donc l'historique reconstruit via
+    // getCategoriesObtenues reste intact après cet appel.
+    await window.electron.reinscrireCandidat(data);
+  } else if (data.idCandidat) {
     await window.electron.updateCandidat(data);
   } else {
     // ── On passe l'id du moniteur connecté comme créateur ──
@@ -1216,23 +1433,71 @@ const handleSave = async (data) => {
       !c.externe
   );
 
-  // ── Split : candidats en cours vs permis obtenus ──────────────────────────────
-  const filteredEnCours = filtered.filter((c) => c.status !== "obtenu");
+  // ── Base pour "Permis obtenus" / "Réinscrits" — tous mes candidats internes,
+  // indépendamment de la barre de recherche "Mes candidats" ──────────────────
+  const candidatsBaseSansExterne = useMemo(
+    () => candidats.filter((c) => !c.externe),
+    [candidats]
+  );
 
-  const filteredObtenus = filtered
-    .filter((c) => c.status === "obtenu")
-    .map((c) => ({ ...c, dateObtention: getDateObtention(c.id, examensList) }))
-    .filter((c) => {
+  // ── Réinscrits — en formation pour une NOUVELLE catégorie ──────────────────
+  // = possède déjà ≥1 catégorie obtenue dans le passé (historique des
+  // examens) MAIS n'a pas encore obtenu sa catégorie ACTUELLE. Basé
+  // uniquement sur les examens, jamais sur le champ brut c.status.
+  const candidatsReinscrits = useMemo(() => {
+    return candidatsBaseSansExterne
+      .map((c) => {
+        const categoriesObtenues = getCategoriesObtenues(c.id, examensList);
+        const categoriesNoms = categoriesObtenues.map((co) => co.categorie);
+        const dejaObtenueCategorieActuelle = categoriesNoms.includes(c.categoriePermis);
+        const anciennesCategories = categoriesNoms.filter((cat) => cat !== c.categoriePermis);
+        return anciennesCategories.length > 0 && !dejaObtenueCategorieActuelle
+          ? { ...c, anciennesCategories }
+          : null;
+      })
+      .filter(Boolean);
+  }, [candidatsBaseSansExterne, examensList]);
+
+  // IDs des réinscrits, pour ne pas les afficher en double dans "Mes candidats"
+  const reinscritsIds = useMemo(
+    () => new Set(candidatsReinscrits.map((c) => c.id)),
+    [candidatsReinscrits]
+  );
+
+  // ── Permis obtenus — reconstruit depuis examensList, PAS depuis c.status ──
+  // Une ligne par catégorie effectivement obtenue ; réinscrire ce candidat à
+  // une nouvelle catégorie ne fait disparaître AUCUNE de ces lignes.
+  const candidatsObtenusTous = useMemo(() => {
+    return candidatsBaseSansExterne
+      .flatMap((c) => {
+        const categoriesObtenues = getCategoriesObtenues(c.id, examensList);
+        return categoriesObtenues.map((co) => ({
+          ...c,
+          categoriePermisObtenue: co.categorie,
+          dateObtention: co.dateObtention,
+          estCategorieActive: c.status === "obtenu" && c.categoriePermis === co.categorie,
+        }));
+      })
+      .sort((a, b) => new Date(b.dateObtention || 0) - new Date(a.dateObtention || 0));
+  }, [candidatsBaseSansExterne, examensList]);
+
+  const candidatsObtenus = useMemo(() => {
+    return candidatsObtenusTous.filter((row) => {
       const matchesCategorie =
         selectedCategorieObtenu === "Tous" ||
-        c.categoriePermis === selectedCategorieObtenu.toUpperCase();
-      const d = toComparableDate(c.dateObtention);
+        row.categoriePermisObtenue === selectedCategorieObtenu.toUpperCase();
+      const d = toComparableDate(row.dateObtention);
       const matchesDate =
         (!dateObtentionDebut || (d && d >= dateObtentionDebut)) &&
         (!dateObtentionFin   || (d && d <= dateObtentionFin));
       return matchesCategorie && matchesDate;
-    })
-    .sort((a, b) => new Date(b.dateObtention || 0) - new Date(a.dateObtention || 0));
+    });
+  }, [candidatsObtenusTous, selectedCategorieObtenu, dateObtentionDebut, dateObtentionFin]);
+
+  // ── Split : candidats en cours vs permis obtenus vs réinscrits ────────────
+  const filteredEnCours = filtered.filter(
+    (c) => c.status !== "obtenu" && !reinscritsIds.has(c.id)
+  );
 
   // ── Personnes externes (perfectionnement) ──────────────────────────────
   const candidatsExternes = candidats.filter((c) => {
@@ -1304,13 +1569,18 @@ const handleSave = async (data) => {
   };
 
   const TABS = [
-    { key: "encours",   label: "Mes candidats",     count: filteredEnCours.length },
-    { key: "obtenus",   label: "Permis obtenus",    count: filteredObtenus.length },
-    { key: "externes",  label: "Externes",          count: candidatsExternes.length },
-    { key: "auditeurs", label: "Auditeurs libres",  count: auditeursFiltres.length },
+    { key: "encours",    label: "Mes candidats",       count: filteredEnCours.length },
+    { key: "reinscrits", label: "🔄 Réinscrits",       count: candidatsReinscrits.length },
+    { key: "obtenus",    label: "Permis obtenus",      count: candidatsObtenus.length },
+    { key: "externes",   label: "Externes",            count: candidatsExternes.length },
+    { key: "auditeurs",  label: "Auditeurs libres",    count: auditeursFiltres.length },
   ];
 
-  // ── Rendu d'une card (factorisé : utilisé pour les deux sections) ────────────
+  // ── Styles table réutilisés (Réinscrits / Permis obtenus) ────────────────
+  const thM = { padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" };
+  const tdM = { padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" };
+
+  // ── Rendu d'une card (factorisé : utilisé pour "Mes candidats") ──────────────
   const renderCard = (c) => {
     const pct = Math.min(Math.round((c.sessions / c.total) * 100), 100);
     return (
@@ -1595,14 +1865,113 @@ const handleSave = async (data) => {
         </div>
         )}
 
+        {/* ── ONGLET RÉINSCRITS ── */}
+        {activeTab === "reinscrits" && (
+        <div className="card">
+          <div className="card-header">
+            <div>
+              <h2>🔄 Réinscrits — Progression sur une nouvelle catégorie</h2>
+              <p>{candidatsReinscrits.length} candidat(s) titulaire(s) d'un permis, en formation pour un autre</p>
+            </div>
+          </div>
+
+          <div style={{ background: "#fff", borderRadius: "15px", overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)" }}>
+            <div style={{ maxHeight: "500px", overflowY: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
+                  <tr style={{ background: "#7c3aed" }}>
+                    <th style={thM}>Candidat</th>
+                    <th style={thM}>Déjà titulaire de</th>
+                    <th style={thM}>Nouvelle catégorie</th>
+                    <th style={thM}>Progression</th>
+                    <th style={thM}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {candidatsReinscrits.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: "center", padding: "40px", color: "#A0AEC0" }}>
+                        Aucun candidat réinscrit pour une nouvelle catégorie actuellement.
+                      </td>
+                    </tr>
+                  ) : (
+                    candidatsReinscrits.map((c, index) => (
+                      <tr key={c.id} style={{ background: index % 2 === 0 ? "#fff" : "#F8FAFC" }}>
+                        <td style={tdM}>
+                          <div style={{ fontWeight: 600 }}>{c.nom}</div>
+                          {c._raw?.matricule && (
+                            <span style={{ fontSize: "11px", background: "#f1f5f9", color: "#334155", padding: "2px 6px", borderRadius: "4px", fontWeight: "bold", display: "inline-block", marginTop: 4 }}>
+                              Mat. {c._raw.matricule}
+                            </span>
+                          )}
+                        </td>
+                        <td style={tdM}>
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                            {c.anciennesCategories.map((cat) => (
+                              <span key={cat} style={{ fontSize: "11px", background: "#dcfce7", color: "#166534", padding: "2px 8px", borderRadius: "4px", fontWeight: "bold" }}>
+                                🎓 {cat}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td style={tdM}>
+                          <span style={{ fontSize: "11px", background: "#ede9fe", color: "#6d28d9", padding: "2px 8px", borderRadius: "4px", fontWeight: "bold" }}>
+                            {c.categoriePermis}
+                          </span>
+                        </td>
+                        <td style={tdM}>
+                          <div className="progress-container">
+                            <div className="progress-bar" style={{ width: `${(c.sessions / nbSeancesMax) * 100}%` }} />
+                          </div>
+                          <span className="progress-text">
+                            {c.sessions}/{nbSeancesMax} sessions
+                            {c.sessionsSuppl > 0 && (
+                              <span style={{ color: "#7c3aed", fontWeight: 700, marginLeft: 4 }}>
+                                (+{c.sessionsSuppl} suppl.)
+                              </span>
+                            )}
+                          </span>
+                        </td>
+                        <td style={tdM}>
+                          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                            {CAN_EDIT_CANDIDAT && (
+                              <SquarePen size={17} color="blue" style={{ cursor: "pointer" }} title="Modifier la fiche" onClick={() => handleEdit(c._raw)} />
+                            )}
+                            <History size={17} color="#7c3aed" style={{ cursor: "pointer" }} title="Historique des examens" onClick={() => setHistoriqueCandidat(c)} />
+                            <Phone size={17} color={c.tel ? "#128c4a" : "#cbd5e1"} style={{ cursor: c.tel ? "pointer" : "default" }} title="Contacter via WhatsApp" onClick={() => { if (c.tel) openWhatsAppContact(c.tel); }} />
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        )}
+
         {/* ── ONGLET PERMIS OBTENUS ── */}
         {activeTab === "obtenus" && (
         <div className="card">
           <div className="card-header">
             <div>
               <h2>🎓 Historique — Permis obtenus</h2>
-              <p>{filteredObtenus.length} candidat(s) ayant obtenu leur permis</p>
+              <p>{candidatsObtenus.length} attestation(s) de réussite — une ligne par catégorie obtenue</p>
             </div>
+            {CAN_ADD_CANDIDAT && (
+              <button
+                onClick={() => setShowSelectReinscriptionModal(true)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  background: "#166534", color: "#fff", border: "none",
+                  padding: "10px 18px", borderRadius: 10, cursor: "pointer",
+                  fontSize: 14, fontWeight: 600, whiteSpace: "nowrap",
+                }}
+              >
+                <PlusCircle size={16} /> Réinscrire un candidat
+              </button>
+            )}
           </div>
 
           <div style={{
@@ -1647,21 +2016,94 @@ const handleSave = async (data) => {
             </div>
           </div>
 
-          {loading ? (
-            <p style={{ textAlign: "center", color: "#888", padding: "20px" }}>Chargement…</p>
-          ) : filteredObtenus.length === 0 ? (
-            <p style={{ textAlign: "center", color: "#94a3b8", padding: "20px" }}>
-              Aucun candidat trouvé pour cette sélection.
-            </p>
-          ) : (
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-              gap: 12,
-            }}>
-              {filteredObtenus.map(renderCard)}
+          <div style={{ background: "#fff", borderRadius: "15px", overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)" }}>
+            <div style={{ maxHeight: "500px", overflowY: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
+                  <tr style={{ background: "#2b537e" }}>
+                    <th style={thM}>Candidat</th>
+                    <th style={thM}>Matricule</th>
+                    <th style={thM}>Catégorie obtenue</th>
+                    <th style={thM}>Date d'obtention</th>
+                    <th style={thM}>Situation actuelle</th>
+                    <th style={thM}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {candidatsObtenus.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: "center", padding: "40px", color: "#A0AEC0" }}>
+                        Aucun candidat trouvé pour cette sélection.
+                      </td>
+                    </tr>
+                  ) : (
+                    candidatsObtenus.map((c) => (
+                      <tr key={`${c.id}-${c.categoriePermisObtenue}`} style={{ background: "#fff" }}>
+                        <td style={tdM}>
+                          <div style={{ fontWeight: 600 }}>{c.nom}</div>
+                        </td>
+                        <td style={tdM}>
+                          {c._raw?.matricule ? (
+                            <span style={{ fontSize: 12, background: "#f1f5f9", color: "#334155", padding: "3px 9px", borderRadius: 6, fontWeight: 700 }}>
+                              {c._raw.matricule}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 12, color: "#cbd5e1", fontStyle: "italic" }}>
+                              Non attribué
+                            </span>
+                          )}
+                        </td>
+                        <td style={tdM}>
+                          <span style={{ fontSize: "11px", background: "#e0f2fe", color: "#0369a1", padding: "2px 8px", borderRadius: "4px", fontWeight: "bold" }}>
+                            {c.categoriePermisObtenue}
+                          </span>
+                        </td>
+                        <td style={tdM}>
+                          {c.dateObtention ? new Date(c.dateObtention).toLocaleDateString("fr-FR") : "—"}
+                        </td>
+                        <td style={tdM}>
+                          {c.estCategorieActive ? (
+                            <span style={{ fontSize: 11, background: "#dcfce7", color: "#166534", padding: "3px 9px", borderRadius: 20, fontWeight: 700 }}>
+                              ✓ Situation actuelle
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 11, background: "#f1f5f9", color: "#64748b", padding: "3px 9px", borderRadius: 20, fontWeight: 700 }}>
+                              🕘 Depuis réinscrit — {c.categoriePermis}
+                            </span>
+                          )}
+                        </td>
+                        <td style={tdM}>
+                          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                            <History
+                              size={17}
+                              color="#7c3aed"
+                              style={{ cursor: "pointer" }}
+                              title="Historique complet des examens"
+                              onClick={() => setHistoriqueCandidat(c)}
+                            />
+                            <Mail
+                              size={17}
+                              color={c._raw?.email ? "#2b537e" : "#cbd5e1"}
+                              style={{ cursor: c._raw?.email ? "pointer" : "default" }}
+                              title={c._raw?.email ? `Envoyer un email à ${c.nom}` : "Pas d'email enregistré"}
+                              onClick={() => { if (c._raw?.email) setContactCandidat(c); }}
+                            />
+                            <Phone
+                              size={17}
+                              color={c.tel ? "#128c4a" : "#cbd5e1"}
+                              style={{ cursor: c.tel ? "pointer" : "default" }}
+                              title={c.tel ? "Contacter via WhatsApp" : "Pas de téléphone enregistré"}
+                              onClick={() => { if (c.tel) openWhatsAppContact(c.tel); }}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
-          )}
+          </div>
         </div>
         )}
 
@@ -1693,11 +2135,11 @@ const handleSave = async (data) => {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
                   <tr style={{ background: "#0369a1" }}>
-                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Personne</th>
-                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Contact</th>
-                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Catégorie</th>
-                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Séances</th>
-                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Actions</th>
+                    <th style={thM}>Personne</th>
+                    <th style={thM}>Contact</th>
+                    <th style={thM}>Catégorie</th>
+                    <th style={thM}>Séances</th>
+                    <th style={thM}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1710,26 +2152,26 @@ const handleSave = async (data) => {
                   ) : (
                     candidatsExternes.map((c, index) => (
                       <tr key={c.id} style={{ background: index % 2 === 0 ? "#fff" : "#F8FAFC" }}>
-                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                        <td style={tdM}>
                           <div style={{ fontWeight: 600 }}>{c.nom}</div>
                           <span style={{ fontSize: "11px", background: "#e0e7ff", color: "#3730a3", padding: "2px 6px", borderRadius: "4px", fontWeight: "bold", display: "inline-block", marginTop: 4 }}>
                             🆕 Externe
                           </span>
                         </td>
-                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                        <td style={tdM}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             <Phone size={15} /> {c.tel || "—"}
                           </div>
                         </td>
-                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                        <td style={tdM}>
                           <span style={{ fontSize: "11px", background: "#e0f2fe", color: "#0369a1", padding: "2px 8px", borderRadius: "4px", fontWeight: "bold" }}>
                             {c.categoriePermis}
                           </span>
                         </td>
-                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                        <td style={tdM}>
                           {c.sessions}{c.sessionsSuppl > 0 ? ` (+${c.sessionsSuppl})` : ""}
                         </td>
-                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                        <td style={tdM}>
                           <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
                             <SquarePen size={17} color="blue" style={{ cursor: "pointer" }} title="Modifier" onClick={() => setEditingExterne(c._raw)} />
                             <History size={17} color="#7c3aed" style={{ cursor: "pointer" }} title="Historique des examens" onClick={() => setHistoriqueCandidat(c)} />
@@ -1794,11 +2236,11 @@ const handleSave = async (data) => {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
                   <tr style={{ background: "#d97706" }}>
-                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Personne</th>
-                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Contact</th>
-                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Catégorie</th>
-                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Ajouté le</th>
-                    <th style={{ padding: "15px 16px", textAlign: "left", color: "#fff", fontWeight: "600", fontSize: "14px" }}>Actions</th>
+                    <th style={thM}>Personne</th>
+                    <th style={thM}>Contact</th>
+                    <th style={thM}>Catégorie</th>
+                    <th style={thM}>Ajouté le</th>
+                    <th style={thM}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1811,24 +2253,24 @@ const handleSave = async (data) => {
                   ) : (
                     auditeursFiltres.map((c, index) => (
                       <tr key={c.idCandidat} style={{ background: index % 2 === 0 ? "#fff" : "#F8FAFC" }}>
-                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                        <td style={tdM}>
                           <div style={{ fontWeight: 600 }}>{c.nom} {c.prenom}</div>
                           <span style={{ fontSize: "11px", background: "#fff7ed", color: "#c2410c", padding: "2px 6px", borderRadius: "4px", fontWeight: "bold", display: "inline-block", marginTop: 4 }}>
                             📖 Auditeur libre
                           </span>
                         </td>
-                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                        <td style={tdM}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             <Phone size={15} /> {c.telephone || "—"}
                           </div>
                         </td>
-                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                        <td style={tdM}>
                           <span style={{ fontSize: "11px", background: "#e0f2fe", color: "#0369a1", padding: "2px 8px", borderRadius: "4px", fontWeight: "bold" }}>
                             {c.categoriePermis}
                           </span>
                         </td>
-                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>{formatDateAr(c.date_inscription)}</td>
-                        <td style={{ padding: "14px 16px", borderBottom: "1px solid #E5E7EB", fontSize: "14px", color: "#1F2937" }}>
+                        <td style={tdM}>{formatDateAr(c.date_inscription)}</td>
+                        <td style={tdM}>
                           {CAN_ADD_CANDIDAT && (
                             <button
                               onClick={() => handleDemandeConversion(c)}
@@ -1855,12 +2297,13 @@ const handleSave = async (data) => {
         )}
       </div>
 
-      {/* MODALE AJOUT */}
+      {/* MODALE AJOUT / MODIFICATION / RÉINSCRIPTION */}
       {CAN_ADD_CANDIDAT && (
         <AddCandidatModal
           showModal={showModal}
           setShowModal={setShowModal}
           candidat={editCandidat}
+          isReinscription={isReinscription}
           onSave={handleSave}
         />
       )}
@@ -1901,6 +2344,22 @@ const handleSave = async (data) => {
           candidat={confirmAuditeur}
           onConfirm={handleConvertirAuditeur}
           onClose={() => setConfirmAuditeur(null)}
+        />
+      )}
+
+      {confirmReinscription && (
+        <ConfirmReinscriptionModal
+          candidat={confirmReinscription}
+          onConfirm={handleConfirmerReinscription}
+          onClose={() => setConfirmReinscription(null)}
+        />
+      )}
+
+      {showSelectReinscriptionModal && (
+        <SelectReinscriptionModal
+          candidats={candidatsObtenusTous}
+          onSelect={handleDemandeReinscription}
+          onClose={() => setShowSelectReinscriptionModal(false)}
         />
       )}
     </div>

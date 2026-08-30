@@ -38,6 +38,13 @@ const HISTORY_TABS = [
 const ABSENCE_CUTOFF_DAYS = 1;
 const DAYS_OPTIONS = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
 
+// ── AJOUT : normalisation de la catégorie de permis, utilisée pour ne
+// comparer les examens réussis/programmés qu'au sein d'une même catégorie
+// (voir AjouterCandidatsModal et ResultModal.onConfirm plus bas), et pour
+// filtrer les candidats proposables selon la catégorie visée par une
+// session d'examen (voir CreerSessionModal / AjouterCandidatsModal). ──
+const normCat = v => (v || "").toString().trim().toUpperCase();
+
 function formatDateAr(isoDate) {
   if (!isoDate) return "";
   const str = isoDate instanceof Date ? isoDate.toISOString() : String(isoDate);
@@ -297,9 +304,6 @@ function AlertModal({ icon, title, message, color = "#ef4444", onClose }) {
 // ─────────────────────────────────────────────
 // PropositionsSection — propositions générées automatiquement,
 // affichées directement dans la page (Valider / Rejeter ligne par ligne).
-// Visible uniquement quand le composant appelant a la permission (canReview
-// contrôle aussi les actions ; le rendu global du bloc est déjà conditionné
-// par la permission côté page).
 // ─────────────────────────────────────────────
 function PropositionsSection({ propositions, canReview, onValider, onRejeter, onValiderTout, onRejeterTout }) {
   const [busyId, setBusyId]   = useState(null);
@@ -418,19 +422,22 @@ function PropositionsSection({ propositions, canReview, onValider, onRejeter, on
 }
 
 // ─────────────────────────────────────────────
-// CreerSessionModal — date/heure/lieu, création immédiate d'un jour d'examen
+// CreerSessionModal — date/heure/lieu/catégorie, création immédiate d'un jour d'examen
 // ─────────────────────────────────────────────
-function CreerSessionModal({ onClose, onConfirm }) {
+function CreerSessionModal({ onClose, onConfirm, categoriesOptions = [] }) {
   const [date, setDate]   = useState("");
   const [heure, setHeure] = useState("08:00");
   const [lieu, setLieu]   = useState("");
+  // ── AJOUT : catégorie de permis visée par cette session.
+  // "Tous" = ouverte à toutes les catégories (comportement précédent).
+  const [categoriePermis, setCategoriePermis] = useState("Tous");
   const [error, setError] = useState("");
 
   const handleConfirm = () => {
     if (!date)        { setError("Veuillez choisir une date.");  return; }
     if (!heure)       { setError("Veuillez choisir une heure."); return; }
     if (!lieu.trim()) { setError("Veuillez indiquer un lieu.");  return; }
-    onConfirm({ date, heure, lieu: lieu.trim() });
+    onConfirm({ date, heure, lieu: lieu.trim(), categoriePermis });
     onClose();
   };
 
@@ -452,6 +459,26 @@ function CreerSessionModal({ onClose, onConfirm }) {
           <FormField label="Date"  value={date}  onChange={setDate}  type="date" required />
           <FormField label="Heure" value={heure} onChange={setHeure} type="time" required />
           <FormField label="Lieu"  value={lieu}  onChange={setLieu}  placeholder="Ex : Centre d'examen" required />
+
+          {/* ── AJOUT : sélection de la catégorie de permis ── */}
+          <div>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 4 }}>
+              Catégorie de permis
+            </label>
+            <select
+              value={categoriePermis}
+              onChange={e => setCategoriePermis(e.target.value)}
+              style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13.5, color: "#1F2937", outline: "none", background: "#fff", boxSizing: "border-box" }}
+            >
+              <option value="Tous">Toutes catégories</option>
+              {categoriesOptions.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+            <p style={{ fontSize: 11, color: "#94a3b8", margin: "4px 0 0" }}>
+              Seuls les candidats de cette catégorie pourront être ajoutés à cette session. Choisissez « Toutes catégories » pour ne pas restreindre.
+            </p>
+          </div>
         </div>
 
         {error && (
@@ -504,9 +531,10 @@ function SessionsExamenList({ sessions, examensList, onAjouterCandidats, onSuppr
         {sorted.map(s => {
           const nb = examensList.filter(e => e.sessionId === s.id).length;
           const passee = isSessionPast(s.date);
+          const categorieRestreinte = s.categoriePermis && s.categoriePermis !== "Tous";
           return (
             <div key={s.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 16px", borderBottom: "1px solid #f1f5f9", opacity: passee ? 0.75 : 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <FaCalendarDay style={{ color: passee ? "#94a3b8" : "#4E96E1", fontSize: 13 }} />
                 <div>
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: "#1e293b" }}>
@@ -516,6 +544,14 @@ function SessionsExamenList({ sessions, examensList, onAjouterCandidats, onSuppr
                 </div>
                 <span style={{ background: "#f1f5f9", color: "#475569", padding: "2px 9px", borderRadius: 10, fontSize: 12, fontWeight: 600, marginLeft: 6 }}>
                   {nb} candidat{nb > 1 ? "s" : ""}
+                </span>
+                {/* ── AJOUT : badge catégorie de permis de la session ── */}
+                <span style={{
+                  background: categorieRestreinte ? "#ede9fe" : "#f1f5f9",
+                  color: categorieRestreinte ? "#6d28d9" : "#64748b",
+                  padding: "2px 9px", borderRadius: 10, fontSize: 12, fontWeight: 600,
+                }}>
+                  {categorieRestreinte ? `Cat. ${s.categoriePermis}` : "Toutes catégories"}
                 </span>
                 {passee && (
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "#f1f5f9", color: "#94a3b8", padding: "2px 9px", borderRadius: 10, fontSize: 11.5, fontWeight: 600 }}>
@@ -570,13 +606,37 @@ function AjouterCandidatsModal({ session, candidats, examensList = [], onClose, 
 
   const TOUS_TYPES = ["Code", "Créneau", "Circulation"];
 
-  const getTypesDisponibles = (cid) => {
-    const reussis = examensList
-      .filter(e => String(e.candidatId) === String(cid) && e.status === "Passed")
-      .map(e => e.type);
-    const programmes = examensList
-      .filter(e => String(e.candidatId) === String(cid) && e.status === "Scheduled")
-      .map(e => e.type);
+  // ── AJOUT : catégorie visée par la session (badge affiché + filtre) ──
+  const sessionCategorieRestreinte = session.categoriePermis && session.categoriePermis !== "Tous";
+
+  // ── AJOUT : ne proposer, dans cette session, que les candidats dont la
+  // catégorie de permis correspond à celle choisie à la création du jour
+  // d'examen. Si la session est ouverte à "Tous", aucun filtrage ici. ──
+  const candidatsDeLaCategorie = candidats.filter(c => {
+    if (!sessionCategorieRestreinte) return true;
+    return normCat(c.categoriePermis) === normCat(session.categoriePermis);
+  });
+
+  // ── ne retenir, pour un candidat donné, que les examens de la MÊME
+  // catégorie de permis que celle visée (categoriePermis). Sans ce filtre,
+  // un candidat réinscrit dans une nouvelle catégorie (ex. B → A) hériterait
+  // à tort des réussites/programmations de son ancienne catégorie et se
+  // verrait bloqué ou faussement dispensé de Code/Créneau. Les examens sans
+  // catégorie enregistrée (anciennes données) restent bloquants par défaut,
+  // pour ne pas changer le comportement sur l'historique existant. ──
+  const examensDuCandidatPourCategorie = (cid, categoriePermis) => {
+    const catCible = normCat(categoriePermis);
+    return examensList.filter(e => {
+      if (String(e.candidatId) !== String(cid)) return false;
+      const examCat = normCat(e.categoriePermis);
+      return !examCat || !catCible || examCat === catCible;
+    });
+  };
+
+  const getTypesDisponibles = (cid, categoriePermis) => {
+    const examsPertinents = examensDuCandidatPourCategorie(cid, categoriePermis);
+    const reussis    = examsPertinents.filter(e => e.status === "Passed").map(e => e.type);
+    const programmes = examsPertinents.filter(e => e.status === "Scheduled").map(e => e.type);
 
     const aReussiCode    = reussis.includes("Code");
     const aReussiCreneau = reussis.includes("Créneau");
@@ -584,6 +644,8 @@ function AjouterCandidatsModal({ session, candidats, examensList = [], onClose, 
     let dispo = TOUS_TYPES.filter(t => !reussis.includes(t) && !programmes.includes(t));
 
     // ── Ordre obligatoire : Code → Créneau → Circulation ──
+    // On ne peut pas passer Créneau sans avoir réussi Code,
+    // ni Circulation sans avoir réussi Code ET Créneau.
     if (!aReussiCode) {
       dispo = dispo.filter(t => t === "Code");
     } else if (!aReussiCreneau) {
@@ -593,13 +655,11 @@ function AjouterCandidatsModal({ session, candidats, examensList = [], onClose, 
     return dispo;
   };
 
-  const getRaisonIndisponible = (cid) => {
-    const reussis = examensList
-      .filter(e => String(e.candidatId) === String(cid) && e.status === "Passed")
-      .map(e => e.type);
-    const programmes = examensList
-      .filter(e => String(e.candidatId) === String(cid) && e.status === "Scheduled")
-      .map(e => e.type);
+  // Explique pourquoi un candidat n'a aucun type disponible
+  const getRaisonIndisponible = (cid, categoriePermis) => {
+    const examsPertinents = examensDuCandidatPourCategorie(cid, categoriePermis);
+    const reussis    = examsPertinents.filter(e => e.status === "Passed").map(e => e.type);
+    const programmes = examsPertinents.filter(e => e.status === "Scheduled").map(e => e.type);
 
     if (["Code", "Créneau", "Circulation"].every(t => reussis.includes(t))) {
       return "Les 3 examens sont déjà réussis 🎓";
@@ -610,20 +670,20 @@ function AjouterCandidatsModal({ session, candidats, examensList = [], onClose, 
     return "Aucun type disponible pour le moment";
   };
 
-  const candidatsFiltres = candidats.filter(c => {
+  const candidatsFiltres = candidatsDeLaCategorie.filter(c => {
     const q = search.trim().toLowerCase();
     if (!q) return true;
     return `${c.prenom} ${c.nom}`.toLowerCase().includes(q);
   });
 
-  const eligibles    = candidatsFiltres.filter(c => getTypesDisponibles(c.id).length > 0);
-  const nonEligibles = candidatsFiltres.filter(c => getTypesDisponibles(c.id).length === 0);
+  const eligibles    = candidatsFiltres.filter(c => getTypesDisponibles(c.id, c.categoriePermis).length > 0);
+  const nonEligibles = candidatsFiltres.filter(c => getTypesDisponibles(c.id, c.categoriePermis).length === 0);
 
   const toggleCandidat = (c) => {
     setSelectedMap(prev => {
       const next = { ...prev };
       if (next[c.id]) delete next[c.id];
-      else next[c.id] = getTypesDisponibles(c.id)[0];
+      else next[c.id] = getTypesDisponibles(c.id, c.categoriePermis)[0];
       return next;
     });
   };
@@ -688,9 +748,15 @@ function AjouterCandidatsModal({ session, candidats, examensList = [], onClose, 
           <button onClick={closeIfPossible} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16 }}><FaTimes /></button>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12.5, color: "#166534" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12.5, color: "#166534", flexWrap: "wrap" }}>
           <FaCalendarDay style={{ fontSize: 12 }} />
           {session.date} à {session.heure} · {session.lieu}
+          {/* ── AJOUT : badge catégorie visible dans la modale ── */}
+          {sessionCategorieRestreinte && (
+            <span style={{ marginLeft: "auto", background: "#ede9fe", color: "#6d28d9", padding: "2px 9px", borderRadius: 10, fontWeight: 700 }}>
+              Cat. {session.categoriePermis} uniquement
+            </span>
+          )}
         </div>
 
         <input
@@ -707,11 +773,15 @@ function AjouterCandidatsModal({ session, candidats, examensList = [], onClose, 
 
         <div style={{ flex: 1, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10, minHeight: 220, maxHeight: 340 }}>
           {eligibles.length === 0 && nonEligibles.length === 0 && (
-            <div style={{ padding: 30, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>Aucun candidat trouvé.</div>
+            <div style={{ padding: 30, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+              {sessionCategorieRestreinte
+                ? `Aucun candidat trouvé pour la catégorie ${session.categoriePermis}.`
+                : "Aucun candidat trouvé."}
+            </div>
           )}
 
           {eligibles.map(c => {
-            const dispo = getTypesDisponibles(c.id);
+            const dispo = getTypesDisponibles(c.id, c.categoriePermis);
             const checked = !!selectedMap[c.id];
             return (
               <div
@@ -750,7 +820,7 @@ function AjouterCandidatsModal({ session, candidats, examensList = [], onClose, 
                   <input type="checkbox" disabled style={{ width: 15, height: 15 }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b" }}>{c.prenom} {c.nom}</div>
-                    <div style={{ fontSize: 11, color: "#94a3b8" }}>{getRaisonIndisponible(c.id)}</div>
+                    <div style={{ fontSize: 11, color: "#94a3b8" }}>{getRaisonIndisponible(c.id, c.categoriePermis)}</div>
                   </div>
                 </div>
               ))}
@@ -1017,6 +1087,7 @@ const {
   // ── state ──
   const [selectedExamen,      setSelectedExamen]      = useState(null);
   const [typeFilter,          setTypeFilter]          = useState("Tous");
+  const [categorieFilter,     setCategorieFilter]     = useState("Tous");
   const [dateDebut,           setDateDebut]           = useState("");
   const [dateFin,             setDateFin]             = useState("");
   const [loading,             setLoading]             = useState(false);
@@ -1129,8 +1200,23 @@ const {
     [examensList, mesCandidatIds, CAN_VIEW_ALL_CANDIDATES]
   );
 
-  // ── filtres : type + plage de dates ──
+  // ── filtres : type + catégorie de permis + plage de dates ──
   const byType = (list) => typeFilter === "Tous" ? list : list.filter(e => e.type === typeFilter);
+
+  // ── Catégories de permis disponibles, déduites des examens existants ──
+  const categoriesDisponibles = Array.from(
+    new Set(examensList.map(e => (e.categoriePermis || "").trim()).filter(Boolean))
+  ).sort();
+
+  // ── AJOUT : catégories de permis déduites des candidats eux-mêmes (utile
+  // dès la création d'une session, avant même qu'un examen existe pour
+  // cette catégorie) — sert d'options pour CreerSessionModal. ──
+  const categoriesCandidats = Array.from(
+    new Set(candidatsFullList.map(c => (c.categoriePermis || "").trim()).filter(Boolean))
+  ).sort();
+
+  const byCategorie = (list) =>
+    categorieFilter === "Tous" ? list : list.filter(e => (e.categoriePermis || "").trim() === categorieFilter);
 
   const filterByDate = (list) => {
     if (!dateDebut && !dateFin) return list;
@@ -1145,10 +1231,12 @@ const {
     });
   };
 
-  const hasDateFilter = !!(dateDebut || dateFin);
-  const resetDateFilter = () => { setDateDebut(""); setDateFin(""); };
+  const hasDateFilter      = !!(dateDebut || dateFin);
+  const hasCategorieFilter = categorieFilter !== "Tous";
+  const hasAnyFilter       = hasDateFilter || hasCategorieFilter;
+  const resetDateFilter    = () => { setDateDebut(""); setDateFin(""); };
 
-  const applyFilters = (list) => filterByDate(byType(list));
+  const applyFilters = (list) => filterByDate(byType(byCategorie(list)));
 
   // ── Jours d'examen autorisés (éditable directement sur cette page) ──
   const toggleJourAutorise = (day) => {
@@ -1472,6 +1560,18 @@ const {
 
           <div style={{ width: 1, height: 36, background: "#e2e8f0", alignSelf: "center" }} />
 
+          {/* Filtre catégorie de permis */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Catégorie de permis</label>
+            <SelectFilter
+              value={categorieFilter} onChange={setCategorieFilter}
+              options={["Tous", ...categoriesDisponibles]}
+              label="Catégorie de permis"
+            />
+          </div>
+
+          <div style={{ width: 1, height: 36, background: "#e2e8f0", alignSelf: "center" }} />
+
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Du</label>
             <input
@@ -1499,10 +1599,24 @@ const {
             </button>
           )}
 
-          {hasDateFilter && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "7px 12px", fontSize: 12, color: "#1d4ed8", fontWeight: 600, alignSelf: "flex-end" }}>
+          {hasCategorieFilter && (
+            <button
+              onClick={() => setCategorieFilter("Tous")}
+              title="Effacer le filtre de catégorie"
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c", cursor: "pointer", fontSize: 12.5, fontWeight: 600, alignSelf: "flex-end" }}
+            >
+              <FaTimes style={{ fontSize: 11 }} /> Effacer catégorie
+            </button>
+          )}
+
+          {hasAnyFilter && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "7px 12px", fontSize: 12, color: "#1d4ed8", fontWeight: 600, alignSelf: "flex-end", flexWrap: "wrap" }}>
               <FaFilter style={{ fontSize: 10 }} />
-              {dateDebut && dateFin ? `${dateDebut} → ${dateFin}` : dateDebut ? `À partir du ${dateDebut}` : `Jusqu'au ${dateFin}`}
+              {hasDateFilter && (
+                dateDebut && dateFin ? `${dateDebut} → ${dateFin}` : dateDebut ? `À partir du ${dateDebut}` : `Jusqu'au ${dateFin}`
+              )}
+              {hasDateFilter && hasCategorieFilter && <span style={{ opacity: 0.5 }}>·</span>}
+              {hasCategorieFilter && <>Catégorie : <strong>{categorieFilter}</strong></>}
               <span style={{ background: "#dbeafe", borderRadius: 10, padding: "1px 7px", fontSize: 11 }}>
                 {allFiltered.length} résultat{allFiltered.length > 1 ? "s" : ""}
               </span>
@@ -1750,9 +1864,21 @@ const {
             const examen = examensList.find((e) => e.id === id);
             if (examen) {
               const cid = examen.candidatId;
+              // ── AJOUT : on ne considère "réussi" que les examens de la MÊME
+              // catégorie de permis que celui qu'on vient de valider (catCible).
+              // Sans ce filtre, un candidat réinscrit dans une nouvelle
+              // catégorie serait déclaré "permis obtenu" dès que 3 types
+              // d'examens sont validés au total, même répartis sur d'anciennes
+              // catégories différentes. Les examens sans catégorie enregistrée
+              // (anciennes données) restent acceptés par défaut. ──
+              const catCible = normCat(examen.categoriePermis);
               const passe = (type) =>
                 type === examen.type ||
-                examensList.some((e) => e.candidatId === cid && e.type === type && e.status === "Passed");
+                examensList.some((e) => {
+                  if (e.candidatId !== cid || e.type !== type || e.status !== "Passed") return false;
+                  const examCat = normCat(e.categoriePermis);
+                  return !examCat || !catCible || examCat === catCible;
+                });
               if (passe("Code") && passe("Créneau") && passe("Circulation")) {
                 window.electron.updateStatutCandidat({ candidatId: cid, statut: "obtenu" })
                   .then((res) => {
@@ -1775,11 +1901,12 @@ const {
         <PermisObtenuModal candidatName={permisObtenuInfo.candidat} onClose={() => setPermisObtenuInfo(null)} />
       )}
 
-      {/* ── Créer une session (date/heure/lieu) — seulement avec la permission ── */}
+      {/* ── Créer une session (date/heure/lieu/catégorie) — seulement avec la permission ── */}
       {canManageExamens && showCreerSessionModal && (
         <CreerSessionModal
           onClose={() => setShowCreerSessionModal(false)}
           onConfirm={creerSessionExamen}
+          categoriesOptions={categoriesCandidats}
         />
       )}
 
@@ -1819,6 +1946,7 @@ const {
             <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#475569" }}>
               <strong style={{ color: "#1f2937" }}>Aperçu :</strong> {allFiltered.length} candidat(s) exporté(s)
               {typeFilter !== "Tous" && <> · Type : <strong>{typeFilter}</strong></>}
+              {hasCategorieFilter && <> · Catégorie : <strong>{categorieFilter}</strong></>}
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
               <button onClick={() => setShowExportModal(false)} disabled={pdfLoading} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>Annuler</button>
