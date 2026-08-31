@@ -698,7 +698,7 @@ function openWhatsAppContact(telephone) {
 }
 
 function HistoriqueExamensModal({ candidat, examensList, onClose }) {
-  const nomComplet = `${candidat.prenom} ${candidat.nom}`;
+  const nomComplet = candidat.nom;
   const historique = examensList
     .filter((e) => String(e.candidatId) === String(candidat.id))
     .sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -1230,19 +1230,22 @@ const loadData = async (maxOverride) => {
             c.categoriePermis || c.categorie || c.categorie_permis || "B"
           ).toString().trim().toUpperCase();
 
-          const seancesDuCandidat = seancesPourCalcul.filter((s) => {
-            if (!s.candidatsIds) return false;
-            const matchCandidat = String(s.candidatsIds).split(",")
-              .map((id) => parseInt(id.trim()))
-              .includes(c.idCandidat);
-            if (!matchCandidat) return false;
+const seancesDuCandidat = seancesPourCalcul.filter((s) => {
+  if (!s.candidatsIds) return false;
+  const matchCandidat = String(s.candidatsIds).split(",")
+    .map((id) => parseInt(id.trim()))
+    .includes(c.idCandidat);
+  if (!matchCandidat) return false;
 
-            const typeNorm = (s.type || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            if (typeNorm.includes("code")) return false; // compté à part
+  const seanceCat = (s.categoriePermis || "").toString().trim().toUpperCase();
+  if (seanceCat !== currentCat) return false; // ne compte que la catégorie en cours
 
-            const statutNorm = (s.statut || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            return statutNorm !== "annulee";
-          });
+  const typeNorm = (s.type || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (typeNorm.includes("code")) return false;
+
+  const statutNorm = (s.statut || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return statutNorm !== "annulee";
+});
 
           // ── Les cours de code ne comptent pas dans le total de séances : ──
           // ── on ne compte qu'à partir du circuit/circulation (code déjà réussi) ──
@@ -1379,28 +1382,20 @@ const loadData = async (maxOverride) => {
   };
 
 const handleSave = async (data) => {
-  if (!CAN_ADD_CANDIDAT) return;
+  const isEdition = !!data.idCandidat && !data.isReinscription;
+  if (isEdition && !CAN_EDIT_CANDIDAT) return;
+  if (!isEdition && !CAN_ADD_CANDIDAT) return;
   if (data.isReinscription) {
-    // reinscrireCandidat ne modifie QUE categoriePermis et statut (retour à
-    // "en cours") — les examens déjà passés pour l'ancienne catégorie ne
-    // sont jamais touchés côté base, donc l'historique reconstruit via
-    // getCategoriesObtenues reste intact après cet appel.
     await window.electron.reinscrireCandidat(data);
   } else if (data.idCandidat) {
     await window.electron.updateCandidat(data);
   } else {
-    // ── On passe l'id du moniteur connecté comme créateur ──
-    await window.electron.addCandidat({
-      ...data,
-      created_by_moniteur_id: currentUser?.id ?? null,
-    });
-    // Nouveau candidat uniquement → message de bienvenue WhatsApp
+    await window.electron.addCandidat({ ...data, created_by_moniteur_id: currentUser?.id ?? null });
     openWhatsAppBienvenue(data.telephone, data.prenom);
   }
   await loadData();
   setShowModal(false);
 };
-
   // ── Supprimer ────────────────────────────────────────────────────────────────
   const handleDelete = async (id) => {
     if (!CAN_REMOVE_CANDIDAT) return;
@@ -1569,8 +1564,7 @@ const handleSave = async (data) => {
   };
 
   const TABS = [
-    { key: "encours",    label: "Mes candidats",       count: filteredEnCours.length },
-    { key: "reinscrits", label: "🔄 Réinscrits",       count: candidatsReinscrits.length },
+    { key: "encours",    label: CAN_VIEW_ALL_CANDIDATES ? "Tous les candidats" : "Mes candidats", count: filteredEnCours.length },    { key: "reinscrits", label: "🔄 Réinscrits",       count: candidatsReinscrits.length },
     { key: "obtenus",    label: "Permis obtenus",      count: candidatsObtenus.length },
     { key: "externes",   label: "Externes",            count: candidatsExternes.length },
     { key: "auditeurs",  label: "Auditeurs libres",    count: auditeursFiltres.length },
@@ -1761,19 +1755,31 @@ const handleSave = async (data) => {
         </div>
 
             {/* ── BARRE D'ONGLETS ── */}
-        <div style={{ display: "flex", gap: 6, marginBottom: 20, background: "#fff", padding: 6, borderRadius: 12, border: "1px solid #E2E8F0" }}>
-          {TABS.map((tab) => (
+<style>{`
+  .tabs-scroll::-webkit-scrollbar { display: none; }
+  .tabs-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+`}</style>
+<div
+  className="tabs-scroll"
+  style={{
+    display: "flex", gap: 6, marginBottom: 20, background: "#fff",
+    padding: 6, borderRadius: 12, border: "1px solid #E2E8F0",
+    overflowX: "auto",
+  }}
+>
+  {TABS.map((tab) => (
             <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              style={{
-                flex: 1, padding: "10px 14px", borderRadius: 8, border: "none",
-                background: activeTab === tab.key ? "#2b537e" : "transparent",
-                color: activeTab === tab.key ? "#fff" : "#475569",
-                fontWeight: 600, fontSize: 13.5, cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              }}
-            >
+  key={tab.key}
+  onClick={() => setActiveTab(tab.key)}
+  style={{
+    flex: 1, minWidth: "fit-content", padding: "10px 14px", borderRadius: 8, border: "none",
+    background: activeTab === tab.key ? "#2b537e" : "transparent",
+    color: activeTab === tab.key ? "#fff" : "#475569",
+    fontWeight: 600, fontSize: 13.5, cursor: "pointer",
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+    whiteSpace: "nowrap",
+  }}
+>
               {tab.label}
               <span style={{
                 background: activeTab === tab.key ? "rgba(255,255,255,0.25)" : "#e2e8f0",
@@ -2298,15 +2304,15 @@ const handleSave = async (data) => {
       </div>
 
       {/* MODALE AJOUT / MODIFICATION / RÉINSCRIPTION */}
-      {CAN_ADD_CANDIDAT && (
-        <AddCandidatModal
-          showModal={showModal}
-          setShowModal={setShowModal}
-          candidat={editCandidat}
-          isReinscription={isReinscription}
-          onSave={handleSave}
-        />
-      )}
+      {(CAN_ADD_CANDIDAT || CAN_EDIT_CANDIDAT) && (
+  <AddCandidatModal
+    showModal={showModal}
+    setShowModal={setShowModal}
+    candidat={editCandidat}
+    isReinscription={isReinscription}
+    onSave={handleSave}
+  />
+)}
 
       {/* MODALE لائحة الإرسال */}
       {showEnvoiModal && (

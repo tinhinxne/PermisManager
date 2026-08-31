@@ -940,16 +940,25 @@ const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
   // ── Vérification congé sur la date choisie ─────────────────────────────────
   const congeBloquant = isDateBloquee ? isDateBloquee(form.date) : null;
 
-  // ── Examens du candidat ────────────────────────────────────────────────────
-  const examsCandidat  = (examensList || []).filter(e => String(e.candidatId) === String(form.candidatId));
-  const aReussiCode    = examsCandidat.some(e => e.type === "Code"        && e.status === "Passed");
-  const aReussiCreneau = examsCandidat.some(e => e.type === "Créneau"     && e.status === "Passed");
-  const aReussiCirc    = examsCandidat.some(e => e.type === "Circulation" && e.status === "Passed");
-
   const estExterne = !!selectedCandidatObj?.externe;
   const candidatCatForm = selectedCandidatObj
     ? normCat(selectedCandidatObj.categoriePermis || selectedCandidatObj.categorie || selectedCandidatObj.categorie_permis || "B")
     : "";
+
+  // ── Examens du candidat ────────────────────────────────────────────────────
+  // ⚠️ On ne retient que les examens de la MÊME catégorie de permis que celle
+  // visée par cette séance (candidatCatForm). Un candidat réinscrit dans une
+  // autre catégorie (ex. B → A) ne doit pas hériter des réussites de son
+  // ancienne catégorie. Les anciens examens sans catégorie enregistrée (créés
+  // avant ce correctif) sont acceptés par défaut pour ne pas casser l'historique.
+  const examsCandidat = (examensList || []).filter(e => {
+    if (String(e.candidatId) !== String(form.candidatId)) return false;
+    const examCat = normCat(e.categoriePermis || e.categorie || e.categorie_permis);
+    return !examCat || !candidatCatForm || examCat === candidatCatForm;
+  });
+  const aReussiCode    = examsCandidat.some(e => e.type === "Code"        && e.status === "Passed");
+  const aReussiCreneau = examsCandidat.some(e => e.type === "Créneau"     && e.status === "Passed");
+  const aReussiCirc    = examsCandidat.some(e => e.type === "Circulation" && e.status === "Passed");
   const nbSeancesEffectuees = form.candidatId
     ? countSeancesFormation(sessions, form.candidatId, candidatCatForm)
     : 0;
