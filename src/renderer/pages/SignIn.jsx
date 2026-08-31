@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import '../../styles/SignIn.css';
 import CarImage from '../../assets/Car.png';
 import { useNavigate } from "react-router-dom";
-import { Ban, Eye, EyeOff } from 'lucide-react';
+import { Ban, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from "../context/AuthContext";
 
 const SteeringWheelIcon = () => (
@@ -113,6 +113,7 @@ const InactivePopup = ({ onClose }) => (
     </div>
   </div>
 );
+
 const LockedPopup = ({ minutes, onClose }) => (
   <div style={{
     position: 'fixed',
@@ -172,6 +173,73 @@ const LockedPopup = ({ minutes, onClose }) => (
   </div>
 );
 
+// ── Popup erreur générique (identifiants invalides, erreur réseau...) ──────
+// Remplace window.alert(), qui est une boîte de dialogue NATIVE dans Electron :
+// elle bloque le process et casse le focus du champ de saisie du renderer
+// une fois fermée — d'où le clavier qui semblait "mort" après une erreur.
+const ErrorPopup = ({ message, onClose }) => (
+  <div style={{
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
+  }}
+    onClick={(e) => e.target === e.currentTarget && onClose()}
+  >
+    <div style={{
+      backgroundColor: '#f7e5e4',
+      borderRadius: '12px',
+      padding: '36px 40px',
+      maxWidth: '380px',
+      width: '90%',
+      border: 'solid 3px #c0392b',
+      textAlign: 'center',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+    }}>
+      <div>
+        <AlertCircle color="#c0392b" size={32}/>
+      </div>
+
+      <h2 style={{
+        color: '#0d0a0a',
+        fontSize: '18px',
+        fontWeight: '700',
+        margin: '12px 0 12px',
+      }}>
+        Connexion impossible
+      </h2>
+
+      <p style={{
+        color: '#261816',
+        fontSize: '14px',
+        lineHeight: '1.6',
+        margin: '0 0 28px',
+      }}>
+        {message}
+      </p>
+
+      <button
+        onClick={onClose}
+        style={{
+          backgroundColor: '#fff',
+          color: '#c0392b',
+          border: 'solid 2px #c0392b',
+          borderRadius: '8px',
+          padding: '10px 28px',
+          fontSize: '14px',
+          fontWeight: '700',
+          cursor: 'pointer',
+        }}
+      >
+        Fermer
+      </button>
+    </div>
+  </div>
+);
+
 export default function SignIn() {
   const { login } = useAuth();
 
@@ -179,10 +247,13 @@ export default function SignIn() {
   const [password, setPassword] = useState('');
   const [showInactivePopup, setShowInactivePopup] = useState(false);
 
-  // 👇 AJOUTE ÇA
   const [showPassword, setShowPassword] = useState(false);
-const [showLockedPopup, setShowLockedPopup] = useState(false);
-const [lockMinutes, setLockMinutes] = useState(0);
+  const [showLockedPopup, setShowLockedPopup] = useState(false);
+  const [lockMinutes, setLockMinutes] = useState(0);
+
+  // ── Popup d'erreur générique (remplace alert()) ──
+  const [errorMessage, setErrorMessage] = useState(null);
+
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -191,26 +262,26 @@ const [lockMinutes, setLockMinutes] = useState(0);
     try {
       const response = await window.electron.login({ email, password });
 
-     if (response.success) {
-  login(response.user);
-  localStorage.setItem("user", JSON.stringify(response.user));
+      if (response.success) {
+        login(response.user);
+        localStorage.setItem("user", JSON.stringify(response.user));
 
-  if (response.user.type_utilisateur === "moniteur") {
-    navigate("/moniteur/dashboard");
-  } else {
-    navigate("/dashboard");
-  }
-} else if (response.locked) {
-  setLockMinutes(response.minutesRestantes);
-  setShowLockedPopup(true);
-} else if (response.inactive) {
-  setShowInactivePopup(true);
-} else {
-  alert(response.message || "Identifiants invalides");
-}
+        if (response.user.type_utilisateur === "moniteur") {
+          navigate("/moniteur/dashboard");
+        } else {
+          navigate("/dashboard");
+        }
+      } else if (response.locked) {
+        setLockMinutes(response.minutesRestantes);
+        setShowLockedPopup(true);
+      } else if (response.inactive) {
+        setShowInactivePopup(true);
+      } else {
+        setErrorMessage(response.message || "Identifiants invalides");
+      }
     } catch (error) {
       console.error("Erreur lors de la tentative de connexion :", error);
-      alert("Impossible de contacter la base de données.");
+      setErrorMessage("Impossible de contacter la base de données.");
     }
   };
 
@@ -224,10 +295,15 @@ const [lockMinutes, setLockMinutes] = useState(0);
       {showInactivePopup && (
         <InactivePopup onClose={() => setShowInactivePopup(false)} />
       )}
-        {/* ── Popup compte bloqué ── */}
+      {/* ── Popup compte bloqué ── */}
       {showLockedPopup && (
         <LockedPopup minutes={lockMinutes} onClose={() => setShowLockedPopup(false)} />
       )}
+      {/* ── Popup erreur (identifiants invalides / erreur réseau) ── */}
+      {errorMessage && (
+        <ErrorPopup message={errorMessage} onClose={() => setErrorMessage(null)} />
+      )}
+
       {/* ── Images de fond ── */}
       <img
         src="../../assets/Car.png"

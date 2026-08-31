@@ -2068,7 +2068,7 @@ const handleSave = async (data) => {
                             </span>
                           ) : (
                             <span style={{ fontSize: 11, background: "#f1f5f9", color: "#64748b", padding: "3px 9px", borderRadius: 20, fontWeight: 700 }}>
-                              🕘 Depuis réinscrit — {c.categoriePermis}
+                              🕘 réinscrit  a la categorie : — {c.categoriePermis}
                             </span>
                           )}
                         </td>
