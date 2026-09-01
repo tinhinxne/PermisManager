@@ -621,6 +621,120 @@ function CongeAnnuelBanner({ congeAnnuel }) {
     </div>
   );
 }
+// ── SEARCHABLE SELECT (candidat / moniteur) ───────────────────────────────────
+function SearchableSelect({
+  options,            // [{ id, label, sublabel? }]
+  value,
+  onChange,           // (id) => void
+  placeholder = "Sélectionner...",
+  disabled = false,
+  emptyText = "Aucun résultat",
+}) {
+  const [open, setOpen]   = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef();
+
+  const selected = options.find(o => String(o.id) === String(value));
+
+  useEffect(() => {
+    const h = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  useEffect(() => { if (!open) setQuery(""); }, [open]);
+
+  const filtered = options.filter(o => o.label.toLowerCase().includes(query.toLowerCase()));
+
+  const initials = label => label.split(" ").map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+
+  return (
+    <div ref={ref} style={{ position:"relative" }}>
+      <div
+        onClick={() => !disabled && setOpen(o => !o)}
+        style={{
+          width:"100%", boxSizing:"border-box",
+          background: disabled ? "#f1f5f9" : "#fff",
+          border:"1px solid #cbd5e1", borderRadius:8,
+          padding:"9px 11px", cursor: disabled ? "not-allowed" : "pointer",
+          fontFamily:"'Poppins',sans-serif", fontSize:"0.85rem",
+          color: selected ? "#1e293b" : "#94a3b8",
+          display:"flex", alignItems:"center", justifyContent:"space-between", gap:8,
+        }}
+      >
+        <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+          {selected ? selected.label : placeholder}
+        </span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5"
+          style={{ flexShrink:0, transform: open ? "rotate(180deg)" : "none", transition:"transform .15s" }}>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </div>
+
+      {open && (
+        <div style={{
+          position:"absolute", top:"calc(100% + 4px)", left:0, right:0, zIndex:50,
+          background:"#fff", border:"1px solid #e2e8f0", borderRadius:10,
+          boxShadow:"0 12px 32px rgba(0,0,0,0.14)", overflow:"hidden",
+        }}>
+          <div style={{ position:"relative", padding:8, borderBottom:"1px solid #f1f5f9" }}>
+            <svg style={{ position:"absolute", left:18, top:"50%", transform:"translateY(-50%)" }}
+              width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              autoFocus
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Rechercher..."
+              style={{
+                width:"100%", boxSizing:"border-box", padding:"7px 10px 7px 30px",
+                border:"1px solid #e2e8f0", borderRadius:8, outline:"none",
+                fontFamily:"'Poppins',sans-serif", fontSize:"0.82rem", color:"#1e293b",
+                background:"#f8fafc",
+              }}
+            />
+          </div>
+          <div style={{ maxHeight:220, overflowY:"auto" }}>
+            {filtered.length === 0 && (
+              <div style={{ padding:"14px 12px", fontSize:"0.78rem", color:"#94a3b8", textAlign:"center" }}>
+                {emptyText}
+              </div>
+            )}
+            {filtered.map(o => {
+              const isSel = String(o.id) === String(value);
+              return (
+                <div
+                  key={o.id}
+                  onClick={() => { onChange(o.id); setOpen(false); }}
+                  style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 12px", cursor:"pointer", background: isSel ? "#eef2ff" : "#fff" }}
+                  onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = "#f8fafc"; }}
+                  onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = "#fff"; }}
+                >
+                  <div style={{
+                    width:30, height:30, borderRadius:"50%", flexShrink:0,
+                    background: isSel ? "#6366f1" : "#e0e7ff",
+                    color: isSel ? "#fff" : "#4338ca",
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    fontSize:"0.68rem", fontWeight:700,
+                  }}>
+                    {initials(o.label)}
+                  </div>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ fontSize:"0.82rem", fontWeight:600, color:"#1e293b", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                      {o.label}
+                    </div>
+                    {o.sublabel && <div style={{ fontSize:"0.68rem", color:"#94a3b8" }}>{o.sublabel}</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── CREATE / EDIT MODAL ───────────────────────────────────────────────────────
 function CreateModal({ onClose, onCreate, weekDates, editing, saving, sessions, prefillCandidatId, nbSeancesMax = 20 }) {
@@ -1088,21 +1202,32 @@ if (forfaitNonSolde) {
             </div>
           )}
 
-          {/* Candidat / Moniteur */}
+                {/* Candidat / Moniteur */}
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Candidat <span style={{ color:"#ef4444" }}>*</span></label>
-              <select style={inpS} value={form.candidatId} onChange={handleCandidatChange}>
-                <option value="">Sélectionner candidat...</option>
-                {candidats.map(c => <option key={c.idCandidat} value={c.idCandidat}>{c.nom} {c.prenom} — {candidatCategorie(c)}</option>)}
-              </select>
+              <SearchableSelect
+                options={candidats.map(c => ({
+                  id: c.idCandidat,
+                  label: `${c.nom} ${c.prenom}`,
+                  sublabel: `Catégorie ${candidatCategorie(c)}`,
+                }))}
+                value={form.candidatId}
+                onChange={id => handleCandidatChange({ target: { value: id } })}
+                placeholder="Sélectionner candidat..."
+                emptyText="Aucun candidat trouvé"
+              />
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:"0.72rem", fontWeight:600, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>Moniteur <span style={{ color:"#ef4444" }}>*</span></label>
-              <select style={inpS} value={form.moniteur_id} disabled={!form.candidatId || dateEnCongeAnnuel || currentStage === "code"} onChange={handleMoniteurChange}>
-                <option value="">{form.candidatId ? "Sélectionner moniteur..." : "Choisissez d'abord un candidat"}</option>
-                {moniteursDisponibles.map(m => <option key={m.id} value={m.id}>{m.nom} {m.prenom}</option>)}
-              </select>
+              <SearchableSelect
+                options={moniteursDisponibles.map(m => ({ id: m.id, label: `${m.nom} ${m.prenom}` }))}
+                value={form.moniteur_id}
+                onChange={id => handleMoniteurChange({ target: { value: id } })}
+                placeholder={form.candidatId ? "Sélectionner moniteur..." : "Choisissez d'abord un candidat"}
+                disabled={!form.candidatId || dateEnCongeAnnuel || currentStage === "code"}
+                emptyText="Aucun moniteur disponible"
+              />
             </div>
           </div>
 
