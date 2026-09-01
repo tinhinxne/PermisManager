@@ -1167,6 +1167,11 @@ const condidatsMoniteur = () => {
   const { examensList } = useExamenCtx();
   const [historiqueCandidat, setHistoriqueCandidat] = useState(null);
 
+  // ── Filtre "Mes candidats" vs "Candidats des autres moniteurs" ──────────
+  // Utile uniquement quand la vue complète est active (CAN_VIEW_ALL_CANDIDATES) ;
+  // s'applique aux onglets "Mes candidats", "Réinscrits" et "Permis obtenus".
+  const [filterProprietaire, setFilterProprietaire] = useState("tous"); // "tous" | "mien" | "autres"
+
   const [selectedCategorieExterne, setSelectedCategorieExterne] = useState("Tous");
   const [editingExterne, setEditingExterne] = useState(null);
   const [deletingExterneId, setDeletingExterneId] = useState(null);
@@ -1426,18 +1431,30 @@ const handleSave = async (data) => {
 
   // ── Stats + filtre ────────────────────────────────────────────────────────────
 
-  const filtered = candidats.filter(
-    (c) =>
-      (c.nom.toLowerCase().includes(search.toLowerCase()) ||
-      c.tel?.toLowerCase().includes(search.toLowerCase())) &&
-      !c.externe
-  );
-
-  // ── Base pour "Permis obtenus" / "Réinscrits" — tous mes candidats internes,
-  // indépendamment de la barre de recherche "Mes candidats" ──────────────────
-  const candidatsBaseSansExterne = useMemo(
+  // ── Tous mes candidats internes (hors externes), indépendamment de tout filtre ──
+  const candidatsInternes = useMemo(
     () => candidats.filter((c) => !c.externe),
     [candidats]
+  );
+
+  // Compteurs utilisés par le filtre "Mes candidats / Autres moniteurs"
+  const nbCandidatsMien   = useMemo(() => candidatsInternes.filter((c) => c.isMien).length,  [candidatsInternes]);
+  const nbCandidatsAutres = useMemo(() => candidatsInternes.filter((c) => !c.isMien).length, [candidatsInternes]);
+
+  // ── Base filtrée par propriétaire — appliquée à "Mes candidats", ──────────
+  // "Réinscrits" et "Permis obtenus" pour séparer clairement mes candidats
+  // de ceux des autres moniteurs (uniquement pertinent en vue complète).
+  const candidatsBaseSansExterne = useMemo(() => {
+    if (!CAN_VIEW_ALL_CANDIDATES || filterProprietaire === "tous") return candidatsInternes;
+    return candidatsInternes.filter((c) =>
+      filterProprietaire === "mien" ? c.isMien : !c.isMien
+    );
+  }, [candidatsInternes, filterProprietaire, CAN_VIEW_ALL_CANDIDATES]);
+
+  const filtered = candidatsBaseSansExterne.filter(
+    (c) =>
+      c.nom.toLowerCase().includes(search.toLowerCase()) ||
+      c.tel?.toLowerCase().includes(search.toLowerCase())
   );
 
   // ── Réinscrits — en formation pour une NOUVELLE catégorie ──────────────────
@@ -1759,6 +1776,51 @@ const handleSave = async (data) => {
             </div>
           )}
         </div>
+
+        {/* ── FILTRE : Mes candidats / Autres moniteurs ── */}
+        {/* Visible seulement en vue complète — sinon il n'y a rien d'autre à filtrer. */}
+        {/* S'applique aux onglets "Mes candidats", "Réinscrits" et "Permis obtenus". */}
+        {CAN_VIEW_ALL_CANDIDATES && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+            marginBottom: 16, background: "#fff", padding: "10px 12px",
+            borderRadius: 12, border: "1px solid #E2E8F0",
+          }}>
+            <span style={{ fontSize: 12.5, color: "#64748b", fontWeight: 600, marginRight: 2 }}>
+              Afficher :
+            </span>
+            {[
+              { key: "tous",   label: "Tous les candidats", count: candidatsInternes.length },
+              { key: "mien",   label: "Mes candidats",      count: nbCandidatsMien },
+              { key: "autres", label: "Autres moniteurs",   count: nbCandidatsAutres },
+            ].map((opt) => {
+              const active = filterProprietaire === opt.key;
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => setFilterProprietaire(opt.key)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "7px 14px", borderRadius: 20, cursor: "pointer",
+                    border: "1.5px solid", borderColor: active ? "#2b537e" : "#e2e8f0",
+                    background: active ? "#2b537e" : "#fff",
+                    color: active ? "#fff" : "#475569",
+                    fontSize: 12.5, fontWeight: 600, transition: "all 0.15s",
+                  }}
+                >
+                  {opt.label}
+                  <span style={{
+                    background: active ? "rgba(255,255,255,0.25)" : "#f1f5f9",
+                    color: active ? "#fff" : "#64748b",
+                    borderRadius: 20, padding: "1px 8px", fontSize: 11,
+                  }}>
+                    {opt.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
             {/* ── BARRE D'ONGLETS ── */}
         <div style={{ display: "flex", gap: 6, marginBottom: 20, background: "#fff", padding: 6, borderRadius: 12, border: "1px solid #E2E8F0" }}>

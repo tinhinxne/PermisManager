@@ -9,6 +9,7 @@ import {
   ChevronLeft, ChevronRight, Trash2, PenLine, UserPlus,
   Search, RotateCcw, AlertCircle, CheckCircle2, XCircle,
   HelpCircle, CalendarDays, Repeat, UserCog, BarChart3, ListVideo,
+  Eye, EyeOff,
 } from "lucide-react";
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -88,6 +89,50 @@ function countSeancesSerie(dateDebut, dateFin, jours) {
     safety++;
   }
   return count;
+}
+
+// ── Plages de dates pour les filtres de période ─────────────────────────────
+function getTodayISO() {
+  return toLocalISO(new Date());
+}
+
+// Semaine calendaire lundi → dimanche (cohérent avec le reste de l'app)
+function getWeekRange() {
+  const today = new Date();
+  const dayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1; // 0 = lundi
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - dayOfWeek);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return [toLocalISO(monday), toLocalISO(sunday)];
+}
+
+function getMonthRange() {
+  const today = new Date();
+  const first = new Date(today.getFullYear(), today.getMonth(), 1);
+  const last  = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  return [toLocalISO(first), toLocalISO(last)];
+}
+
+const PERIOD_OPTIONS = [
+  { key: "jour",    label: "Aujourd'hui" },
+  { key: "semaine", label: "Cette semaine" },
+  { key: "mois",    label: "Ce mois" },
+  { key: "tous",    label: "Tous" },
+];
+
+function matchesPeriod(dateIso, period) {
+  if (period === "tous") return true;
+  if (period === "jour") return dateIso === getTodayISO();
+  if (period === "semaine") {
+    const [start, end] = getWeekRange();
+    return dateIso >= start && dateIso <= end;
+  }
+  if (period === "mois") {
+    const [start, end] = getMonthRange();
+    return dateIso >= start && dateIso <= end;
+  }
+  return true;
 }
 
 const STATUT_PRESENCE_META = {
@@ -902,48 +947,56 @@ const handleInscrire = async (idCandidat) => {
   );
 }
 
-// ── CARTE COURS ────────────────────────────────────────────────────────────────
+// ── CARTE COURS (compacte) ───────────────────────────────────────────────────
 function CoursCard({ seance, onManage, onEdit, onDelete, canManage }) {
   const isPast = new Date(seance.date + "T" + (seance.heure || "00:00")) < new Date();
   return (
     <div style={{
-      border:"1px solid #e2e8f0", borderLeft:"4px solid #7C3AED", borderRadius:12,
-      padding:"14px 16px", background: isPast ? "#f8fafc" : "#fff",
-      display:"flex", alignItems:"center", gap:16, opacity: isPast ? 0.75 : 1,
+      border:"1px solid #e2e8f0", borderLeft:"3px solid #7C3AED", borderRadius:9,
+      padding:"8px 12px", background: isPast ? "#f8fafc" : "#fff",
+      display:"flex", alignItems:"center", gap:12, opacity: isPast ? 0.75 : 1,
     }}>
-      <div style={{ width:52, height:52, borderRadius:12, background:"#F3E8FF", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-        <div style={{ fontSize:"0.65rem", fontWeight:700, color:"#7C3AED", textTransform:"uppercase" }}>
+      <div style={{
+        display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+        width:40, flexShrink:0,
+      }}>
+        <div style={{ fontSize:"0.58rem", fontWeight:700, color:"#7C3AED", textTransform:"uppercase" }}>
           {new Date(seance.date + "T12:00:00").toLocaleDateString("fr-FR", { month:"short" })}
         </div>
-        <div style={{ fontSize:"1.1rem", fontWeight:800, color:"#5B21B6" }}>
+        <div style={{ fontSize:"0.95rem", fontWeight:800, color:"#5B21B6", lineHeight:1.1 }}>
           {new Date(seance.date + "T12:00:00").getDate()}
         </div>
       </div>
-      <div style={{ flex:1, minWidth:0 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-          <span style={{ fontSize:"0.9rem", fontWeight:700, color:"#1e293b" }}>Cours de Code</span>
-          <span style={{ fontSize:"0.68rem", fontWeight:700, padding:"2px 9px", borderRadius:20, background:"#F3E8FF", color:"#5B21B6", border:"1px solid #C4B5FD" }}>
-            Cat. {seance.categoriePermis}
-          </span>
-        </div>
-        <div style={{ display:"flex", gap:14, fontSize:"0.75rem", color:"#64748b", flexWrap:"wrap" }}>
-          <span>🕐 {seance.heure?.slice(0,5)} ({formatDureeLabel(seance.duree)})</span>
-          <span>👤 {seance.moniteurNom}</span>
-          <span>👥 {seance.nbInscrits ?? 0} inscrit{(seance.nbInscrits ?? 0) !== 1 ? "s" : ""}</span>
-        </div>
-        {seance.notes && <div style={{ fontSize:"0.72rem", color:"#94a3b8", marginTop:4 }}>📋 {seance.notes}</div>}
+
+      <div style={{ flex:1, minWidth:0, display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+        <span style={{ fontSize:"0.68rem", fontWeight:700, padding:"2px 8px", borderRadius:20, background:"#F3E8FF", color:"#5B21B6", border:"1px solid #C4B5FD", flexShrink:0 }}>
+          {seance.categoriePermis}
+        </span>
+        <span style={{ fontSize:"0.78rem", color:"#334155", fontWeight:600 }}>
+          🕐 {seance.heure?.slice(0,5)}
+        </span>
+        <span style={{ fontSize:"0.75rem", color:"#64748b" }}>
+          {seance.moniteurNom}
+        </span>
+        <span style={{ fontSize:"0.75rem", color:"#94a3b8" }}>
+          👥 {seance.nbInscrits ?? 0}
+        </span>
+        {seance.notes && (
+          <span style={{ fontSize:"0.7rem", color:"#94a3b8", fontStyle:"italic" }}>📋 {seance.notes}</span>
+        )}
       </div>
-      <div style={{ display:"flex", gap:8, flexShrink:0 }}>
-        <button onClick={() => onManage(seance)} style={{ padding:"7px 14px", borderRadius:8, background:"rgba(124,58,237,0.08)", border:"1px solid rgba(124,58,237,0.25)", color:"#7C3AED", fontFamily:"'Poppins',sans-serif", fontSize:"0.75rem", fontWeight:600, cursor:"pointer" }}>
+
+      <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+        <button onClick={() => onManage(seance)} style={{ padding:"5px 11px", borderRadius:7, background:"rgba(124,58,237,0.08)", border:"1px solid rgba(124,58,237,0.25)", color:"#7C3AED", fontFamily:"'Poppins',sans-serif", fontSize:"0.7rem", fontWeight:600, cursor:"pointer" }}>
           Gérer
         </button>
         {canManage && (
           <>
-            <button onClick={() => onEdit(seance)} style={{ padding:"7px 10px", borderRadius:8, background:"rgba(59,130,246,0.08)", border:"1px solid rgba(59,130,246,0.25)", color:"#3b82f6", cursor:"pointer" }}>
-              <PenLine size={13}/>
+            <button onClick={() => onEdit(seance)} style={{ padding:"5px 8px", borderRadius:7, background:"rgba(59,130,246,0.08)", border:"1px solid rgba(59,130,246,0.25)", color:"#3b82f6", cursor:"pointer" }}>
+              <PenLine size={12}/>
             </button>
-            <button onClick={() => onDelete(seance.id)} style={{ padding:"7px 10px", borderRadius:8, background:"rgba(239,68,68,0.08)", border:"1px solid rgba(239,68,68,0.25)", color:"#ef4444", cursor:"pointer" }}>
-              <Trash2 size={13}/>
+            <button onClick={() => onDelete(seance.id)} style={{ padding:"5px 8px", borderRadius:7, background:"rgba(239,68,68,0.08)", border:"1px solid rgba(239,68,68,0.25)", color:"#ef4444", cursor:"pointer" }}>
+              <Trash2 size={12}/>
             </button>
           </>
         )}
@@ -1033,6 +1086,11 @@ export default function CoursCode() {
   const [search, setSearch]       = useState("");
   const [filterCat, setFilterCat] = useState("");
   const [filterMon, setFilterMon] = useState("");
+
+  // ── Filtre de période pour les cours à venir ────────────────────────────
+  const [periodFilter, setPeriodFilter] = useState("semaine");
+  // ── Les cours passés restent masqués tant qu'on ne les demande pas ──────
+  const [showPast, setShowPast] = useState(false);
 
   // ── Vue "Progression par candidat" ──────────────────────────────────────
   // Compteur totalement indépendant des séances de conduite : les cours de
@@ -1131,7 +1189,10 @@ export default function CoursCode() {
   }).sort((a, b) => (a.date + a.heure).localeCompare(b.date + b.heure));
 
   const upcoming = filtered.filter(s => new Date(s.date + "T" + (s.heure||"23:59")) >= new Date());
-  const past     = filtered.filter(s => new Date(s.date + "T" + (s.heure||"23:59")) < new Date());
+  const past     = filtered.filter(s => new Date(s.date + "T" + (s.heure||"23:59")) < new Date())
+    .sort((a, b) => (b.date + b.heure).localeCompare(a.date + a.heure)); // plus récent en premier
+
+  const upcomingByPeriod = upcoming.filter(s => matchesPeriod(s.date, periodFilter));
 
   const progressionFiltree = progression.filter(c => {
     const q = searchProgression.toLowerCase().trim();
@@ -1229,8 +1290,30 @@ export default function CoursCode() {
               </div>
             </div>
 
-            {/* LISTE */}
-            <div style={{ flex:1, overflowY:"auto", padding:"20px 28px", position:"relative" }}>
+            {/* ── FILTRE DE PÉRIODE (segmented control) ── */}
+            <div style={{ display:"flex", alignItems:"center", gap:6, padding:"10px 28px", background:"#fff", borderBottom:"1px solid #e2e8f0", flexShrink:0 }}>
+              {PERIOD_OPTIONS.map(opt => {
+                const active = periodFilter === opt.key;
+                return (
+                  <button key={opt.key} onClick={() => setPeriodFilter(opt.key)} style={{
+                    padding:"6px 14px", borderRadius:20, cursor:"pointer",
+                    border:"1.5px solid", borderColor: active ? "#7C3AED" : "#e2e8f0",
+                    background: active ? "#7C3AED" : "#fff",
+                    color: active ? "#fff" : "#64748b",
+                    fontFamily:"'Poppins',sans-serif", fontSize:"0.78rem", fontWeight:600,
+                    transition:"all 0.15s",
+                  }}>
+                    {opt.label}
+                  </button>
+                );
+              })}
+              <div style={{ marginLeft:"auto", fontSize:"0.72rem", color:"#94a3b8" }}>
+                {upcomingByPeriod.length} cours à venir
+              </div>
+            </div>
+
+            {/* LISTE — cartes compactes, plates, filtrées par période */}
+            <div style={{ flex:1, overflowY:"auto", padding:"16px 28px", position:"relative" }}>
               {loading && (
                 <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8" }}>
                   <div style={{ width:32, height:32, margin:"0 auto 10px", borderRadius:"50%", border:"3px solid #e2e8f0", borderTop:"3px solid #7C3AED", animation:"spin 0.75s linear infinite" }}/>
@@ -1246,37 +1329,49 @@ export default function CoursCode() {
                 </div>
               )}
 
-              {!loading && upcoming.length > 0 && (
-                <div style={{ marginBottom:24 }}>
-                  <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>
-                    À venir ({upcoming.length})
-                  </div>
-                  <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                    {upcoming.map(s => (
-                      <CoursCard key={s.id} seance={s} canManage={canManage}
-                        onManage={setManaging}
-                        onEdit={(s) => { setEditing(s); setShowCreate(true); }}
-                        onDelete={handleDelete}
-                      />
-                    ))}
-                  </div>
+              {!loading && filtered.length > 0 && upcomingByPeriod.length === 0 && (
+                <div style={{ textAlign:"center", padding:"30px 0", color:"#94a3b8" }}>
+                  <div style={{ fontSize:"0.85rem" }}>Aucun cours à venir pour cette période.</div>
                 </div>
               )}
 
+              {!loading && upcomingByPeriod.length > 0 && (
+                <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:20 }}>
+                  {upcomingByPeriod.map(s => (
+                    <CoursCard key={s.id} seance={s} canManage={canManage}
+                      onManage={setManaging}
+                      onEdit={(s) => { setEditing(s); setShowCreate(true); }}
+                      onDelete={handleDelete}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* ── Cours passés : masqués par défaut, un seul clic pour les voir ── */}
               {!loading && past.length > 0 && (
                 <div>
-                  <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>
-                    Passés ({past.length})
-                  </div>
-                  <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                    {past.map(s => (
-                      <CoursCard key={s.id} seance={s} canManage={canManage}
-                        onManage={setManaging}
-                        onEdit={(s) => { setEditing(s); setShowCreate(true); }}
-                        onDelete={handleDelete}
-                      />
-                    ))}
-                  </div>
+                  <button
+                    onClick={() => setShowPast(v => !v)}
+                    style={{
+                      display:"flex", alignItems:"center", gap:7, background:"none", border:"none",
+                      color:"#64748b", fontSize:"0.78rem", fontWeight:600, cursor:"pointer", padding:"6px 0",
+                    }}
+                  >
+                    {showPast ? <EyeOff size={14}/> : <Eye size={14}/>}
+                    {showPast ? "Masquer" : "Afficher"} les cours passés ({past.length})
+                  </button>
+
+                  {showPast && (
+                    <div style={{ display:"flex", flexDirection:"column", gap:6, marginTop:8 }}>
+                      {past.map(s => (
+                        <CoursCard key={s.id} seance={s} canManage={canManage}
+                          onManage={setManaging}
+                          onEdit={(s) => { setEditing(s); setShowCreate(true); }}
+                          onDelete={handleDelete}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

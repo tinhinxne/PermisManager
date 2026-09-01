@@ -9,6 +9,7 @@ import {
   Trash2, PenLine, UserPlus,
   Search, RotateCcw, AlertCircle, CheckCircle2, XCircle,
   CalendarDays, Repeat, Lock, UserCog, BarChart3, ListVideo,
+  Eye, EyeOff,
 } from "lucide-react";
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -85,6 +86,50 @@ function countSeancesSerie(dateDebut, dateFin, jours) {
     safety++;
   }
   return count;
+}
+
+// ── Plages de dates pour les filtres de période ─────────────────────────────
+function getTodayISO() {
+  return toLocalISO(new Date());
+}
+
+// Semaine calendaire lundi → dimanche (cohérent avec le reste de l'app)
+function getWeekRange() {
+  const today = new Date();
+  const dayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1; // 0 = lundi
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - dayOfWeek);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return [toLocalISO(monday), toLocalISO(sunday)];
+}
+
+function getMonthRange() {
+  const today = new Date();
+  const first = new Date(today.getFullYear(), today.getMonth(), 1);
+  const last  = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  return [toLocalISO(first), toLocalISO(last)];
+}
+
+const PERIOD_OPTIONS = [
+  { key: "jour",    label: "Aujourd'hui" },
+  { key: "semaine", label: "Cette semaine" },
+  { key: "mois",    label: "Ce mois" },
+  { key: "tous",    label: "Tous" },
+];
+
+function matchesPeriod(dateIso, period) {
+  if (period === "tous") return true;
+  if (period === "jour") return dateIso === getTodayISO();
+  if (period === "semaine") {
+    const [start, end] = getWeekRange();
+    return dateIso >= start && dateIso <= end;
+  }
+  if (period === "mois") {
+    const [start, end] = getMonthRange();
+    return dateIso >= start && dateIso <= end;
+  }
+  return true;
 }
 
 const STATUT_PRESENCE_META = {
@@ -1070,6 +1115,11 @@ export default function CoursCodeMoniteur() {
   const [search, setSearch]       = useState("");
   const [filterCat, setFilterCat] = useState("");
 
+  // ── Filtre de période pour les cours à venir ────────────────────────────
+  const [periodFilter, setPeriodFilter] = useState("semaine");
+  // ── Les cours passés restent masqués tant qu'on ne les demande pas ──────
+  const [showPast, setShowPast] = useState(false);
+
   // ── Vue "Progression par candidat" ────────────────────────────────────────
   // Si CAN_VIEW_ALL_COURS_CODE est true → tous les candidats de l'auto-école
   // (comme côté admin). Sinon → uniquement les candidats de MES cours.
@@ -1188,9 +1238,14 @@ export default function CoursCodeMoniteur() {
     : [];
 
   const mesUpcoming = mesCours.filter(s => new Date(s.date + "T" + (s.heure||"23:59")) >= new Date());
-  const mesPast     = mesCours.filter(s => new Date(s.date + "T" + (s.heure||"23:59")) < new Date());
+  const mesPast     = mesCours.filter(s => new Date(s.date + "T" + (s.heure||"23:59")) < new Date())
+    .sort((a, b) => (b.date + b.heure).localeCompare(a.date + a.heure)); // plus récent en premier
 
   const autresUpcoming = autresCours.filter(s => new Date(s.date + "T" + (s.heure||"23:59")) >= new Date());
+
+  // ── Filtre de période appliqué aux cours à venir (mien + autres) ────────
+  const mesUpcomingByPeriod = mesUpcoming.filter(s => matchesPeriod(s.date, periodFilter));
+  const autresUpcomingByPeriod = autresUpcoming.filter(s => matchesPeriod(s.date, periodFilter));
 
   const categoriesFiltre = [...new Set(seances.map(s => s.categoriePermis).filter(Boolean))];
 
@@ -1298,6 +1353,28 @@ export default function CoursCodeMoniteur() {
               </div>
             </div>
 
+            {/* ── FILTRE DE PÉRIODE (segmented control) ── */}
+            <div style={{ display:"flex", alignItems:"center", gap:6, padding:"10px 28px", background:"#fff", borderBottom:"1px solid #e2e8f0", flexShrink:0 }}>
+              {PERIOD_OPTIONS.map(opt => {
+                const active = periodFilter === opt.key;
+                return (
+                  <button key={opt.key} onClick={() => setPeriodFilter(opt.key)} style={{
+                    padding:"6px 14px", borderRadius:20, cursor:"pointer",
+                    border:"1.5px solid", borderColor: active ? "#7C3AED" : "#e2e8f0",
+                    background: active ? "#7C3AED" : "#fff",
+                    color: active ? "#fff" : "#64748b",
+                    fontFamily:"'Poppins',sans-serif", fontSize:"0.78rem", fontWeight:600,
+                    transition:"all 0.15s",
+                  }}>
+                    {opt.label}
+                  </button>
+                );
+              })}
+              <div style={{ marginLeft:"auto", fontSize:"0.72rem", color:"#94a3b8" }}>
+                {mesUpcomingByPeriod.length} de mes cours à venir
+              </div>
+            </div>
+
             {/* LISTE */}
             <div style={{ flex:1, overflowY:"auto", padding:"20px 28px", position:"relative" }}>
               {loading && (
@@ -1315,13 +1392,19 @@ export default function CoursCodeMoniteur() {
                 </div>
               )}
 
-              {!loading && mesUpcoming.length > 0 && (
+              {!loading && mesCours.length > 0 && mesUpcomingByPeriod.length === 0 && (
+                <div style={{ textAlign:"center", padding:"20px 0", color:"#94a3b8" }}>
+                  <div style={{ fontSize:"0.85rem" }}>Aucun de mes cours à venir pour cette période.</div>
+                </div>
+              )}
+
+              {!loading && mesUpcomingByPeriod.length > 0 && (
                 <div style={{ marginBottom:24 }}>
                   <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>
-                    Mes cours à venir ({mesUpcoming.length})
+                    Mes cours à venir ({mesUpcomingByPeriod.length})
                   </div>
                   <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                    {mesUpcoming.map(s => (
+                    {mesUpcomingByPeriod.map(s => (
                       <CoursCard key={s.id} seance={s}
                         isOwn={true}
                         canManage={CAN_MANAGE_COURS_CODE}
@@ -1334,32 +1417,43 @@ export default function CoursCodeMoniteur() {
                 </div>
               )}
 
+              {/* ── Mes cours passés : masqués par défaut, un seul clic pour les voir ── */}
               {!loading && mesPast.length > 0 && (
                 <div style={{ marginBottom:24 }}>
-                  <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>
-                    Mes cours passés ({mesPast.length})
-                  </div>
-                  <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                    {mesPast.map(s => (
-                      <CoursCard key={s.id} seance={s}
-                        isOwn={true}
-                        canManage={CAN_MANAGE_COURS_CODE}
-                        onManage={setManaging}
-                        onEdit={handleEdit}
-                        onDelete={handleDelete}
-                      />
-                    ))}
-                  </div>
+                  <button
+                    onClick={() => setShowPast(v => !v)}
+                    style={{
+                      display:"flex", alignItems:"center", gap:7, background:"none", border:"none",
+                      color:"#64748b", fontSize:"0.78rem", fontWeight:600, cursor:"pointer", padding:"6px 0",
+                    }}
+                  >
+                    {showPast ? <EyeOff size={14}/> : <Eye size={14}/>}
+                    {showPast ? "Masquer" : "Afficher"} mes cours passés ({mesPast.length})
+                  </button>
+
+                  {showPast && (
+                    <div style={{ display:"flex", flexDirection:"column", gap:10, marginTop:10 }}>
+                      {mesPast.map(s => (
+                        <CoursCard key={s.id} seance={s}
+                          isOwn={true}
+                          canManage={CAN_MANAGE_COURS_CODE}
+                          onManage={setManaging}
+                          onEdit={handleEdit}
+                          onDelete={handleDelete}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
-              {!loading && CAN_VIEW_ALL_COURS_CODE && autresUpcoming.length > 0 && (
+              {!loading && CAN_VIEW_ALL_COURS_CODE && autresUpcomingByPeriod.length > 0 && (
                 <div>
                   <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>
-                    <Lock size={11}/> Autres moniteurs ({autresUpcoming.length})
+                    <Lock size={11}/> Autres moniteurs ({autresUpcomingByPeriod.length})
                   </div>
                   <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                    {autresUpcoming.map(s => (
+                    {autresUpcomingByPeriod.map(s => (
                       <CoursCard key={s.id} seance={s}
                         isOwn={false}
                         canManage={false}
