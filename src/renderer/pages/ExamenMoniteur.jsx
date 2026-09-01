@@ -6,6 +6,7 @@ import {
   FaInfoCircle, FaCalendarPlus, FaFilePdf, FaTimes,
   FaLock, FaUserSlash, FaHistory, FaFilter,
   FaBell, FaThumbsUp, FaThumbsDown, FaSync,
+  FaChevronDown, FaChevronUp,
 } from "react-icons/fa";
 
 import SelectFilter from "../components/SelectFilter";
@@ -516,7 +517,7 @@ function SessionsExamenList({ sessions, examensList, onAjouterCandidats, onSuppr
   };
 
   return (
-    <div style={{ marginTop: 24 }}>
+    <div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
         <div style={{ background: "#dbeafe", color: "#1d4ed8", width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <FaCalendarPlus />
@@ -1066,6 +1067,99 @@ function ExamenTableMoniteur({
 }
 
 // ─────────────────────────────────────────────
+// FiltresBar — barre de filtres repliable, réutilisée par les onglets
+// "Programmés" et "Historique"
+// ─────────────────────────────────────────────
+function FiltresBar({
+  typeFilter, setTypeFilter,
+  categorieFilter, setCategorieFilter, categoriesDisponibles,
+  dateDebut, setDateDebut, dateFin, setDateFin,
+  hasDateFilter, hasCategorieFilter, hasAnyFilter,
+  resetDateFilter, resultCount,
+}) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "flex-end", flexWrap: "wrap", gap: 12,
+      background: "#f8fafc", border: "1px solid #e2e8f0",
+      borderRadius: 12, padding: "14px 16px", marginBottom: 16,
+    }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Type d'examen</label>
+        <SelectFilter
+          value={typeFilter} onChange={setTypeFilter}
+          options={["Tous", "Code", "Créneau", "Circulation"]}
+          label="Type d'examen"
+        />
+      </div>
+
+      <div style={{ width: 1, height: 36, background: "#e2e8f0", alignSelf: "center" }} />
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Catégorie de permis</label>
+        <SelectFilter
+          value={categorieFilter} onChange={setCategorieFilter}
+          options={["Tous", ...categoriesDisponibles]}
+          label="Catégorie de permis"
+        />
+      </div>
+
+      <div style={{ width: 1, height: 36, background: "#e2e8f0", alignSelf: "center" }} />
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Du</label>
+        <input
+          type="date" value={dateDebut} onChange={e => setDateDebut(e.target.value)} max={dateFin || undefined}
+          style={{ padding: "8px 12px", borderRadius: 8, border: dateDebut ? "1.5px solid #2b537e" : "1px solid #d1d5db", fontSize: 13, color: "#1f2937", background: "#fff", outline: "none", cursor: "pointer" }}
+        />
+      </div>
+
+      <div style={{ color: "#94a3b8", fontSize: 16, paddingBottom: 4 }}>→</div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Au</label>
+        <input
+          type="date" value={dateFin} onChange={e => setDateFin(e.target.value)} min={dateDebut || undefined}
+          style={{ padding: "8px 12px", borderRadius: 8, border: dateFin ? "1.5px solid #2b537e" : "1px solid #d1d5db", fontSize: 13, color: "#1f2937", background: "#fff", outline: "none", cursor: "pointer" }}
+        />
+      </div>
+
+      {hasDateFilter && (
+        <button
+          onClick={resetDateFilter}
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c", cursor: "pointer", fontSize: 12.5, fontWeight: 600, alignSelf: "flex-end" }}
+        >
+          <FaTimes style={{ fontSize: 11 }} /> Effacer dates
+        </button>
+      )}
+
+      {hasCategorieFilter && (
+        <button
+          onClick={() => setCategorieFilter("Tous")}
+          title="Effacer le filtre de catégorie"
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c", cursor: "pointer", fontSize: 12.5, fontWeight: 600, alignSelf: "flex-end" }}
+        >
+          <FaTimes style={{ fontSize: 11 }} /> Effacer catégorie
+        </button>
+      )}
+
+      {hasAnyFilter && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "7px 12px", fontSize: 12, color: "#1d4ed8", fontWeight: 600, alignSelf: "flex-end", flexWrap: "wrap" }}>
+          <FaFilter style={{ fontSize: 10 }} />
+          {hasDateFilter && (
+            dateDebut && dateFin ? `${dateDebut} → ${dateFin}` : dateDebut ? `À partir du ${dateDebut}` : `Jusqu'au ${dateFin}`
+          )}
+          {hasDateFilter && hasCategorieFilter && <span style={{ opacity: 0.5 }}>·</span>}
+          {hasCategorieFilter && <>Catégorie : <strong>{categorieFilter}</strong></>}
+          <span style={{ background: "#dbeafe", borderRadius: 10, padding: "1px 7px", fontSize: 11 }}>
+            {resultCount} résultat{resultCount > 1 ? "s" : ""}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // Composant principal - Version Moniteur
 // ─────────────────────────────────────────────
 const ExamensMoniteur = () => {
@@ -1092,7 +1186,6 @@ const {
   const [dateFin,             setDateFin]             = useState("");
   const [loading,             setLoading]             = useState(false);
   const [lastGenerated,       setLastGenerated]       = useState(null);
-  const [showReportes,        setShowReportes]        = useState(false);
   const [searchReportes,      setSearchReportes]      = useState("");
   const [candidatsMap,        setCandidatsMap]        = useState({});
   const [mesCandidatIds,      setMesCandidatIds]      = useState([]);
@@ -1113,6 +1206,17 @@ const {
   const [exportForm, setExportForm] = useState({
     nomEcole: "", wilaya: "", centreExamen: "", morkaba: "", dateDepot: "", dateExamen: "",
   });
+
+  // ── AJOUT : navigation par onglets pour désencombrer la page.
+  // "sessions"  → jours d'examen créés + propositions à valider (permission requise)
+  // "planifies" → examens programmés
+  // "historique"→ historique des résultats
+  // "reportes"  → candidats reportés
+  const [activeTab,   setActiveTab]   = useState(canManageExamens ? "sessions" : "planifies");
+  // ── AJOUT : règles, légende et filtres repliés par défaut ──
+  const [showRules,   setShowRules]   = useState(false);
+  const [showLegend,  setShowLegend]  = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
     try {
@@ -1180,6 +1284,7 @@ const {
       setLastGenerated(new Date().toLocaleString("fr-FR"));
 
       if (userTriggered && nouvellesPropositions && nouvellesPropositions.length > 0) {
+        setActiveTab("sessions");
         setTimeout(() => {
           document.getElementById("propositions-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 100);
@@ -1235,6 +1340,7 @@ const {
   const hasCategorieFilter = categorieFilter !== "Tous";
   const hasAnyFilter       = hasDateFilter || hasCategorieFilter;
   const resetDateFilter    = () => { setDateDebut(""); setDateFin(""); };
+  const resetAllFilters    = () => { setTypeFilter("Tous"); setCategorieFilter("Tous"); resetDateFilter(); };
 
   const applyFilters = (list) => filterByDate(byType(byCategorie(list)));
 
@@ -1378,6 +1484,33 @@ const {
     onRemove: handleRemove,
   };
 
+  // ── AJOUT : onglets principaux, avec leurs compteurs. L'onglet
+  // "Sessions & propositions" n'existe que pour ceux qui gèrent les examens. ──
+  const TABS = [
+    ...(canManageExamens
+      ? [{ key: "sessions", label: "Sessions & propositions", icon: <FaCalendarPlus />, count: propositionsVisibles.length, countColor: "#ea580c" }]
+      : []),
+    { key: "planifies",  label: "Programmés",  icon: <FaClock />,   count: scheduled.length,        countColor: "#1565c0" },
+    { key: "historique", label: "Historique",  icon: <FaHistory />, count: history.length,          countColor: "#6b21a8" },
+    { key: "reportes",   label: "Reportés",    icon: <FaSync />,    count: reportesEntries.length,   countColor: "#a16207" },
+  ];
+
+  const filteredReportesEntries = (() => {
+    const q = searchReportes.trim().toLowerCase();
+    if (!q) return reportesEntries;
+    return reportesEntries.filter(([cid, info]) => {
+      const nom = getCandidatName(cid).toLowerCase();
+      return (
+        nom.includes(q) ||
+        String(cid).includes(q) ||
+        (info.type || "").toLowerCase().includes(q) ||
+        (info.reason || "").toLowerCase().includes(q)
+      );
+    });
+  })();
+
+  const filtresApplicables = activeTab === "planifies" || activeTab === "historique";
+
   // ─────────────────────────────────────────────
   // Rendu
   // ─────────────────────────────────────────────
@@ -1408,8 +1541,7 @@ const {
           <div>
             <h2 className="examens-page-title">{CAN_VIEW_ALL_CANDIDATES ? "Sessions d'examens" : "Mes Sessions d'examens"}</h2>
             <p className="examens-page-sub">
-              Seuils : Code ≥{EXAM_THRESHOLDS.Code} · Créneau ≥{EXAM_THRESHOLDS.Créneau} · Circulation ≥{EXAM_THRESHOLDS.Circulation}
-              {lastGenerated && <span style={{ color: "#94a3b8", marginLeft: 12, fontSize: 12 }}>Actualisé le : {lastGenerated}</span>}
+              {lastGenerated && <span style={{ color: "#94a3b8", fontSize: 12 }}>Actualisé le : {lastGenerated}</span>}
             </p>
           </div>
          <div style={{ display: "flex", gap: 10 }}>
@@ -1438,34 +1570,6 @@ const {
               </button>
             )}
 
-            {/* Badge propositions — visible seulement avec la permission */}
-            {canManageExamens && (
-              <button
-                onClick={() => document.getElementById("propositions-section")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                disabled={propositionsVisibles.length === 0}
-                style={{
-                  position: "relative", display: "flex", alignItems: "center", gap: 8,
-                  background: propositionsVisibles.length > 0 ? "#fff7ed" : "#f1f5f9",
-                  color: propositionsVisibles.length > 0 ? "#c2410c" : "#94a3b8",
-                  border: `1px solid ${propositionsVisibles.length > 0 ? "#fed7aa" : "#e2e8f0"}`,
-                  padding: "10px 18px", borderRadius: 10, cursor: propositionsVisibles.length > 0 ? "pointer" : "default",
-                  fontSize: 14, fontWeight: 600,
-                }}
-              >
-                <FaBell />
-                Propositions
-                {propositionsVisibles.length > 0 && (
-                  <span style={{
-                    background: "#ea580c", color: "#fff", borderRadius: 20,
-                    minWidth: 20, height: 20, display: "flex", alignItems: "center",
-                    justifyContent: "center", fontSize: 11, fontWeight: 700, padding: "0 5px",
-                  }}>
-                    {propositionsVisibles.length}
-                  </span>
-                )}
-              </button>
-            )}
-
             {/* Regénérer — seulement avec la permission de gérer les examens */}
             {canManageExamens && (
               <button
@@ -1480,370 +1584,386 @@ const {
           </div>
         </div>
 
-        {/* ── Règles actives ── */}
-        <div style={{ background: "#f0f4ff", border: "1px solid #c7d7f5", borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: "#3b5bdb", display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-          <FaInfoCircle style={{ flexShrink: 0 }} />
-          <span>
-            Délai après échec : <strong>{examRules.delaiApresEchec}j</strong> ·
-            Tentatives max : <strong>{examRules.tentativesMax}</strong>
-          </span>
+        {/* ── Règles actives — repliées par défaut ── */}
+        <div style={{ marginBottom: 8 }}>
+          <button
+            onClick={() => setShowRules(v => !v)}
+            style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", cursor: "pointer", color: "#3b5bdb", fontSize: 12.5, fontWeight: 600, padding: "4px 0" }}
+          >
+            <FaInfoCircle />
+            Seuils : Code ≥{EXAM_THRESHOLDS.Code} · Créneau ≥{EXAM_THRESHOLDS.Créneau} · Circulation ≥{EXAM_THRESHOLDS.Circulation}
+            {showRules ? <FaChevronUp style={{ fontSize: 10 }} /> : <FaChevronDown style={{ fontSize: 10 }} />}
+          </button>
 
-          <span style={{ width: 1, height: 16, background: "#c7d7f5" }} />
+          {showRules && (
+            <div style={{ background: "#f0f4ff", border: "1px solid #c7d7f5", borderRadius: 10, padding: "10px 16px", marginTop: 8, fontSize: 13, color: "#3b5bdb", display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+              <span>
+                Délai après échec : <strong>{examRules.delaiApresEchec}j</strong> ·
+                Tentatives max : <strong>{examRules.tentativesMax}</strong>
+              </span>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            <span style={{ fontWeight: 600 }}>Jours autorisés :</span>
-            {DAYS_OPTIONS.map(day => {
-              const isSel = (examRules.joursAutorises || []).includes(day);
-              return (
-                <button
-                  key={day}
-                  onClick={() => toggleJourAutorise(day)}
-                  disabled={!canManageExamens}
-                  title={canManageExamens ? (isSel ? `Retirer ${day}` : `Ajouter ${day}`) : "Permission requise"}
-                  style={{
-                    padding: "3px 10px", borderRadius: 14, fontSize: 11.5, fontWeight: 600,
-                    cursor: canManageExamens ? "pointer" : "not-allowed", transition: "all 0.15s",
-                    border: `1px solid ${isSel ? "#3b5bdb" : "#c7d7f5"}`,
-                    background: isSel ? "#3b5bdb" : "#fff",
-                    color: isSel ? "#fff" : "#3b5bdb",
-                    opacity: canManageExamens ? 1 : 0.6,
-                  }}
-                >
-                  {day}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+              <span style={{ width: 1, height: 16, background: "#c7d7f5" }} />
 
-        {/* ── Légende badge J-X ── */}
-        <div style={{ background: "#fafafa", border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 16px", marginBottom: 16, fontSize: 12, color: "#64748b", display: "flex", alignItems: "center", flexWrap: "wrap", gap: 14 }}>
-          <span style={{ fontWeight: 600, color: "#374151" }}>
-            <FaUserSlash style={{ marginRight: 5, verticalAlign: "middle", color: "#ea580c" }} />
-            Absence anticipée :
-          </span>
-          <span>Badge <strong style={{ color: "#166534" }}>J-X vert</strong> = déclaration possible</span>
-          <span>Badge <strong style={{ color: "#c2410c" }}>J-X orange</strong> = urgent (≤ 3 jours)</span>
-          <span>Badge <strong style={{ color: "#b91c1c" }}>Demain 🔒</strong> = délai dépassé</span>
-        </div>
-
-        {/* ── Stats ── */}
-        <div className="stats-grid">
-          {statsData.map((item, i) => (
-            <motion.div key={i} className="stat-card-modern" whileHover={{ y: -5 }}>
-              <div className="stat-left">
-                <span className="stat-label">{item.label}</span>
-                <span className="stat-value">{item.val}</span>
-                <span className={`stat-trend ${item.color}`}>{item.trend}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <span style={{ fontWeight: 600 }}>Jours autorisés :</span>
+                {DAYS_OPTIONS.map(day => {
+                  const isSel = (examRules.joursAutorises || []).includes(day);
+                  return (
+                    <button
+                      key={day}
+                      onClick={() => toggleJourAutorise(day)}
+                      disabled={!canManageExamens}
+                      title={canManageExamens ? (isSel ? `Retirer ${day}` : `Ajouter ${day}`) : "Permission requise"}
+                      style={{
+                        padding: "3px 10px", borderRadius: 14, fontSize: 11.5, fontWeight: 600,
+                        cursor: canManageExamens ? "pointer" : "not-allowed", transition: "all 0.15s",
+                        border: `1px solid ${isSel ? "#3b5bdb" : "#c7d7f5"}`,
+                        background: isSel ? "#3b5bdb" : "#fff",
+                        color: isSel ? "#fff" : "#3b5bdb",
+                        opacity: canManageExamens ? 1 : 0.6,
+                      }}
+                    >
+                      {day}
+                    </button>
+                  );
+                })}
               </div>
-              <div className={`stat-icon ${item.color}`}>{item.icon}</div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Légende badge J-X — repliée par défaut ── */}
+        <div style={{ marginBottom: 16 }}>
+          <button
+            onClick={() => setShowLegend(v => !v)}
+            style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", cursor: "pointer", color: "#64748b", fontSize: 12.5, fontWeight: 600, padding: "4px 0" }}
+          >
+            <FaUserSlash style={{ color: "#ea580c" }} />
+            Légende des badges d'absence anticipée
+            {showLegend ? <FaChevronUp style={{ fontSize: 10 }} /> : <FaChevronDown style={{ fontSize: 10 }} />}
+          </button>
+
+          {showLegend && (
+            <div style={{ background: "#fafafa", border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 16px", marginTop: 8, fontSize: 12, color: "#64748b", display: "flex", alignItems: "center", flexWrap: "wrap", gap: 14 }}>
+              <span>Badge <strong style={{ color: "#166534" }}>J-X vert</strong> = déclaration possible</span>
+              <span>Badge <strong style={{ color: "#c2410c" }}>J-X orange</strong> = urgent (≤ 3 jours)</span>
+              <span>Badge <strong style={{ color: "#b91c1c" }}>Demain 🔒</strong> = délai dépassé</span>
+            </div>
+          )}
+        </div>
+
+        {/* ── Stats — version compacte ── */}
+        <div
+          className="stats-grid"
+          style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}
+        >
+          {statsData.map((item, i) => (
+            <motion.div
+              key={i}
+              className="stat-card-modern"
+              whileHover={{ y: -3 }}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                padding: "10px 12px", borderRadius: 10, minHeight: 0,
+              }}
+            >
+              <div className="stat-left" style={{ display: "flex", flexDirection: "column", gap: 1, lineHeight: 1.15 }}>
+                <span className="stat-label" style={{ fontSize: 10.5 }}>{item.label}</span>
+                <span className="stat-value" style={{ fontSize: 18 }}>{item.val}</span>
+                <span className={`stat-trend ${item.color}`} style={{ fontSize: 9.5 }}>{item.trend}</span>
+              </div>
+              <div
+                className={`stat-icon ${item.color}`}
+                style={{ width: 28, height: 28, minWidth: 28, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8 }}
+              >
+                {item.icon}
+              </div>
             </motion.div>
           ))}
         </div>
 
         {/* ══════════════════════════════════════════════
-            FILTRES — Type + Plage de dates
+            NAVIGATION PAR ONGLETS
         ══════════════════════════════════════════════ */}
-        <div style={{
-          display: "flex", alignItems: "flex-end", flexWrap: "wrap", gap: 12,
-          background: "#f8fafc", border: "1px solid #e2e8f0",
-          borderRadius: 12, padding: "14px 16px", marginBottom: 4,
-        }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Type d'examen</label>
-            <SelectFilter
-              value={typeFilter} onChange={setTypeFilter}
-              options={["Tous", "Code", "Créneau", "Circulation"]}
-              label="Type d'examen"
-            />
-          </div>
-
-          <div style={{ width: 1, height: 36, background: "#e2e8f0", alignSelf: "center" }} />
-
-          {/* Filtre catégorie de permis */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Catégorie de permis</label>
-            <SelectFilter
-              value={categorieFilter} onChange={setCategorieFilter}
-              options={["Tous", ...categoriesDisponibles]}
-              label="Catégorie de permis"
-            />
-          </div>
-
-          <div style={{ width: 1, height: 36, background: "#e2e8f0", alignSelf: "center" }} />
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Du</label>
-            <input
-              type="date" value={dateDebut} onChange={e => setDateDebut(e.target.value)} max={dateFin || undefined}
-              style={{ padding: "8px 12px", borderRadius: 8, border: dateDebut ? "1.5px solid #2b537e" : "1px solid #d1d5db", fontSize: 13, color: "#1f2937", background: "#fff", outline: "none", cursor: "pointer" }}
-            />
-          </div>
-
-          <div style={{ color: "#94a3b8", fontSize: 16, paddingBottom: 4 }}>→</div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <label style={{ fontSize: 11.5, fontWeight: 600, color: "#64748b" }}>Au</label>
-            <input
-              type="date" value={dateFin} onChange={e => setDateFin(e.target.value)} min={dateDebut || undefined}
-              style={{ padding: "8px 12px", borderRadius: 8, border: dateFin ? "1.5px solid #2b537e" : "1px solid #d1d5db", fontSize: 13, color: "#1f2937", background: "#fff", outline: "none", cursor: "pointer" }}
-            />
-          </div>
-
-          {hasDateFilter && (
-            <button
-              onClick={resetDateFilter}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c", cursor: "pointer", fontSize: 12.5, fontWeight: 600, alignSelf: "flex-end" }}
-            >
-              <FaTimes style={{ fontSize: 11 }} /> Effacer dates
-            </button>
-          )}
-
-          {hasCategorieFilter && (
-            <button
-              onClick={() => setCategorieFilter("Tous")}
-              title="Effacer le filtre de catégorie"
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c", cursor: "pointer", fontSize: 12.5, fontWeight: 600, alignSelf: "flex-end" }}
-            >
-              <FaTimes style={{ fontSize: 11 }} /> Effacer catégorie
-            </button>
-          )}
-
-          {hasAnyFilter && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "7px 12px", fontSize: 12, color: "#1d4ed8", fontWeight: 600, alignSelf: "flex-end", flexWrap: "wrap" }}>
-              <FaFilter style={{ fontSize: 10 }} />
-              {hasDateFilter && (
-                dateDebut && dateFin ? `${dateDebut} → ${dateFin}` : dateDebut ? `À partir du ${dateDebut}` : `Jusqu'au ${dateFin}`
-              )}
-              {hasDateFilter && hasCategorieFilter && <span style={{ opacity: 0.5 }}>·</span>}
-              {hasCategorieFilter && <>Catégorie : <strong>{categorieFilter}</strong></>}
-              <span style={{ background: "#dbeafe", borderRadius: 10, padding: "1px 7px", fontSize: 11 }}>
-                {allFiltered.length} résultat{allFiltered.length > 1 ? "s" : ""}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* ── Jours d'examen créés + Propositions — visibles uniquement avec la permission ── */}
-        {canManageExamens && (
-          <>
-            <SessionsExamenList
-              sessions={sessionsExamens}
-              examensList={examensList}
-              onAjouterCandidats={(s) => {
-                const d = parseExamDate(s.date);
-                const today = new Date(); today.setHours(0, 0, 0, 0);
-                if (d && d < today) return; // session déjà passée — ne rien ouvrir
-                setSessionPourAjout(s);
-              }}
-              onSupprimer={supprimerSessionExamen}
-              canManage={canManageExamens}
-            />
-
-            <div id="propositions-section">
-              <PropositionsSection
-                propositions={propositionsVisibles}
-                canReview={canManageExamens}
-                onValider={validerProposition}
-                onRejeter={rejeterProposition}
-                onValiderTout={validerToutesPropositions}
-                onRejeterTout={rejeterToutesPropositions}
-              />
-            </div>
-          </>
-        )}
-
-        {/* ══════════════════════════════════════════════
-            TABLE 1 — PROGRAMMÉS
-        ══════════════════════════════════════════════ */}
-        <div style={{ marginTop: 20 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-            <div style={{ background: "#e3f2fd", color: "#1565c0", width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <FaClock />
-            </div>
-            <div>
-              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#1e293b" }}>Examens programmés</h3>
-              <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>{scheduled.length} candidat(s) en attente d'évaluation</p>
-            </div>
-          </div>
-          <div style={{ background: "#fff", borderRadius: 15, overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)" }}>
-            <ExamenTableMoniteur {...tableSharedProps} rows={scheduled} showEvaluer={true} showStatusBadge={false} showRemove={true} />
-          </div>
-        </div>
-
-        {/* ══════════════════════════════════════════════
-            TABLE 2 — HISTORIQUE avec TABS
-        ══════════════════════════════════════════════ */}
-        <div style={{ marginTop: 32 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-            <div style={{ background: "#f3e8ff", color: "#6b21a8", width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <FaHistory />
-            </div>
-            <div>
-              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#1e293b" }}>Historique des résultats</h3>
-              <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>{history.length} examen(s) évalué(s)</p>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 8, marginBottom: 0, flexWrap: "wrap" }}>
-            {HISTORY_TABS.map(tab => {
-              const count = applyFilters(filteredBase.filter(e => e.status === tab.key)).length;
-              const isActive = activeHistoryTab === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveHistoryTab(tab.key)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 7,
-                    padding: "9px 16px", borderRadius: "10px 10px 0 0",
-                    border: isActive ? `2px solid ${tab.color}` : "2px solid #e2e8f0",
-                    borderBottom: isActive ? `2px solid #fff` : "2px solid #e2e8f0",
-                    background: isActive ? "#fff" : "#f8fafc",
-                    color: isActive ? tab.color : "#94a3b8",
-                    fontWeight: isActive ? 700 : 500,
-                    fontSize: 13.5, cursor: "pointer", transition: "all 0.15s",
-                    position: "relative", bottom: isActive ? -2 : 0,
-                  }}
-                >
-                  <span>{tab.icon}</span>
-                  <span>{tab.label}</span>
-                  <span style={{ background: isActive ? tab.bg : "#f1f5f9", color: isActive ? tab.color : "#94a3b8", padding: "1px 8px", borderRadius: 20, fontSize: 11, fontWeight: 700 }}>
-                    {count}
+        <div style={{ display: "flex", gap: 8, marginTop: 24, marginBottom: 4, flexWrap: "wrap", borderBottom: "2px solid #e2e8f0" }}>
+          {TABS.map(tab => {
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "11px 18px", borderRadius: "10px 10px 0 0",
+                  border: "none",
+                  borderBottom: isActive ? "3px solid #2b537e" : "3px solid transparent",
+                  background: isActive ? "#fff" : "transparent",
+                  color: isActive ? "#1e293b" : "#64748b",
+                  fontWeight: isActive ? 700 : 600,
+                  fontSize: 14, cursor: "pointer",
+                  boxShadow: isActive ? "0 -4px 10px rgba(0,0,0,0.03)" : "none",
+                  position: "relative", bottom: -2,
+                }}
+              >
+                {tab.icon}
+                {tab.label}
+                {tab.count > 0 && (
+                  <span style={{
+                    background: isActive ? tab.countColor : "#e2e8f0",
+                    color: isActive ? "#fff" : "#64748b",
+                    borderRadius: 20, minWidth: 20, height: 20,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 11, fontWeight: 700, padding: "0 6px",
+                  }}>
+                    {tab.count}
                   </span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div style={{ background: "#fff", borderRadius: "0 12px 12px 12px", overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)", border: "2px solid #e2e8f0", borderTop: "none" }}>
-            <AnimatePresence mode="wait">
-              <motion.div key={activeHistoryTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.18 }}>
-                <ExamenTableMoniteur {...tableSharedProps} rows={historyByTab} showEvaluer={false} showStatusBadge={true} showRemove={false} />
-              </motion.div>
-            </AnimatePresence>
-          </div>
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        {/* ── Candidats reportés ── */}
-        {reportesEntries.length > 0 && (
-          <div style={{ marginTop: 28 }}>
-            <button
-              onClick={() => setShowReportes(v => !v)}
-              style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "1px solid #e2e8f0", padding: "8px 14px", borderRadius: 8, cursor: "pointer", fontSize: 13, color: "#475569", marginBottom: 12 }}
-            >
-              <FaCalendarPlus /> {showReportes ? "Masquer" : "Voir"} vos candidats reportés ({reportesEntries.length})
-            </button>
+        <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderTop: "none", borderRadius: "0 0 14px 14px", padding: 20, boxShadow: "0 5px 15px rgba(0,0,0,0.03)" }}>
 
-            {showReportes && (() => {
-              const q = searchReportes.trim().toLowerCase();
-              const filtered = reportesEntries.filter(([cid, info]) => {
-                const nom = getCandidatName(cid).toLowerCase();
-                return (
-                  nom.includes(q) ||
-                  String(cid).includes(q) ||
-                  (info.type || "").toLowerCase().includes(q) ||
-                  (info.reason || "").toLowerCase().includes(q)
-                );
-              });
+          {/* ── Barre de filtres — visible seulement pour Programmés / Historique ── */}
+          {filtresApplicables && (
+            <div>
+              <button
+                onClick={() => setShowFilters(v => !v)}
+                style={{ display: "flex", alignItems: "center", gap: 8, background: hasAnyFilter ? "#eff6ff" : "#f1f5f9", border: `1px solid ${hasAnyFilter ? "#bfdbfe" : "#e2e8f0"}`, color: hasAnyFilter ? "#1d4ed8" : "#475569", cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 8, marginBottom: 12 }}
+              >
+                <FaFilter style={{ fontSize: 11 }} />
+                Filtres {hasAnyFilter && `(${[hasDateFilter, hasCategorieFilter].filter(Boolean).length} actif${[hasDateFilter, hasCategorieFilter].filter(Boolean).length > 1 ? "s" : ""})`}
+                {showFilters ? <FaChevronUp style={{ fontSize: 10 }} /> : <FaChevronDown style={{ fontSize: 10 }} />}
+                {hasAnyFilter && !showFilters && (
+                  <span
+                    onClick={e => { e.stopPropagation(); resetAllFilters(); }}
+                    title="Tout effacer"
+                    style={{ marginLeft: 4, color: "#b91c1c", fontWeight: 700 }}
+                  >
+                    ✕
+                  </span>
+                )}
+              </button>
 
-              return (
-                <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 12, padding: 16 }}>
+              {showFilters && (
+                <FiltresBar
+                  typeFilter={typeFilter} setTypeFilter={setTypeFilter}
+                  categorieFilter={categorieFilter} setCategorieFilter={setCategorieFilter}
+                  categoriesDisponibles={categoriesDisponibles}
+                  dateDebut={dateDebut} setDateDebut={setDateDebut}
+                  dateFin={dateFin} setDateFin={setDateFin}
+                  hasDateFilter={hasDateFilter} hasCategorieFilter={hasCategorieFilter}
+                  hasAnyFilter={hasAnyFilter}
+                  resetDateFilter={resetDateFilter}
+                  resultCount={allFiltered.length}
+                />
+              )}
+            </div>
+          )}
 
-                  {/* En-tête : texte + champ de recherche */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
-                    <p style={{ fontSize: 13, color: "#78350f", fontWeight: 600, margin: 0 }}>
-                      Ces candidats seront re-suggérés automatiquement à leur prochaine date d'examen :
-                    </p>
-                    <div style={{ position: "relative", minWidth: 220 }}>
-                      <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#a16207", fontSize: 13, pointerEvents: "none" }}>🔍</span>
-                      <input
-                        type="text"
-                        value={searchReportes}
-                        onChange={e => setSearchReportes(e.target.value)}
-                        placeholder="Rechercher un candidat..."
-                        style={{
-                          paddingLeft: 32, paddingRight: searchReportes ? 30 : 12,
-                          paddingTop: 7, paddingBottom: 7,
-                          borderRadius: 8, border: "1px solid #fde68a",
-                          background: "#fff", fontSize: 13, color: "#1f2937",
-                          outline: "none", width: "100%", boxSizing: "border-box",
-                        }}
-                      />
-                      {searchReportes && (
-                        <button
-                          onClick={() => setSearchReportes("")}
-                          style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#a16207", fontSize: 14, padding: 0, lineHeight: 1 }}
-                        >✕</button>
-                      )}
-                    </div>
+          {/* ══════════════════════════════════════════════
+              ONGLET — Sessions & propositions (permission requise)
+          ══════════════════════════════════════════════ */}
+          {activeTab === "sessions" && canManageExamens && (
+            <div>
+              {sessionsExamens.length === 0 && propositionsVisibles.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 40, color: "#94a3b8", fontSize: 13.5 }}>
+                  Aucun jour d'examen créé et aucune proposition en attente. Cliquez sur « Ajouter un examen » pour créer une session.
+                </div>
+              ) : (
+                <>
+                  <SessionsExamenList
+                    sessions={sessionsExamens}
+                    examensList={examensList}
+                    onAjouterCandidats={(s) => {
+                      const d = parseExamDate(s.date);
+                      const today = new Date(); today.setHours(0, 0, 0, 0);
+                      if (d && d < today) return; // session déjà passée — ne rien ouvrir
+                      setSessionPourAjout(s);
+                    }}
+                    onSupprimer={supprimerSessionExamen}
+                    canManage={canManageExamens}
+                  />
+
+                  <div id="propositions-section">
+                    <PropositionsSection
+                      propositions={propositionsVisibles}
+                      canReview={canManageExamens}
+                      onValider={validerProposition}
+                      onRejeter={rejeterProposition}
+                      onValiderTout={validerToutesPropositions}
+                      onRejeterTout={rejeterToutesPropositions}
+                    />
                   </div>
+                </>
+              )}
+            </div>
+          )}
 
-                  {/* Compteur résultats */}
-                  {q && (
-                    <p style={{ fontSize: 12, color: "#92400e", marginBottom: 10 }}>
-                      {filtered.length} résultat(s) pour <strong>« {searchReportes} »</strong>
-                    </p>
-                  )}
+          {/* ══════════════════════════════════════════════
+              ONGLET — Programmés
+          ══════════════════════════════════════════════ */}
+          {activeTab === "planifies" && (
+            <div>
+              <p style={{ margin: "0 0 12px", fontSize: 12, color: "#64748b" }}>{scheduled.length} candidat(s) en attente d'évaluation</p>
+              <div style={{ borderRadius: 15, overflow: "hidden", border: "1px solid #f1f5f9" }}>
+                <ExamenTableMoniteur {...tableSharedProps} rows={scheduled} showEvaluer={true} showStatusBadge={false} showRemove={true} />
+              </div>
+            </div>
+          )}
 
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr style={{ background: "#fef3c7" }}>
-                        <th style={{ ...th, color: "#78350f", background: "transparent" }}>Candidat</th>
-                        <th style={{ ...th, color: "#78350f", background: "transparent" }}>Type d'examen</th>
-                        <th style={{ ...th, color: "#78350f", background: "transparent" }}>Prochaine suggestion</th>
-                        <th style={{ ...th, color: "#78350f", background: "transparent" }}>Raison</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filtered.length > 0 ? filtered.map(([cid, info]) => {
-                        const nomComplet = getCandidatName(cid);
-                        return (
-                          <tr key={cid}>
-                            <td style={{ ...td, fontWeight: 600 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#fde68a", color: "#78350f", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-                                  {nomComplet.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
-                                </div>
-                                <div>
-                                  <div style={{ fontWeight: 700, color: "#1f2937" }}>{nomComplet}</div>
-                                  <div style={{ fontSize: 11, color: "#9ca3af" }}>ID #{cid}</div>
-                                </div>
+          {/* ══════════════════════════════════════════════
+              ONGLET — Historique
+          ══════════════════════════════════════════════ */}
+          {activeTab === "historique" && (
+            <div>
+              <p style={{ margin: "0 0 12px", fontSize: 12, color: "#64748b" }}>{history.length} examen(s) évalué(s)</p>
+
+              <div style={{ display: "flex", gap: 8, marginBottom: 0, flexWrap: "wrap" }}>
+                {HISTORY_TABS.map(tab => {
+                  const count = applyFilters(filteredBase.filter(e => e.status === tab.key)).length;
+                  const isActive = activeHistoryTab === tab.key;
+                  return (
+                    <button
+                      key={tab.key}
+                      onClick={() => setActiveHistoryTab(tab.key)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 7,
+                        padding: "9px 16px", borderRadius: "10px 10px 0 0",
+                        border: isActive ? `2px solid ${tab.color}` : "2px solid #e2e8f0",
+                        borderBottom: isActive ? `2px solid #fff` : "2px solid #e2e8f0",
+                        background: isActive ? "#fff" : "#f8fafc",
+                        color: isActive ? tab.color : "#94a3b8",
+                        fontWeight: isActive ? 700 : 500,
+                        fontSize: 13.5, cursor: "pointer", transition: "all 0.15s",
+                        position: "relative", bottom: isActive ? -2 : 0,
+                      }}
+                    >
+                      <span>{tab.icon}</span>
+                      <span>{tab.label}</span>
+                      <span style={{ background: isActive ? tab.bg : "#f1f5f9", color: isActive ? tab.color : "#94a3b8", padding: "1px 8px", borderRadius: 20, fontSize: 11, fontWeight: 700 }}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ borderRadius: "0 12px 12px 12px", overflow: "hidden", border: "2px solid #e2e8f0", borderTop: "none" }}>
+                <AnimatePresence mode="wait">
+                  <motion.div key={activeHistoryTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.18 }}>
+                    <ExamenTableMoniteur {...tableSharedProps} rows={historyByTab} showEvaluer={false} showStatusBadge={true} showRemove={false} />
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════
+              ONGLET — Candidats reportés
+          ══════════════════════════════════════════════ */}
+          {activeTab === "reportes" && (
+            reportesEntries.length === 0 ? (
+              <div style={{ textAlign: "center", padding: 40, color: "#94a3b8", fontSize: 13.5 }}>
+                Aucun candidat reporté pour le moment.
+              </div>
+            ) : (
+              <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 12, padding: 16 }}>
+
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+                  <p style={{ fontSize: 13, color: "#78350f", fontWeight: 600, margin: 0 }}>
+                    Ces candidats seront re-suggérés automatiquement à leur prochaine date d'examen :
+                  </p>
+                  <div style={{ position: "relative", minWidth: 220 }}>
+                    <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#a16207", fontSize: 13, pointerEvents: "none" }}>🔍</span>
+                    <input
+                      type="text"
+                      value={searchReportes}
+                      onChange={e => setSearchReportes(e.target.value)}
+                      placeholder="Rechercher un candidat..."
+                      style={{
+                        paddingLeft: 32, paddingRight: searchReportes ? 30 : 12,
+                        paddingTop: 7, paddingBottom: 7,
+                        borderRadius: 8, border: "1px solid #fde68a",
+                        background: "#fff", fontSize: 13, color: "#1f2937",
+                        outline: "none", width: "100%", boxSizing: "border-box",
+                      }}
+                    />
+                    {searchReportes && (
+                      <button
+                        onClick={() => setSearchReportes("")}
+                        style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#a16207", fontSize: 14, padding: 0, lineHeight: 1 }}
+                      >✕</button>
+                    )}
+                  </div>
+                </div>
+
+                {searchReportes.trim() && (
+                  <p style={{ fontSize: 12, color: "#92400e", marginBottom: 10 }}>
+                    {filteredReportesEntries.length} résultat(s) pour <strong>« {searchReportes} »</strong>
+                  </p>
+                )}
+
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ background: "#fef3c7" }}>
+                      <th style={{ ...th, color: "#78350f", background: "transparent" }}>Candidat</th>
+                      <th style={{ ...th, color: "#78350f", background: "transparent" }}>Type d'examen</th>
+                      <th style={{ ...th, color: "#78350f", background: "transparent" }}>Prochaine suggestion</th>
+                      <th style={{ ...th, color: "#78350f", background: "transparent" }}>Raison</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredReportesEntries.length > 0 ? filteredReportesEntries.map(([cid, info]) => {
+                      const nomComplet = getCandidatName(cid);
+                      return (
+                        <tr key={cid}>
+                          <td style={{ ...td, fontWeight: 600 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#fde68a", color: "#78350f", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                                {nomComplet.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
                               </div>
-                            </td>
-                            <td style={td}>{info.type}</td>
-                            <td style={td}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                <FaCalendarDay style={{ color: "#f59e0b", fontSize: 12 }} />
-                                {info.nextSuggestedDate}
+                              <div>
+                                <div style={{ fontWeight: 700, color: "#1f2937" }}>{nomComplet}</div>
+                                <div style={{ fontSize: 11, color: "#9ca3af" }}>ID #{cid}</div>
                               </div>
-                            </td>
-                            <td style={td}>
-                              <span style={{
-                                background: info.reason === "echec" ? "#fee2e2" : info.reason === "absence" ? "#fff7ed" : "#f1f5f9",
-                                color:      info.reason === "echec" ? "#991b1b" : info.reason === "absence" ? "#c2410c" : "#475569",
-                                padding: "2px 8px", borderRadius: 10, fontSize: 12,
-                                display: "inline-flex", alignItems: "center", gap: 5,
-                              }}>
-                                {info.reason === "absence" && <FaUserSlash style={{ fontSize: 10 }} />}
-                                {info.reason === "echec" ? "Échec" : info.reason === "absence" ? "Absence déclarée" : "Retiré"}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      }) : (
-                        <tr>
-                          <td colSpan={4} style={{ textAlign: "center", padding: 30, color: "#a16207", fontSize: 13 }}>
-                            Aucun résultat pour « {searchReportes} »
+                            </div>
+                          </td>
+                          <td style={td}>{info.type}</td>
+                          <td style={td}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <FaCalendarDay style={{ color: "#f59e0b", fontSize: 12 }} />
+                              {info.nextSuggestedDate}
+                            </div>
+                          </td>
+                          <td style={td}>
+                            <span style={{
+                              background: info.reason === "echec" ? "#fee2e2" : info.reason === "absence" ? "#fff7ed" : "#f1f5f9",
+                              color:      info.reason === "echec" ? "#991b1b" : info.reason === "absence" ? "#c2410c" : "#475569",
+                              padding: "2px 8px", borderRadius: 10, fontSize: 12,
+                              display: "inline-flex", alignItems: "center", gap: 5,
+                            }}>
+                              {info.reason === "absence" && <FaUserSlash style={{ fontSize: 10 }} />}
+                              {info.reason === "echec" ? "Échec" : info.reason === "absence" ? "Absence déclarée" : "Retiré"}
+                            </span>
                           </td>
                         </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })()}
-          </div>
-        )}
+                      );
+                    }) : (
+                      <tr>
+                        <td colSpan={4} style={{ textAlign: "center", padding: 30, color: "#a16207", fontSize: 13 }}>
+                          Aucun résultat pour « {searchReportes} »
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )
+          )}
+
+        </div>
       </div>
 
       {/* ── Modales ── */}
