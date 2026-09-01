@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useState, useEffect } from "react";
 import { useAuth } from "./AuthContext";
 
 // ── VALEURS PAR DÉFAUT (tout à false = moniteur restreint par défaut) ─────────
@@ -10,34 +10,37 @@ const PERMS_DEFAUT = {
   CAN_VIEW_ALL_CANDIDATES:    false,
   CAN_ADD_CANDIDAT:           false,
   CAN_EDIT_CANDIDAT:          false,
-  CAN_EXPORT_LISTE_CANDIDATS: false, // ← nouveau : génération قائمة المترشحين (PDF examens)
-  CAN_EXPORT_LISTE_ENVOI:     false, // ← nouveau : génération لائحة الإرسال (page Candidats)
+  CAN_EXPORT_LISTE_CANDIDATS: false,
+  CAN_EXPORT_LISTE_ENVOI:     false,
+  CAN_MANAGE_COURS_CODE:      false,
+  CAN_MARK_PRESENCE_CODE:     false,
+  CAN_VIEW_ALL_COURS_CODE:    false,
+  CAN_REQUEST_CONGE:          false,
 };
 
 const PermissionsContext = createContext(null);
 
 export function PermissionsProvider({ children }) {
-  // Structure stockée : { "42": { CAN_ADD_SESSION: true, ... }, "17": {...}, ... }
-  // La clé est l'id (string) du moniteur dans la BDD
-  const [permissions, setPermissions] = useState(() => {
-    try {
-      const saved = localStorage.getItem("moniteur_permissions");
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
+  // Structure : { "42": { CAN_ADD_SESSION: true, ... }, "17": {...} }
+  const [permissions, setPermissions] = useState({});
+  const [loading, setLoading]         = useState(true);
 
-  // Appelé par l'admin dans Paramètres pour modifier les perms d'un moniteur
-  const updatePermissions = (moniteurId, newPerms) => {
-    setPermissions(prev => {
-      const updated = {
-        ...prev,
-        [moniteurId]: { ...PERMS_DEFAUT, ...prev[moniteurId], ...newPerms },
-      };
-      localStorage.setItem("moniteur_permissions", JSON.stringify(updated));
-      return updated;
-    });
+  // Hydratation depuis la BDD au démarrage
+  useEffect(() => {
+    window.electron.getAllPermissions()
+      .then(data => setPermissions(data || {}))
+      .catch(err => console.error("Erreur chargement permissions:", err))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Appelé par l'admin dans Paramètres → écrit en BDD puis met à jour l'état local
+  const updatePermissions = async (moniteurId, newPerms) => {
+    const merged = { ...PERMS_DEFAUT, ...permissions[moniteurId], ...newPerms };
+    const res = await window.electron.updatePermissions(moniteurId, merged);
+    if (res?.success) {
+      setPermissions(prev => ({ ...prev, [moniteurId]: merged }));
+    }
+    return res;
   };
 
   // Retourne les permissions d'un moniteur précis (avec fallback sur les défauts)
@@ -47,7 +50,7 @@ export function PermissionsProvider({ children }) {
       : { ...PERMS_DEFAUT };
 
   return (
-    <PermissionsContext.Provider value={{ permissions, updatePermissions, getPermissions }}>
+    <PermissionsContext.Provider value={{ permissions, loading, updatePermissions, getPermissions }}>
       {children}
     </PermissionsContext.Provider>
   );
@@ -60,5 +63,5 @@ export function useMyPermissions() {
   const { currentUser } = useAuth();
   const { getPermissions } = usePermissionsCtx();
   if (!currentUser) return { ...PERMS_DEFAUT };
-  return getPermissions(currentUser.id); // id = celui de la BDD
+  return getPermissions(currentUser.id);
 }

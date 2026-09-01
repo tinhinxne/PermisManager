@@ -17,6 +17,7 @@ import { useExamenRulesCtx } from "../context/ExamenRulesContext";
 import ModalConges           from "../components/ModalConges";
 import { useLocation }       from "react-router-dom";
 
+
 /* ─── Toggle ─────────────────────────────────────────────────────────────── */
 const Toggle = ({ value, onChange, color = "#534AB7" }) => (
   <div

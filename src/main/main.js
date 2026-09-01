@@ -1365,22 +1365,89 @@ ipcMain.handle("delete-seance", async (event, id) => {
     });
   });
 });
-
 ipcMain.handle("update-seance", async (event, data) => {
-  const { id, date, heure, type, statut, moniteur_id, duree, candidatId, categoriePermis } = data;
+  const { id, date, heure, type, statut, moniteur_id, duree, categoriePermis } = data;
+
+  // Compatibilité : accepte soit candidatIds (tableau, nouveau format),
+  // soit candidatId (valeur unique, ancien format utilisé par le frontend actuel).
+  let candidatIds = [];
+  if (Array.isArray(data.candidatIds)) {
+    candidatIds = data.candidatIds
+      .map((cid) => parseInt(cid, 10))
+      .filter((cid) => Number.isInteger(cid));
+  } else if (data.candidatId !== undefined && data.candidatId !== null && data.candidatId !== "") {
+    const cid = parseInt(data.candidatId, 10);
+    if (Number.isInteger(cid)) candidatIds = [cid];
+  }
+
   return new Promise((resolve) => {
     db.query(
       "UPDATE Seance SET date=?, heure=?, type=?, statut=?, moniteur_id=?, duree=?, categoriePermis=? WHERE idSeance=?",
       [date, heure, type, statut, moniteur_id, duree || 1, categoriePermis || 'B', id],
       (err) => {
-        if (err) return resolve(false);
-        if (!candidatId) return resolve(true);
-        db.query('DELETE FROM CandidatSeance WHERE idSeance = ?', [id], (err2) => {
-          if (err2) return resolve(false);
-          db.query('INSERT INTO CandidatSeance (idCandidat, idSeance) VALUES (?, ?)', [parseInt(candidatId), id], (err3) => {
-            resolve(!err3);
-          });
-        });
+        if (err) {
+          console.error("❌ update-seance (UPDATE Seance):", err.message);
+          return resolve({ success: false, message: err.message });
+        }
+
+        // Aucun candidat fourni → on NE touche PAS à CandidatSeance,
+        // pour ne jamais effacer un lien existant par erreur.
+        if (candidatIds.length === 0) {
+          return resolve({ success: true });
+        }
+
+        // ── Vérifie d'abord que tous les candidats fournis existent réellement ──
+        db.query(
+          `SELECT idCandidat FROM Candidat WHERE idCandidat IN (?) AND deleted_at IS NULL`,
+          [candidatIds],
+          (errCheck, rowsCheck) => {
+            if (errCheck) {
+              console.error("❌ update-seance (check candidats):", errCheck.message);
+              return resolve({ success: false, message: errCheck.message });
+            }
+
+            const idsValides = rowsCheck.map((r) => r.idCandidat);
+            if (idsValides.length === 0) {
+              // Aucun candidat valide → on abandonne SANS supprimer les liens existants
+              console.error("❌ update-seance: aucun candidat valide parmi", candidatIds);
+              return resolve({ success: false, message: "Candidat(s) introuvable(s)." });
+            }
+
+            // ── INSERT d'abord (sur une table temporaire logique via requête groupée) ──
+            // On insère les nouveaux liens, PUIS seulement si ça réussit on supprime
+            // les anciens liens qui ne sont plus dans la nouvelle liste.
+            // Utilisation de INSERT ... ON DUPLICATE KEY / IGNORE pour éviter les doublons
+            // si (idCandidat, idSeance) est déjà présent.
+            const values = idsValides.map((cid) => [cid, id]);
+
+            db.query(
+              `INSERT IGNORE INTO CandidatSeance (idCandidat, idSeance) VALUES ?`,
+              [values],
+              (errInsert) => {
+                if (errInsert) {
+                  console.error("❌ update-seance (INSERT CandidatSeance):", errInsert.message);
+                  // L'insert a échoué : on NE supprime rien, les anciens liens restent intacts.
+                  return resolve({ success: false, message: errInsert.message });
+                }
+
+                // L'insert a réussi → on peut maintenant retirer les candidats
+                // qui ne sont plus dans la liste demandée pour cette séance.
+                db.query(
+                  `DELETE FROM CandidatSeance WHERE idSeance = ? AND idCandidat NOT IN (?)`,
+                  [id, idsValides],
+                  (errDelete) => {
+                    if (errDelete) {
+                      console.error("❌ update-seance (DELETE anciens CandidatSeance):", errDelete.message);
+                      // Les nouveaux liens sont bien en place, seul le nettoyage a échoué.
+                      return resolve({ success: true, warning: "Anciens liens non nettoyés : " + errDelete.message });
+                    }
+                    resolve({ success: true });
+                  }
+                );
+              }
+            );
+          }
+        );
       }
     );
   });
@@ -2706,4 +2773,41 @@ ipcMain.handle("delete-candidat-externe", async (event, idCandidat) => {
       resolve(res.affectedRows > 0);
     });
   });
+});
+
+// ── Permissions moniteurs ──────────────────────────────────────────────
+ipcMain.handle("get-all-permissions", async () => {
+  try {
+    const [rows] = await db.promise().query(
+      "SELECT moniteur_id, permission_key, valeur FROM moniteur_permissions"
+    );
+    const grouped = {};
+    for (const r of rows) {
+      const id = String(r.moniteur_id);
+      if (!grouped[id]) grouped[id] = {};
+      grouped[id][r.permission_key] = !!r.valeur;
+    }
+    return grouped;
+  } catch (err) {
+    console.error("Erreur get-all-permissions:", err);
+    return {};
+  }
+});
+
+ipcMain.handle("update-permissions", async (event, moniteurId, permsObject) => {
+  try {
+    const entries = Object.entries(permsObject || {});
+    for (const [key, val] of entries) {
+      await db.promise().query(
+        `INSERT INTO moniteur_permissions (moniteur_id, permission_key, valeur)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE valeur = VALUES(valeur)`,
+        [moniteurId, key, val ? 1 : 0]
+      );
+    }
+    return { success: true };
+  } catch (err) {
+    console.error("Erreur update-permissions:", err);
+    return { success: false, message: err.message };
+  }
 });

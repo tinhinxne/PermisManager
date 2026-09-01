@@ -125,5 +125,11 @@ getAuditeursLibres: () => ipcRenderer.invoke('get-auditeurs-libres'),
 convertirAuditeurLibre: (idCandidat) => ipcRenderer.invoke('convertir-auditeur-libre', idCandidat),
 getProgressionCode: () => ipcRenderer.invoke('get-progression-code'),
 getProgressionCodeMoniteur: (moniteurId) => ipcRenderer.invoke('get-progression-code-moniteur', moniteurId),
+
+
+getAllPermissions: () => ipcRenderer.invoke("get-all-permissions"),
+updatePermissions: (moniteurId, perms) => ipcRenderer.invoke("update-permissions", moniteurId, perms),
+
+
 });
 
