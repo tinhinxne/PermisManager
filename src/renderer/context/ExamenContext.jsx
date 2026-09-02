@@ -168,7 +168,7 @@ export function ExamenProvider({ children }) {
   }, []);
 
   // ─────────────────────────────────────────────────────────────────────────
-  const getNextExamDate = (fromDate, joursAutorises, delaiJours = 0) => {
+function getNextExamDate(fromDate, joursAutorises, delaiJours = 0) {
     const DAY_MAP     = { Dim: 0, Lun: 1, Mar: 2, Mer: 3, Jeu: 4, Ven: 5, Sam: 6 };
     const allowedDays = (joursAutorises || ["Lun", "Mer", "Ven"]).map(d => DAY_MAP[d]);
     const base = new Date(fromDate + "T12:00:00");
