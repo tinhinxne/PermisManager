@@ -1230,9 +1230,13 @@ const {
   const handleGenerate = async (userTriggered = false) => {
     setLoading(true);
     try {
-      const [seances, candidats] = await Promise.all([
+      const [seances, candidats, candidatsCodeIds] = await Promise.all([
         window.electron.getSeances(),
         window.electron.getCandidats(),
+        // ← AJOUT : récupère les candidats des cours de code de ce moniteur
+        currentUser?.id
+          ? window.electron.getCandidatsCodeMoniteur(currentUser.id)
+          : Promise.resolve([]),
       ]);
 
  // ── Exclure les candidats externes (déjà titulaires du permis, séances supp uniquement) ──
@@ -1277,6 +1281,10 @@ const {
           }
           parsed.forEach(id => ids.add(id));
         });
+
+        // ← AJOUT : fusion avec les candidats des cours de code
+        candidatsCodeIds.forEach(id => ids.add(String(id)));
+
         setMesCandidatIds([...ids]);
       }
 
@@ -1294,7 +1302,6 @@ const {
     }
     setLoading(false);
   };
-
   useEffect(() => { handleGenerate(false); }, [currentUser?.id, CAN_VIEW_ALL_CANDIDATES]);
 
   // ── filteredBase avec useMemo ──

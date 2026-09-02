@@ -522,6 +522,44 @@ ipcMain.handle("login", async (event, credentials) => {
   });
 });
 
+ipcMain.handle("get-candidats-code-moniteur", async (event, moniteurId) => {
+  return new Promise((resolve) => {
+    db.query(
+      `SELECT DISTINCT csc.idCandidat
+       FROM CandidatSeanceCode csc
+       JOIN SeanceCode sc ON sc.idSeanceCode = csc.idSeanceCode
+       WHERE sc.moniteur_id = ?`,
+      [moniteurId],
+      (err, rows) => {
+        if (err) {
+          console.error("get-candidats-code-moniteur:", err);
+          return resolve([]);
+        }
+        resolve(rows.map(r => r.idCandidat));
+      }
+    );
+  });
+});
+
+ipcMain.handle("get-nb-code-present-candidats", async () => {
+  return new Promise((resolve) => {
+    db.query(
+      `SELECT idCandidat, COUNT(*) AS nb
+       FROM CandidatSeanceCode
+       WHERE statutPresence = 'present'
+       GROUP BY idCandidat`,
+      [],
+      (err, rows) => {
+        if (err) {
+          console.error("get-nb-code-present-candidats:", err);
+          return resolve([]);
+        }
+        resolve(rows);
+      }
+    );
+  });
+});
+
 // ── 2. CANDIDATS ──────────────────────────────────────────────────────────────
 ipcMain.handle("get-candidats", async () => {
   return new Promise((resolve) => {

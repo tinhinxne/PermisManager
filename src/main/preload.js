@@ -130,6 +130,8 @@ getProgressionCodeMoniteur: (moniteurId) => ipcRenderer.invoke('get-progression-
 getAllPermissions: () => ipcRenderer.invoke("get-all-permissions"),
 updatePermissions: (moniteurId, perms) => ipcRenderer.invoke("update-permissions", moniteurId, perms),
 
+getCandidatsCodeMoniteur: (moniteurId) => ipcRenderer.invoke("get-candidats-code-moniteur", moniteurId),
+getNbCodePresentCandidats: () => ipcRenderer.invoke("get-nb-code-present-candidats"),
 
 getSessionsExamens:   ()      => ipcRenderer.invoke('get-sessions-examens'),
 createSessionExamen:  (data)  => ipcRenderer.invoke('create-session-examen', data),

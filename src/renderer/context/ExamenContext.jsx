@@ -254,7 +254,7 @@ export function ExamenProvider({ children }) {
   // (état 100% en mémoire, jamais persisté : recalculé à chaque appel depuis
   // seances + candidats + examensList qui, eux, viennent de la DB).
   // ─────────────────────────────────────────────────────────────────────────
-  const generateExamens = async (seances, candidats) => {
+ const generateExamens = async (seances, candidats) => {
     if (isGeneratingRef.current) return [];
     isGeneratingRef.current = true;
 
@@ -272,6 +272,15 @@ export function ExamenProvider({ children }) {
           seances   = seances   || [];
           candidats = candidats || [];
         }
+      }
+
+      // ← AJOUT : récupération du nombre de présences en cours de code, par candidat
+      let nbCodeParCandidat = {};
+      try {
+        const rows = await window.electron.getNbCodePresentCandidats();
+        rows.forEach(r => { nbCodeParCandidat[String(r.idCandidat)] = Number(r.nb) || 0; });
+      } catch (e) {
+        console.error("Erreur récupération présences code:", e);
       }
 
       const today           = new Date().toISOString().split("T")[0];
@@ -301,7 +310,8 @@ export function ExamenProvider({ children }) {
         };
 
         const seancesCand = seancesParCandidat[cid] || [];
-        const nbSeancesCode        = seancesCand.filter(s => normalizeType(s.type) === "code").length;
+        // ← AJOUT : on remplace le comptage sur "Seance" par le vrai comptage de présences code
+        const nbSeancesCode        = nbCodeParCandidat[cid] || 0;
         const nbSeancesCreneau     = seancesCand.filter(s => normalizeType(s.type) === "creneau").length;
         const nbSeancesCirculation = seancesCand.filter(s => normalizeType(s.type) === "circulation").length;
 
@@ -544,8 +554,15 @@ export function ExamenProvider({ children }) {
 
     let nbSeances = null;
     try {
-      const seances = await window.electron.getSeances();
-      nbSeances = countSeancesPourType(seances, cid, type);
+      // ← AJOUT : branchement différent selon le type d'examen
+      if (type === "Code") {
+        const rows = await window.electron.getNbCodePresentCandidats();
+        const found = rows.find(r => String(r.idCandidat) === cid);
+        nbSeances = found ? Number(found.nb) : 0;
+      } else {
+        const seances = await window.electron.getSeances();
+        nbSeances = countSeancesPourType(seances, cid, type);
+      }
     } catch (err) {
       console.error("Erreur calcul nbSeances (ajouterExamenManuel):", err);
     }
