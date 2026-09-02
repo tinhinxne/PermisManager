@@ -609,8 +609,9 @@ const FormField = ({ label, value, onChange, placeholder, type = "text", require
 
 const ENVOI_IDS_KEY = "liste_envoi_ids_envoyes";
 const ENVOI_TIMESTAMP_KEY = "liste_envoi_derniere_generation";
+const getEnvoiKey = (c) => `${c.id}_${c.categoriePermis}`;
 
-function EnvoiCandidatsModal({ candidats, onClose, onSent }) {
+function EnvoiCandidatsModal({ candidats, reinscritsIds, onClose, onSent }) {
   const [wilaya,     setWilaya]     = useState("");
   const [nomEcole,   setNomEcole]   = useState("");
   const [loading,    setLoading]    = useState(false);
@@ -618,6 +619,7 @@ function EnvoiCandidatsModal({ candidats, onClose, onSent }) {
   const [sentIds,    setSentIds]    = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [derniereGeneration, setDerniereGeneration] = useState("");
+  const [query,      setQuery]      = useState("");
 
   useEffect(() => {
     try {
@@ -634,11 +636,9 @@ function EnvoiCandidatsModal({ candidats, onClose, onSent }) {
       setSentIds([]);
     }
   }, []);
-
   const nouveauxInscrits = candidats
-    .filter((c) => !sentIds.includes(c.id))
+    .filter((c) => !sentIds.includes(getEnvoiKey(c)))
     .sort((a, b) => new Date(a._raw?.date_inscription || 0) - new Date(b._raw?.date_inscription || 0));
-
   useEffect(() => {
     setSelectedIds(new Set(nouveauxInscrits.map((c) => c.id)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -652,12 +652,26 @@ function EnvoiCandidatsModal({ candidats, onClose, onSent }) {
     });
   };
 
+  const nouveauxInscritsAffiches = useMemo(() => {
+    const q = query.toLowerCase().trim();
+    if (!q) return nouveauxInscrits;
+    return nouveauxInscrits.filter((c) =>
+      c.nom.toLowerCase().includes(q) ||
+      c.prenom.toLowerCase().includes(q) ||
+      c.categoriePermis.toLowerCase().includes(q) ||
+      (c.matricule && c.matricule.toLowerCase().includes(q))
+    );
+  }, [nouveauxInscrits, query]);
+
+  // "Tout cocher/décocher" n'agit que sur les résultats actuellement filtrés.
   const toggleAll = () => {
-    if (selectedIds.size === nouveauxInscrits.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(nouveauxInscrits.map((c) => c.id)));
-    }
+    const idsAffiches = nouveauxInscritsAffiches.map((c) => c.id);
+    const tousCoches = idsAffiches.length > 0 && idsAffiches.every((id) => selectedIds.has(id));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      idsAffiches.forEach((id) => (tousCoches ? next.delete(id) : next.add(id)));
+      return next;
+    });
   };
 
   const handleConfirm = async () => {
@@ -689,7 +703,7 @@ function EnvoiCandidatsModal({ candidats, onClose, onSent }) {
       });
 
       if (savedPath) {
-        const nouveauxIds = Array.from(new Set([...sentIds, ...candidatsSelectionnes.map((c) => c.id)]));
+        const nouveauxIds = Array.from(new Set([...sentIds, ...candidatsSelectionnes.map((c) => getEnvoiKey(c))]));
         localStorage.setItem(ENVOI_IDS_KEY, JSON.stringify(nouveauxIds));
 
         const nowIso = new Date().toISOString();
@@ -759,18 +773,36 @@ function EnvoiCandidatsModal({ candidats, onClose, onSent }) {
           </span>
           {nouveauxInscrits.length > 0 && (
             <button onClick={toggleAll} style={{ background: "none", border: "none", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-              {selectedIds.size === nouveauxInscrits.length ? "Tout décocher" : "Tout cocher"}
+              {nouveauxInscritsAffiches.length > 0 && nouveauxInscritsAffiches.every((c) => selectedIds.has(c.id)) ? "Tout décocher" : "Tout cocher"}
             </button>
           )}
         </div>
+
+        {nouveauxInscrits.length > 3 && (
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="🔍 Nom, prénom, catégorie ou matricule…"
+            style={{
+              width: "100%", boxSizing: "border-box", padding: "9px 12px", marginBottom: 10,
+              border: "1.5px solid #e2e8f0", borderRadius: 9, fontSize: 13,
+              color: "#1e293b", background: "#f8fafc", outline: "none",
+            }}
+          />
+        )}
 
         <div style={{ flex: 1, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 14 }}>
           {nouveauxInscrits.length === 0 ? (
             <div style={{ textAlign: "center", padding: "24px 0", color: "#94a3b8", fontSize: 13 }}>
               Aucun nouvel inscrit en attente d'envoi.
             </div>
+          ) : nouveauxInscritsAffiches.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "24px 0", color: "#94a3b8", fontSize: 13 }}>
+              Aucun résultat pour « {query} ».
+            </div>
           ) : (
-            nouveauxInscrits.map((c) => (
+            nouveauxInscritsAffiches.map((c) => (
               <label
                 key={c.id}
                 style={{
@@ -785,7 +817,14 @@ function EnvoiCandidatsModal({ candidats, onClose, onSent }) {
                   onChange={() => toggleOne(c.id)}
                   style={{ width: 15, height: 15, cursor: "pointer" }}
                 />
-                <span style={{ flex: 1, fontWeight: 600, color: "#1e293b" }}>{c.prenom} {c.nom}</span>
+                <span style={{ flex: 1, fontWeight: 600, color: "#1e293b" }}>
+                  {c.prenom} {c.nom}
+                  {reinscritsIds?.has(c.id) && (
+                    <span style={{ marginLeft: 6, fontSize: 10.5, background: "#ede9fe", color: "#6d28d9", padding: "1px 6px", borderRadius: 10, fontWeight: 700 }}>
+                      🔄 Réinscription
+                    </span>
+                  )}
+                </span>
                 <span style={{ fontSize: 11, background: "#e0f2fe", color: "#0369a1", padding: "2px 6px", borderRadius: 4, fontWeight: 700 }}>
                   {c.categoriePermis}
                 </span>
@@ -837,6 +876,7 @@ function MatriculesEnAttenteModal({ onClose, onSaved }) {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
   const [filtre, setFiltre] = useState("sans"); // "sans" | "avec" | "tous"
+   const [query, setQuery] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -854,27 +894,45 @@ function MatriculesEnAttenteModal({ onClose, onSaved }) {
 
   const candidatsAffiches = candidatsTous.filter((c) => {
     const aMatricule = !!(c.matricule && c.matricule.trim());
-    if (filtre === "sans") return !aMatricule;
-    if (filtre === "avec") return aMatricule;
-    return true; // "tous"
+   const matchesFiltre =
+      filtre === "sans" ? !aMatricule :
+      filtre === "avec" ? aMatricule :
+      true; // "tous"
+
+    if (!matchesFiltre) return false;
+
+    const q = query.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      (c.nom || "").toLowerCase().includes(q) ||
+      (c.prenom || "").toLowerCase().includes(q) ||
+     (c.matricule && c.matricule.toLowerCase().includes(q))
+    );
   });
 
   const nbSans = candidatsTous.filter((c) => !(c.matricule && c.matricule.trim())).length;
   const nbAvec = candidatsTous.length - nbSans;
 
-  const handleSave = async (idCandidat) => {
-    const matricule = (valeurs[idCandidat] || "").trim();
+   const rowKey = (c) => `${c.idCandidat}_${c.categoriePermis}`;
+
+  const handleSave = async (idCandidat, categoriePermis) => {
+    const key = `${idCandidat}_${categoriePermis}`;
+    const matricule = (valeurs[key] || "").trim();
     if (!matricule) return;
-    setSavingId(idCandidat);
+    setSavingId(key);
     try {
- const result = await window.electron.updateMatriculeCandidat(idCandidat, matricule);
+      const result = await window.electron.updateMatriculeCandidat(idCandidat, categoriePermis, matricule);
       if (result?.success) {
         setCandidatsTous((prev) =>
-          prev.map((c) => (c.idCandidat === idCandidat ? { ...c, matricule } : c))
+          prev.map((c) =>
+            c.idCandidat === idCandidat && c.categoriePermis === categoriePermis
+              ? { ...c, matricule }
+              : c
+          )
         );
         setValeurs((prev) => {
           const next = { ...prev };
-          delete next[idCandidat];
+          delete next[key];
           return next;
         });
         onSaved?.();
@@ -929,6 +987,19 @@ function MatriculesEnAttenteModal({ onClose, onSaved }) {
         <p style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>
           Consultez et complétez les matricules officiels des candidats.
         </p>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="🔍 Rechercher un candidat (nom, prénom, matricule)…"
+          style={{
+            width: "100%", boxSizing: "border-box",
+            padding: "9px 12px", marginBottom: 12,
+            border: "1.5px solid #e2e8f0", borderRadius: 9,
+            fontSize: 13, color: "#1e293b",
+            background: "#f8fafc", outline: "none",
+          }}
+      />
 
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
           <TabButton value="sans" label="Sans matricule" count={nbSans} />
@@ -949,10 +1020,14 @@ function MatriculesEnAttenteModal({ onClose, onSaved }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {candidatsAffiches.map((c) => {
                 const aMatricule = !!(c.matricule && c.matricule.trim());
+                        const key = rowKey(c);
                 return (
-                  <div key={c.idCandidat} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", border: "1px solid #e2e8f0", borderRadius: 9 }}>
+                  <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", border: "1px solid #e2e8f0", borderRadius: 9 }}>
                     <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: "#1e293b" }}>
                       {c.prenom} {c.nom}
+                      <span style={{ marginLeft: 6, fontSize: 10.5, background: "#e0f2fe", color: "#0369a1", padding: "1px 6px", borderRadius: 10, fontWeight: 700 }}>
+                        {c.categoriePermis}
+                      </span>
                     </span>
 
                     {aMatricule ? (
@@ -968,23 +1043,23 @@ function MatriculesEnAttenteModal({ onClose, onSaved }) {
                         <input
                           type="text"
                           placeholder="Matricule"
-                          value={valeurs[c.idCandidat] || ""}
-                          onChange={(e) => setValeurs((prev) => ({ ...prev, [c.idCandidat]: e.target.value }))}
-                          onKeyDown={(e) => e.key === "Enter" && handleSave(c.idCandidat)}
+                          value={valeurs[key] || ""}
+                          onChange={(e) => setValeurs((prev) => ({ ...prev, [key]: e.target.value }))}
+                          onKeyDown={(e) => e.key === "Enter" && handleSave(c.idCandidat, c.categoriePermis)}
                           style={{ width: 130, padding: "6px 9px", borderRadius: 7, border: "1px solid #d1d5db", fontSize: 12.5, outline: "none" }}
                         />
                         <button
-                          onClick={() => handleSave(c.idCandidat)}
-                          disabled={savingId === c.idCandidat || !valeurs[c.idCandidat]?.trim()}
+                          onClick={() => handleSave(c.idCandidat, c.categoriePermis)}
+                          disabled={savingId === key || !valeurs[key]?.trim()}
                           style={{
                             padding: "6px 12px", borderRadius: 7, border: "none",
-                            background: !valeurs[c.idCandidat]?.trim() ? "#e2e8f0" : "#7c3aed",
-                            color: !valeurs[c.idCandidat]?.trim() ? "#94a3b8" : "#fff",
+                            background: !valeurs[key]?.trim() ? "#e2e8f0" : "#7c3aed",
+                            color: !valeurs[key]?.trim() ? "#94a3b8" : "#fff",
                             fontSize: 12, fontWeight: 600,
-                            cursor: !valeurs[c.idCandidat]?.trim() ? "not-allowed" : "pointer",
+                            cursor: !valeurs[key]?.trim() ? "not-allowed" : "pointer",
                           }}
                         >
-                          {savingId === c.idCandidat ? "..." : "OK"}
+                          {savingId === key ? "..." : "OK"}
                         </button>
                       </>
                     )}
@@ -2392,9 +2467,10 @@ const loadAuditeursLibres = async () => {
         />
       )}
 
-      {showEnvoiModal && (
+         {showEnvoiModal && (
         <EnvoiCandidatsModal
           candidats={candidats}
+          reinscritsIds={reinscritsIds}
           onClose={() => setShowEnvoiModal(false)}
           onSent={loadCandidats}
         />

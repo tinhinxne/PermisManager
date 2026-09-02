@@ -486,21 +486,20 @@ function ContactModal({ candidat, onClose }) {
 // ─────────────────────────────────────────────
 // Modale لائحة الإرسال
 // ─────────────────────────────────────────────
-function EnvoiCandidatsModal({ candidats, onClose }) {
-  const [dateDebut,          setDateDebut]          = useState("");
-  const [dateFin,            setDateFin]            = useState("");
+const getEnvoiKey = (c) => `${c.id}_${c.categoriePermis}`;
+
+function EnvoiCandidatsModal({ candidats, reinscritsIds, onClose }) {
   const [wilaya,             setWilaya]             = useState("");
   const [nomEcole,           setNomEcole]           = useState("");
   const [loading,            setLoading]            = useState(false);
   const [error,              setError]              = useState("");
   const [sentIds,            setSentIds]            = useState([]);
+  const [selectedIds,        setSelectedIds]        = useState(new Set());
   const [derniereGeneration, setDerniereGeneration] = useState("");
+  const [query,              setQuery]              = useState("");
 
   useEffect(() => {
     try {
-      const ref = localStorage.getItem(ENVOI_REF_KEY);
-      if (ref) setDateDebut(ref);
-
       const ids = JSON.parse(localStorage.getItem(ENVOI_IDS_KEY) || "[]");
       setSentIds(Array.isArray(ids) ? ids : []);
 
@@ -515,28 +514,61 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
     }
   }, []);
 
-  const candidatsFiltres = candidats.filter((c) => {
-    const insc = toComparableDate(c._raw?.date_inscription);
-    if (!insc || !dateDebut || !dateFin) return false;
-    return insc >= dateDebut && insc <= dateFin;
-  });
+  // Clé composite (candidat + catégorie) : un réinscrit réapparaît ici dès
+  // que sa nouvelle catégorie n'a jamais été envoyée, même si l'ancienne l'a été.
+  const nouveauxInscrits = candidats
+    .filter((c) => !sentIds.includes(getEnvoiKey(c)))
+    .sort((a, b) => new Date(a._raw?.date_inscription || 0) - new Date(b._raw?.date_inscription || 0));
 
-  const periodeVide = !!dateDebut && !!dateFin && candidatsFiltres.length === 0;
+  useEffect(() => {
+    setSelectedIds(new Set(nouveauxInscrits.map((c) => c.id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sentIds.length, candidats.length]);
+
+  const toggleOne = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const nouveauxInscritsAffiches = useMemo(() => {
+    const q = query.toLowerCase().trim();
+    if (!q) return nouveauxInscrits;
+    return nouveauxInscrits.filter((c) =>
+      c.nom.toLowerCase().includes(q) ||
+      c.categoriePermis.toLowerCase().includes(q) ||
+      (c._raw?.matricule && c._raw.matricule.toLowerCase().includes(q))
+    );
+  }, [nouveauxInscrits, query]);
+
+  // "Tout cocher/décocher" n'agit que sur les résultats actuellement filtrés —
+  // il ne touche pas aux cases déjà cochées/décochées en dehors de la recherche.
+  const toggleAll = () => {
+    const idsAffiches = nouveauxInscritsAffiches.map((c) => c.id);
+    const tousCoches = idsAffiches.length > 0 && idsAffiches.every((id) => selectedIds.has(id));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      idsAffiches.forEach((id) => (tousCoches ? next.delete(id) : next.add(id)));
+      return next;
+    });
+  };
 
   const handleConfirm = async () => {
     setError("");
-    if (!dateDebut)       { setError("Merci de renseigner la date de début.");                           return; }
-    if (!dateFin)         { setError("Merci de choisir la date jusqu'à laquelle inclure les inscrits."); return; }
-    if (!wilaya.trim())   { setError("Merci de renseigner la wilaya.");                                  return; }
-    if (candidatsFiltres.length === 0) { setError("Aucun candidat inscrit sur cette période.");          return; }
+    if (!wilaya.trim())         { setError("Merci de renseigner la wilaya.");                    return; }
+    if (selectedIds.size === 0) { setError("Sélectionnez au moins un candidat à inclure.");      return; }
+
+    const candidatsSelectionnes = nouveauxInscrits.filter((c) => selectedIds.has(c.id));
 
     setLoading(true);
     try {
-      const candidatsPourEnvoi = candidatsFiltres.map((c) => {
+      const candidatsPourEnvoi = candidatsSelectionnes.map((c) => {
         const nomAr    = c._raw?.nom_ar    || "";
         const prenomAr = c._raw?.prenom_ar || "";
         return {
-          nomPrenom:     `${c.prenom} ${c.nom}`,
+          nomPrenom:     `${c.prenom} ${c.nomSeul}`,
           nomPrenomAr:   (nomAr || prenomAr) ? `${nomAr} ${prenomAr}`.trim() : "",
           dateNaissance: formatDateAr(c._raw?.date_naissance),
           categorie:     c.categoriePermis || "",
@@ -546,16 +578,12 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
       const savedPath = await window.electron.generateListeEnvoiPDF({
         wilaya,
         nomEcole,
-        dateDepot: formatDateAr(dateFin),
+        dateDepot: formatDateAr(new Date()),
         candidats: candidatsPourEnvoi,
       });
 
       if (savedPath) {
-        localStorage.setItem(ENVOI_REF_KEY, dateFin);
-
-        const nouveauxIds = Array.from(
-          new Set([...sentIds, ...candidatsFiltres.map((c) => c.id)])
-        );
+        const nouveauxIds = Array.from(new Set([...sentIds, ...candidatsSelectionnes.map((c) => getEnvoiKey(c))]));
         localStorage.setItem(ENVOI_IDS_KEY, JSON.stringify(nouveauxIds));
 
         const nowIso = new Date().toISOString();
@@ -579,73 +607,105 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
 
   return (
     <div
-      style={{
-        position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)",
-        display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
-      }}
+      style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
       onClick={() => !loading && onClose()}
     >
       <div
-        style={{
-          background: "#fff", borderRadius: 14, padding: 24,
-          width: 420, maxWidth: "90vw",
-          boxShadow: "0 20px 50px rgba(0,0,0,0.2)",
-        }}
+        style={{ background: "#fff", borderRadius: 14, padding: 24, width: 480, maxWidth: "92vw", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 50px rgba(0,0,0,0.2)" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <h3 style={{ margin: 0, fontSize: 17, color: "#1F2937" }}>لائحة الإرسال — نوعي الجديد</h3>
-          <button
-            onClick={() => !loading && onClose()}
-            style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8" }}
-          >
+          <button onClick={() => !loading && onClose()} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8" }}>
             <X size={16} />
           </button>
         </div>
 
-        <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>
-          Liste de mes candidats inscrits sur la période choisie — المندوبية الولائية للأمن في الطرق
+        <p style={{ fontSize: 12, color: "#64748b", marginBottom: 14 }}>
+          Mes candidats jamais envoyés — décochez ceux à exclure de cette liste.
         </p>
 
-        <div style={{
-          background: "#f8fafc", border: "1px solid #e2e8f0",
-          borderRadius: 8, padding: "8px 12px", marginBottom: 14,
-          fontSize: 12, color: "#475569",
-        }}>
-          {derniereGeneration
-            ? <>Dernière liste générée le <strong>{formatDateHeure(derniereGeneration)}</strong></>
-            : "Aucune liste générée pour le moment."}
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-          <FormField label="Depuis le"               value={dateDebut} onChange={setDateDebut} type="date" required />
-          <FormField label="Jusqu'au"                value={dateFin}   onChange={setDateFin}   type="date" required />
-          <FormField label="الولاية (Wilaya)"        value={wilaya}    onChange={setWilaya}    placeholder="Ex : بجاية / Béjaïa" required />
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
+          <FormField label="الولاية (Wilaya)" value={wilaya} onChange={setWilaya} placeholder="Ex : بجاية / Béjaïa" required />
           <FormField label="Nom de l'auto-école (optionnel)" value={nomEcole} onChange={setNomEcole} placeholder="Ex : Auto-École Essalem" />
         </div>
 
-        {periodeVide ? (
-          <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#64748b" }}>
-            Aucun de mes candidats inscrit sur cette période.
-          </div>
-        ) : (
-          <div style={{ marginTop: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#475569" }}>
-            <strong style={{ color: "#1f2937" }}>Mes candidats trouvés sur cette période :</strong> {candidatsFiltres.length}
+        {derniereGeneration && (
+          <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#475569" }}>
+            Dernière liste générée le <strong>{formatDateHeure(derniereGeneration)}</strong>
           </div>
         )}
 
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>
+            🆕 Candidats à envoyer ({nouveauxInscrits.length})
+          </span>
+          {nouveauxInscrits.length > 0 && (
+            <button onClick={toggleAll} style={{ background: "none", border: "none", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              {nouveauxInscritsAffiches.length > 0 && nouveauxInscritsAffiches.every((c) => selectedIds.has(c.id)) ? "Tout décocher" : "Tout cocher"}
+            </button>
+          )}
+        </div>
+
+        {nouveauxInscrits.length > 3 && (
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="🔍 Nom, catégorie ou matricule…"
+            style={{
+              width: "100%", boxSizing: "border-box", padding: "9px 12px", marginBottom: 10,
+              border: "1.5px solid #e2e8f0", borderRadius: 9, fontSize: 13,
+              color: "#1e293b", background: "#f8fafc", outline: "none",
+            }}
+          />
+        )}
+
+        <div style={{ flex: 1, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 14 }}>
+          {nouveauxInscrits.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "24px 0", color: "#94a3b8", fontSize: 13 }}>
+              Aucun candidat en attente d'envoi.
+            </div>
+          ) : nouveauxInscritsAffiches.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "24px 0", color: "#94a3b8", fontSize: 13 }}>
+              Aucun résultat pour « {query} ».
+            </div>
+          ) : (
+            nouveauxInscritsAffiches.map((c) => (
+              <label key={getEnvoiKey(c)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderBottom: "1px solid #f1f5f9", cursor: "pointer", fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(c.id)}
+                  onChange={() => toggleOne(c.id)}
+                  style={{ width: 15, height: 15, cursor: "pointer" }}
+                />
+                <span style={{ flex: 1, fontWeight: 600, color: "#1e293b" }}>
+                  {c.nom}
+                  {reinscritsIds?.has(c.id) && (
+                    <span style={{ marginLeft: 6, fontSize: 10.5, background: "#ede9fe", color: "#6d28d9", padding: "1px 6px", borderRadius: 10, fontWeight: 700 }}>
+                      🔄 Réinscription
+                    </span>
+                  )}
+                </span>
+                <span style={{ fontSize: 11, background: "#e0f2fe", color: "#0369a1", padding: "2px 6px", borderRadius: 4, fontWeight: 700 }}>
+                  {c.categoriePermis}
+                </span>
+                <span style={{ fontSize: 11, color: "#94a3b8" }}>
+                  {c._raw?.date_inscription ? formatDateAr(c._raw.date_inscription) : "—"}
+                </span>
+              </label>
+            ))
+          )}
+        </div>
+
         {error && (
-          <div style={{ marginTop: 10, padding: "9px 13px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontSize: 12, fontWeight: 500 }}>
+          <div style={{ marginBottom: 10, padding: "9px 13px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontSize: 12, fontWeight: 500 }}>
             ⚠ {error}
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-          <button
-            onClick={onClose}
-            disabled={loading}
-            style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}
-          >
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onClose} disabled={loading} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>
             Annuler
           </button>
           <button
@@ -653,7 +713,7 @@ function EnvoiCandidatsModal({ candidats, onClose }) {
             disabled={loading}
             style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#7c3aed", color: "#fff", cursor: loading ? "not-allowed" : "pointer", fontWeight: 600, fontSize: 13.5, opacity: loading ? 0.7 : 1 }}
           >
-            {loading ? "Génération..." : "Générer لائحة الإرسال"}
+            {loading ? "Génération..." : `Générer (${selectedIds.size})`}
           </button>
         </div>
       </div>
@@ -2370,10 +2430,11 @@ const handleSave = async (data) => {
         />
       )}
 
-      {/* MODALE لائحة الإرسال */}
+          {/* MODALE لائحة الإرسال */}
       {showEnvoiModal && (
         <EnvoiCandidatsModal
           candidats={candidats}
+          reinscritsIds={reinscritsIds}
           onClose={() => setShowEnvoiModal(false)}
         />
       )}
