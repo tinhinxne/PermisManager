@@ -2512,8 +2512,14 @@ ipcMain.handle('update-matricule-candidat', async (event, { idCandidat, matricul
     db.query(
       `UPDATE Candidat SET matricule = ? WHERE idCandidat = ?`,
       [matricule, idCandidat],
-      (err) => {
-        if (err) { console.error("update-matricule-candidat:", err); return resolve({ success: false, error: err.message }); }
+      (err, result) => {
+        if (err) {
+          console.error("update-matricule-candidat:", err);
+          return resolve({ success: false, error: err.message });
+        }
+        if (!result || result.affectedRows === 0) {
+          return resolve({ success: false, error: "Aucun candidat correspondant trouvé" });
+        }
         resolve({ success: true });
       }
     );

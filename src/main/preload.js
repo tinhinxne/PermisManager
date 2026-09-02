@@ -95,8 +95,8 @@ setPrixFormation: (prix) => ipcRenderer.invoke('set-prix-formation', prix),
 getExamensCandidat: (candidatId) => ipcRenderer.invoke("get-examens-candidat", candidatId),
 getCandidatsMatricules: () => ipcRenderer.invoke('get-candidats-matricules'),
 
-updateMatriculeCandidat: (idCandidat, matricule) =>
-  ipcRenderer.invoke('update-matricule-candidat', { idCandidat, matricule }),
+updateMatriculeCandidat: (idCandidat, categoriePermis, matricule) =>
+  ipcRenderer.invoke('update-matricule-candidat', { idCandidat, categoriePermis, matricule }),
 
 // Cours de Code
 getSeancesCode:            (filters) => ipcRenderer.invoke('get-seances-code', filters),
