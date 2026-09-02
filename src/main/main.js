@@ -437,7 +437,7 @@ ipcMain.handle("login", async (event, credentials) => {
   return new Promise((resolve) => {
     db.query(
       `SELECT u.id, u.nom, u.prenom, u.mail, u.mot_de_passe, u.type_utilisateur, 
-              u.tentatives_echouees, u.verrouille_jusqua, m.actif
+              u.tentatives_echouees, u.verrouille_jusqua, m.actif, m.categories_habilitees
        FROM Utilisateur u
        LEFT JOIN Moniteur m ON u.id = m.id
        WHERE u.mail = ? AND u.deleted_at IS NULL`,
@@ -507,7 +507,13 @@ ipcMain.handle("login", async (event, credentials) => {
           () => {
             resolve({
               success: true,
-              user: { id: user.id, nom: user.nom, prenom: user.prenom, type_utilisateur: user.type_utilisateur },
+              user: {
+                id: user.id,
+                nom: user.nom,
+                prenom: user.prenom,
+                type_utilisateur: user.type_utilisateur,
+                categories_habilitees: user.categories_habilitees,
+              },
             });
           }
         );
@@ -2302,12 +2308,17 @@ ipcMain.handle("get-examens-candidat", async (event, candidatId) => {
   return new Promise((resolve) => {
     db.query(
       `SELECT 
-         ie.idInscription AS id,
-         ie.idCandidat    AS candidatId,
-         e.typeExamen     AS type,
-         ie.resultat      AS resultat,
-         ie.statut        AS statut,
-         e.date           AS date
+         ie.idInscription  AS id,
+         ie.idCandidat     AS candidatId,
+         e.idExamen        AS idExamen,
+         e.typeExamen      AS type,
+         ie.resultat       AS resultat,
+         ie.statut         AS statut,
+         e.date            AS date,
+         e.heure           AS heure,
+         e.lieu            AS lieu,
+         e.categoriePermis AS categoriePermis,
+         e.idSession       AS idSession
        FROM InscriptionExamen ie
        JOIN Examen e ON ie.idExamen = e.idExamen
        WHERE ie.idCandidat = ?
@@ -2316,34 +2327,129 @@ ipcMain.handle("get-examens-candidat", async (event, candidatId) => {
       (err, rows) => {
         if (err) { console.error("get-examens-candidat:", err); return resolve([]); }
 
-        // Normalise vers le format attendu par ExamenContext
-        // type: "Code" | "Créneau" | "Circulation"
-        // status: "Passed" | "Failed" | "Scheduled"
-        const TYPE_MAP = {
-          CODE:        "Code",
-          CRENEAU:     "Créneau",
-          CIRCULATION: "Circulation",
-        };
+        const TYPE_MAP = { CODE: "Code", CRENEAU: "Créneau", CIRCULATION: "Circulation" };
         const STATUS_MAP = {
-          reussi:     "Passed",
-          echoue:     "Failed",
-          admis:      "Passed",
-          refuse:     "Failed",
-          en_attente: "Scheduled",
-          planifie:   "Scheduled",
+          reussi: "Passed", admis: "Passed",
+          echoue: "Failed", refuse: "Failed",
+          absent: "Absent",
+          rejete: "Rejected",
+          en_attente: "Scheduled", planifie: "Scheduled",
         };
 
         const result = rows.map(r => ({
-          id:          String(r.id),
-          candidatId:  String(r.candidatId),
-          type:        TYPE_MAP[r.type?.toUpperCase()] || r.type,
-          status:      STATUS_MAP[r.resultat?.toLowerCase()] 
-                         || STATUS_MAP[r.statut?.toLowerCase()] 
-                         || "Scheduled",
-          date:        r.date ? new Date(r.date).toISOString().split("T")[0] : null,
+          id:              String(r.id),
+          idExamen:        r.idExamen,
+          candidatId:      String(r.candidatId),
+          type:            TYPE_MAP[r.type?.toUpperCase()] || r.type,
+          status:          STATUS_MAP[r.resultat?.toLowerCase()] || STATUS_MAP[r.statut?.toLowerCase()] || "Scheduled",
+          date:            r.date ? new Date(r.date).toISOString().split("T")[0] : null,
+          heure:           r.heure ? String(r.heure).slice(0, 5) : null,
+          lieu:            r.lieu || null,
+          categoriePermis: r.categoriePermis || null,
+          idSession:       r.idSession || null,
         }));
 
         resolve(result);
+      }
+    );
+  });
+});
+// ── SESSIONS D'EXAMEN (créées à l'avance, sans candidat) ───────────────────
+ipcMain.handle('get-sessions-examens', async () => {
+  return new Promise((resolve) => {
+    db.query(
+      `SELECT idSession AS id, DATE_FORMAT(date,'%Y-%m-%d') AS date, heure, lieu, categoriePermis
+       FROM SessionExamen ORDER BY date ASC, heure ASC`,
+      (err, rows) => {
+        if (err) { console.error('get-sessions-examens:', err); return resolve([]); }
+        resolve(rows.map(r => ({ ...r, id: String(r.id), heure: String(r.heure).slice(0, 5) })));
+      }
+    );
+  });
+});
+
+ipcMain.handle('create-session-examen', async (event, { date, heure, lieu, categoriePermis }) => {
+  return new Promise((resolve) => {
+    db.query(
+      `INSERT INTO SessionExamen (date, heure, lieu, categoriePermis) VALUES (?, ?, ?, ?)`,
+      [date, heure, lieu, categoriePermis || 'Tous'],
+      (err, res) => {
+        if (err) { console.error('create-session-examen:', err); return resolve({ success: false, error: err.message }); }
+        resolve({ success: true, id: res.insertId });
+      }
+    );
+  });
+});
+
+ipcMain.handle('delete-session-examen', async (event, id) => {
+  return new Promise((resolve) => {
+    db.query(`DELETE FROM SessionExamen WHERE idSession = ?`, [id], (err) => {
+      if (err) { console.error('delete-session-examen:', err); return resolve({ success: false, error: err.message }); }
+      resolve({ success: true });
+    });
+  });
+});
+
+// ── EXAMENS : création / résultat / détails ─────────────────────────────────
+const TYPE_MAP_IN = { 'Code': 'CODE', 'Créneau': 'CRENEAU', 'Circulation': 'CIRCULATION' };
+
+ipcMain.handle('add-examen', async (event, { candidatId, type, date, heure, lieu, categoriePermis, sessionId }) => {
+  const typeExamen = TYPE_MAP_IN[type] || String(type).toUpperCase();
+  return new Promise((resolve) => {
+    db.query(
+      `INSERT INTO Examen (date, heure, typeExamen, categoriePermis, lieu, idSession) VALUES (?, ?, ?, ?, ?, ?)`,
+      [date, heure, typeExamen, categoriePermis || 'B', lieu || null, sessionId || null],
+      (err, resExamen) => {
+        if (err) { console.error('add-examen (Examen):', err); return resolve({ success: false, error: err.message }); }
+        const idExamen = resExamen.insertId;
+        db.query(
+          `INSERT INTO InscriptionExamen (dateInscription, statut, idCandidat, idExamen) VALUES (CURDATE(), 'en_attente', ?, ?)`,
+          [candidatId, idExamen],
+          (err2, resInscription) => {
+            if (err2) { console.error('add-examen (InscriptionExamen):', err2); return resolve({ success: false, error: err2.message }); }
+            resolve({ success: true, idInscription: resInscription.insertId, idExamen });
+          }
+        );
+      }
+    );
+  });
+});
+
+const RESULTAT_MAP_IN = { Passed: 'reussi', Failed: 'echoue', Absent: 'absent', Rejected: 'rejete' };
+
+ipcMain.handle('update-resultat-examen', async (event, { idInscription, newStatus }) => {
+  const resultat = RESULTAT_MAP_IN[newStatus];
+  if (!resultat) return { success: false, error: 'Statut inconnu.' };
+  const statut = newStatus === 'Passed' ? 'termine' : (newStatus === 'Rejected' ? 'rejete' : 'termine');
+  return new Promise((resolve) => {
+    db.query(
+      `UPDATE InscriptionExamen SET resultat = ?, statut = ? WHERE idInscription = ?`,
+      [resultat, statut, idInscription],
+      (err) => {
+        if (err) { console.error('update-resultat-examen:', err); return resolve({ success: false, error: err.message }); }
+        resolve({ success: true });
+      }
+    );
+  });
+});
+
+ipcMain.handle('remove-inscription-examen', async (event, idInscription) => {
+  return new Promise((resolve) => {
+    db.query(`DELETE FROM InscriptionExamen WHERE idInscription = ?`, [idInscription], (err) => {
+      if (err) { console.error('remove-inscription-examen:', err); return resolve({ success: false, error: err.message }); }
+      resolve({ success: true });
+    });
+  });
+});
+
+ipcMain.handle('update-details-examen', async (event, { idExamen, date, heure, lieu, categoriePermis }) => {
+  return new Promise((resolve) => {
+    db.query(
+      `UPDATE Examen SET date = COALESCE(?, date), heure = COALESCE(?, heure), lieu = COALESCE(?, lieu), categoriePermis = COALESCE(?, categoriePermis) WHERE idExamen = ?`,
+      [date || null, heure || null, lieu || null, categoriePermis || null, idExamen],
+      (err) => {
+        if (err) { console.error('update-details-examen:', err); return resolve({ success: false, error: err.message }); }
+        resolve({ success: true });
       }
     );
   });

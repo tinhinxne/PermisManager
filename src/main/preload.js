@@ -131,5 +131,13 @@ getAllPermissions: () => ipcRenderer.invoke("get-all-permissions"),
 updatePermissions: (moniteurId, perms) => ipcRenderer.invoke("update-permissions", moniteurId, perms),
 
 
+getSessionsExamens:   ()      => ipcRenderer.invoke('get-sessions-examens'),
+createSessionExamen:  (data)  => ipcRenderer.invoke('create-session-examen', data),
+deleteSessionExamen:  (id)    => ipcRenderer.invoke('delete-session-examen', id),
+addExamen:            (data)  => ipcRenderer.invoke('add-examen', data),
+updateResultatExamen: (data)  => ipcRenderer.invoke('update-resultat-examen', data),
+removeInscriptionExamen: (id) => ipcRenderer.invoke('remove-inscription-examen', id),
+updateDetailsExamen:  (data)  => ipcRenderer.invoke('update-details-examen', data),
+
 });
 

@@ -1,5 +1,5 @@
 // src/renderer/context/ExamenContext.jsx
-import React, { createContext, useContext, useState, useEffect, useRef } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef, useMemo } from "react";
 import { useExamenRulesCtx } from "./ExamenRulesContext";
 
 const ExamenContext = createContext(null);
@@ -17,12 +17,6 @@ const computeThresholds = (base) => ({
   Créneau:     Math.ceil(base / 2),
   Circulation: Math.ceil(base / 2),
 });
-
-const LS_KEY              = "examens_list";
-const LS_REPORTS_KEY      = "examens_reports";
-const LS_CANDIDATS        = "examens_candidats_map";
-const LS_PROPOSITIONS_KEY = "examens_propositions";
-const LS_SESSIONS_KEY     = "examens_sessions";
 
 export function ExamenProvider({ children }) {
   const { examRules } = useExamenRulesCtx();
@@ -42,77 +36,69 @@ export function ExamenProvider({ children }) {
     })();
   }, []);
 
-  const [examensList, setExamensList] = useState(() => {
-    try { const s = localStorage.getItem(LS_KEY); return s ? JSON.parse(s) : []; }
-    catch { return []; }
-  });
-
-  const [candidatsReportes, setCandidatsReportes] = useState(() => {
-    try { const s = localStorage.getItem(LS_REPORTS_KEY); return s ? JSON.parse(s) : {}; }
-    catch { return {}; }
-  });
-
-  const [candidatsNomMap, setCandidatsNomMap] = useState(() => {
-    try { const s = localStorage.getItem(LS_CANDIDATS); return s ? JSON.parse(s) : {}; }
-    catch { return {}; }
-  });
-
-  // ── Propositions en attente de validation/rejet ─────────────────────────
-  const [propositions, setPropositions] = useState(() => {
-    try { const s = localStorage.getItem(LS_PROPOSITIONS_KEY); return s ? JSON.parse(s) : []; }
-    catch { return []; }
-  });
-
-  // ── Sessions d'examen (date/heure/lieu/catégorie) créées à l'avance, sans candidat ──
-  const [sessionsExamens, setSessionsExamens] = useState(() => {
-    try { const s = localStorage.getItem(LS_SESSIONS_KEY); return s ? JSON.parse(s) : []; }
-    catch { return []; }
-  });
+  // ── États — plus AUCUN localStorage, tout vient de la DB ──────────────────
+  const [examensList, setExamensList]         = useState([]);
+  const [candidatsNomMap, setCandidatsNomMap] = useState({});
+  const [propositions, setPropositions]       = useState([]); // calculées, jamais persistées
+  const [sessionsExamens, setSessionsExamens] = useState([]);
+  const [isLoading, setIsLoading]             = useState(true);
 
   const examensListRef       = useRef(examensList);
-  const candidatsReportesRef = useRef(candidatsReportes);
   const candidatsNomMapRef   = useRef(candidatsNomMap);
   const propositionsRef      = useRef(propositions);
   const sessionsExamensRef   = useRef(sessionsExamens);
-  // ✅ pour éviter de lancer 2 générations en même temps
   const isGeneratingRef      = useRef(false);
 
-  useEffect(() => {
-    examensListRef.current = examensList;
-    localStorage.setItem(LS_KEY, JSON.stringify(examensList));
-  }, [examensList]);
+  useEffect(() => { examensListRef.current = examensList; }, [examensList]);
+  useEffect(() => { candidatsNomMapRef.current = candidatsNomMap; }, [candidatsNomMap]);
+  useEffect(() => { propositionsRef.current = propositions; }, [propositions]);
+  useEffect(() => { sessionsExamensRef.current = sessionsExamens; }, [sessionsExamens]);
 
-  useEffect(() => {
-    candidatsReportesRef.current = candidatsReportes;
-    localStorage.setItem(LS_REPORTS_KEY, JSON.stringify(candidatsReportes));
-  }, [candidatsReportes]);
+  // ── candidatsReportes : DÉRIVÉ de examensList (statuts Failed/Absent/Rejected),
+  // plus aucun stockage séparé → toujours cohérent avec la DB, jamais périmé. ──
+  const computeReportesFromExamens = (list, joursAutorises, delaiApresEchec) => {
+    const map = {};
+    list.forEach(e => {
+      if (["Failed", "Absent", "Rejected"].includes(e.status)) {
+        const existing = map[e.candidatId];
+        if (!existing || new Date(e.date) > new Date(existing._date)) {
+          map[e.candidatId] = {
+            type: e.type,
+            nextSuggestedDate: getNextExamDate(e.date, joursAutorises, delaiApresEchec),
+            reason: e.status === "Absent" ? "absence" : e.status === "Rejected" ? "rejet" : "echec",
+            nomCandidat: e.candidat,
+            _date: e.date,
+          };
+        }
+      }
+    });
+    // si le candidat a depuis réussi ce même type, on retire le report
+    list.forEach(e => {
+      if (e.status === "Passed" && map[e.candidatId]?.type === e.type) {
+        delete map[e.candidatId];
+      }
+    });
+    return map;
+  };
 
-  useEffect(() => {
-    candidatsNomMapRef.current = candidatsNomMap;
-    localStorage.setItem(LS_CANDIDATS, JSON.stringify(candidatsNomMap));
-  }, [candidatsNomMap]);
+  const candidatsReportes = useMemo(
+    () => computeReportesFromExamens(examensList, examRules.joursAutorises, examRules.delaiApresEchec),
+    [examensList, examRules.joursAutorises, examRules.delaiApresEchec]
+  );
+  const candidatsReportesRef = useRef(candidatsReportes);
+  useEffect(() => { candidatsReportesRef.current = candidatsReportes; }, [candidatsReportes]);
 
-  useEffect(() => {
-    propositionsRef.current = propositions;
-    localStorage.setItem(LS_PROPOSITIONS_KEY, JSON.stringify(propositions));
-  }, [propositions]);
-
-  useEffect(() => {
-    sessionsExamensRef.current = sessionsExamens;
-    localStorage.setItem(LS_SESSIONS_KEY, JSON.stringify(sessionsExamens));
-  }, [sessionsExamens]);
-
-  // ── Chargement depuis la DB au montage ──────────────────────────────────
+  // ── Chargement depuis la DB au montage — REMPLACE l'état, ne fusionne jamais ──
   useEffect(() => {
     async function loadFromDB() {
+      setIsLoading(true);
       try {
-        if (!window.electron?.getCandidats || !window.electron?.getExamensCandidat) return;
+        if (!window.electron?.getCandidats) return;
 
         const candidats = await window.electron.getCandidats();
-        if (!candidats?.length) return;
 
         const nomMap = {};
-        candidats.forEach(c => {
+        (candidats || []).forEach(c => {
           const key = String(c.idCandidat ?? c.id ?? c.id_candidat ?? "");
           if (!key) return;
           nomMap[key] = {
@@ -124,25 +110,25 @@ export function ExamenProvider({ children }) {
         });
         setCandidatsNomMap(nomMap);
 
-        const allExamens = await Promise.all(
-          candidats.map(c =>
-            window.electron.getExamensCandidat(c.idCandidat).catch(() => [])
-          )
-        );
-
-        const flat = allExamens.flat();
-        if (flat.length === 0) return;
-
-        setExamensList(prev => {
-          const dbIds = new Set(flat.map(e => String(e.id)));
-          const localOnly = prev.filter(
-            e => e.id && String(e.id).startsWith("auto-") && !dbIds.has(String(e.id))
+        if (!candidats?.length) {
+          setExamensList([]); // ✅ vide réellement l'affichage si la DB n'a plus de candidats
+        } else {
+          const allExamens = await Promise.all(
+            candidats.map(c =>
+              window.electron.getExamensCandidat(c.idCandidat).catch(() => [])
+            )
           );
-          return [...flat, ...localOnly];
-        });
+          setExamensList(allExamens.flat()); // ✅ remplace, ne fusionne jamais avec un ancien état
+        }
 
+        if (window.electron?.getSessionsExamens) {
+          const sessions = await window.electron.getSessionsExamens();
+          setSessionsExamens(sessions || []);
+        }
       } catch (e) {
         console.error("ExamenContext loadFromDB:", e);
+      } finally {
+        setIsLoading(false);
       }
     }
     loadFromDB();
@@ -152,18 +138,15 @@ export function ExamenProvider({ children }) {
   // ── Recheck automatique des reportés ─────────────────────────────────────
   // ─────────────────────────────────────────────────────────────────────────
   const recheckReportes = async () => {
-    // Évite les appels simultanés
     if (isGeneratingRef.current) return;
 
-    const today   = new Date().toISOString().split("T")[0];
+    const today    = new Date().toISOString().split("T")[0];
     const reportes = candidatsReportesRef.current;
 
-    // Y a-t-il au moins un reporté dont la date est arrivée ?
     const aDebloquer = Object.entries(reportes).some(
       ([, info]) => info.nextSuggestedDate <= today
     );
-
-    if (!aDebloquer) return; // rien à faire
+    if (!aDebloquer) return;
 
     console.log("🔄 Recheck reportés — des candidats peuvent revenir en proposition");
 
@@ -178,22 +161,10 @@ export function ExamenProvider({ children }) {
     }
   };
 
-  // ── Vérification au démarrage + toutes les heures ────────────────────────
   useEffect(() => {
-    // Au démarrage (léger délai pour laisser loadFromDB se terminer)
-    const timeout = setTimeout(() => {
-      recheckReportes();
-    }, 3000); // 3 secondes après le montage
-
-    // Toutes les heures
-    const interval = setInterval(() => {
-      recheckReportes();
-    }, 60 * 60 * 1000);
-
-    return () => {
-      clearTimeout(timeout);
-      clearInterval(interval);
-    };
+    const timeout = setTimeout(() => { recheckReportes(); }, 3000);
+    const interval = setInterval(() => { recheckReportes(); }, 60 * 60 * 1000);
+    return () => { clearTimeout(timeout); clearInterval(interval); };
   }, []);
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -232,7 +203,7 @@ export function ExamenProvider({ children }) {
   const computeExamDate = (type, seancesCand, examsCand) => {
     const today = new Date().toISOString().split("T")[0];
     const lastFailed = examsCand
-      .filter(e => e.type === type && e.status === "Failed")
+      .filter(e => e.type === type && (e.status === "Failed" || e.status === "Absent" || e.status === "Rejected"))
       .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
     if (lastFailed) {
       return getNextExamDate(lastFailed.date, examRules.joursAutorises, examRules.delaiApresEchec);
@@ -250,7 +221,6 @@ export function ExamenProvider({ children }) {
     (str || "").toLowerCase()
       .replace(/é/g, "e").replace(/è/g, "e").replace(/ê/g, "e");
 
-  // ── Extrait les ids candidats rattachés à une séance (multi-formats) ─────
   const extractCandidatIds = (s) => {
     const rawIds = s.candidatsIds ?? s.candidats_ids ?? s.candidat_id ?? null;
     let ids = [];
@@ -270,7 +240,6 @@ export function ExamenProvider({ children }) {
     return ids;
   };
 
-  // ── Compte le nombre de séances d'un candidat pour un type d'examen donné ─
   const countSeancesPourType = (seances, candidatId, type) => {
     const seanceTypeMap = { "Code": "code", "Créneau": "creneau", "Circulation": "circulation" };
     const typeNorm = normalizeType(seanceTypeMap[type] || type);
@@ -281,19 +250,15 @@ export function ExamenProvider({ children }) {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
-  // generateExamens
-  // ✅ Ne pousse PLUS directement dans examensList : calcule les candidats
-  // éligibles et les place dans `propositions`, en attente de validation par
-  // un admin / moniteur autorisé. Retourne la liste calculée pour que l'UI
-  // sache si elle doit ouvrir la modal de review.
+  // generateExamens — inchangé dans sa logique de calcul, calcule `propositions`
+  // (état 100% en mémoire, jamais persisté : recalculé à chaque appel depuis
+  // seances + candidats + examensList qui, eux, viennent de la DB).
   // ─────────────────────────────────────────────────────────────────────────
   const generateExamens = async (seances, candidats) => {
-    // ✅ Empêche les générations simultanées
     if (isGeneratingRef.current) return [];
     isGeneratingRef.current = true;
 
     try {
-      // ── Auto-fetch si appelée sans arguments ──────────────────────────
       if (!seances || !candidats) {
         try {
           const [fetchedSeances, fetchedCandidats] = await Promise.all([
@@ -311,7 +276,7 @@ export function ExamenProvider({ children }) {
 
       const today           = new Date().toISOString().split("T")[0];
       const currentExamens  = examensListRef.current;
-      const currentReportes = candidatsReportesRef.current;
+      const currentReportes = computeReportesFromExamens(currentExamens, examRules.joursAutorises, examRules.delaiApresEchec);
 
       const seancesParCandidat = {};
       seances.forEach(s => {
@@ -323,7 +288,6 @@ export function ExamenProvider({ children }) {
       });
 
       const thresholds = computeThresholds(nbSeancesConfigRef.current);
-
       const nouveauxPropositions = [];
       const nomMapLocal = {};
 
@@ -427,71 +391,73 @@ export function ExamenProvider({ children }) {
 
       return nouveauxPropositions;
     } finally {
-      // ✅ Toujours libérer le verrou même en cas d'erreur
       isGeneratingRef.current = false;
     }
   };
 
-  // ── setExamenResult, retirerCandidat, updateExamen — inchangés ────────────
-  const setExamenResult = (id, newStatus) => {
-    setExamensList(prev => prev.map(e => {
-      if (e.id !== id) return e;
-      if (newStatus === "Failed" || newStatus === "Absent") {
-        const baseDate = e.date || new Date().toISOString().split("T")[0];
-        const nextDate = getNextExamDate(baseDate, examRules.joursAutorises, examRules.delaiApresEchec);
-        setCandidatsReportes(prev2 => ({
-          ...prev2,
-          [e.candidatId]: {
-            type: e.type, nextSuggestedDate: nextDate,
-            reason: newStatus === "Absent" ? "absence" : "echec",
-            nomCandidat: e.candidat,
-          },
-        }));
-      } else if (newStatus === "Passed") {
-        setCandidatsReportes(prev2 => {
-          const entry = prev2[e.candidatId];
-          if (entry && entry.type === e.type) {
-            const { [e.candidatId]: _omit, ...rest } = prev2;
-            return rest;
-          }
-          return prev2;
-        });
-      }
-      return { ...e, status: newStatus };
-    }));
+  // ── setExamenResult, retirerCandidat, updateExamen — persistés en DB ──────
+
+  const setExamenResult = async (id, newStatus) => {
+    const result = await window.electron.updateResultatExamen({ idInscription: id, newStatus });
+    if (!result?.success) {
+      console.error("Erreur update résultat examen:", result?.error);
+      return;
+    }
+    setExamensList(prev => prev.map(e => e.id === id ? { ...e, status: newStatus } : e));
   };
 
-  const retirerCandidat = (id, reason = "retire") => {
+  // Retirer un candidat = marquer l'examen "Rejected" en DB (garde l'historique
+  // et le délai de re-proposition), plutôt que supprimer la ligne.
+  const retirerCandidat = async (id) => {
+    const result = await window.electron.updateResultatExamen({ idInscription: id, newStatus: "Rejected" });
+    if (!result?.success) {
+      console.error("Erreur retrait candidat examen:", result?.error);
+      return;
+    }
+    setExamensList(prev => prev.map(e => e.id === id ? { ...e, status: "Rejected" } : e));
+  };
+
+  const updateExamen = async (id, changes) => {
     const examen = examensListRef.current.find(e => e.id === id);
-    if (!examen) return;
-    const baseDate = examen.date || new Date().toISOString().split("T")[0];
-    const nextDate = getNextExamDate(baseDate, examRules.joursAutorises, examRules.delaiApresEchec);
-    setCandidatsReportes(prev => ({
-      ...prev,
-      [examen.candidatId]: {
-        type: examen.type, nextSuggestedDate: nextDate,
-        reason, nomCandidat: examen.candidat,
-      },
-    }));
-    setExamensList(prev => prev.filter(e => e.id !== id));
+    if (examen?.idExamen && window.electron?.updateDetailsExamen) {
+      const result = await window.electron.updateDetailsExamen({
+        idExamen: examen.idExamen,
+        date: changes.date, heure: changes.heure,
+        lieu: changes.lieu, categoriePermis: changes.categoriePermis,
+      });
+      if (!result?.success) {
+        console.error("Erreur update détails examen:", result?.error);
+        return;
+      }
+    }
+    setExamensList(prev => prev.map(e => e.id === id ? { ...e, ...changes } : e));
   };
 
-  const updateExamen = (id, changes) =>
-    setExamensList(prev => prev.map(e => e.id === id ? { ...e, ...changes } : e));
-
   // ─────────────────────────────────────────────────────────────────────────
-  // ── Validation / Rejet des propositions ──────────────────────────────────
+  // ── Validation / Rejet des propositions — écrivent maintenant en DB ──────
   // ─────────────────────────────────────────────────────────────────────────
-
-  // Valide une proposition : elle quitte `propositions` et rejoint la vraie
-  // liste des examens (status "Scheduled"), avec envoi de la notification
-  // au candidat, exactement comme le faisait l'ancien generateExamens.
   const validerProposition = async (id) => {
     const prop = propositionsRef.current.find(p => p.id === id);
     if (!prop) return null;
 
     setPropositions(prev => prev.filter(p => p.id !== id));
-    const nouvelExamen = { ...prop, status: "Scheduled" };
+
+    const result = await window.electron.addExamen({
+      candidatId: prop.candidatId, type: prop.type,
+      date: prop.date, heure: prop.heure, lieu: prop.lieu,
+      categoriePermis: prop.categoriePermis, sessionId: prop.sessionId || null,
+    });
+    if (!result?.success) {
+      console.error("Erreur validation proposition:", result?.error);
+      return null;
+    }
+
+    const nouvelExamen = {
+      id: String(result.idInscription), idExamen: result.idExamen,
+      candidatId: prop.candidatId, candidat: prop.candidat, email: prop.email,
+      type: prop.type, date: prop.date, heure: prop.heure, lieu: prop.lieu,
+      status: "Scheduled", nbSeances: prop.nbSeances,
+    };
     setExamensList(prev => [...prev, nouvelExamen]);
 
     if (prop.email) {
@@ -507,22 +473,30 @@ export function ExamenProvider({ children }) {
     return nouvelExamen;
   };
 
-  // Rejette une proposition : elle quitte `propositions` et est enregistrée
-  // dans candidatsReportes → elle sera re-proposée automatiquement après le
-  // délai configuré (examRules.delaiApresEchec), comme un échec/absence.
-  const rejeterProposition = (id, motif = "") => {
+  // Rejette une proposition : crée directement en DB un examen "Rejected"
+  // (elle n'existait pas encore en DB, contrairement à retirerCandidat).
+  const rejeterProposition = async (id, motif = "") => {
     const prop = propositionsRef.current.find(p => p.id === id);
     if (!prop) return;
 
     setPropositions(prev => prev.filter(p => p.id !== id));
-    const nextDate = getNextExamDate(prop.date, examRules.joursAutorises, examRules.delaiApresEchec);
-    setCandidatsReportes(prev => ({
-      ...prev,
-      [prop.candidatId]: {
-        type: prop.type, nextSuggestedDate: nextDate,
-        reason: "rejet", nomCandidat: prop.candidat, motif: motif || undefined,
-      },
-    }));
+
+    const result = await window.electron.addExamen({
+      candidatId: prop.candidatId, type: prop.type,
+      date: prop.date, heure: prop.heure, lieu: prop.lieu,
+      categoriePermis: prop.categoriePermis, sessionId: null,
+    });
+    if (!result?.success) {
+      console.error("Erreur rejet proposition:", result?.error);
+      return;
+    }
+    await window.electron.updateResultatExamen({ idInscription: result.idInscription, newStatus: "Rejected" });
+
+    setExamensList(prev => [...prev, {
+      id: String(result.idInscription), idExamen: result.idExamen,
+      candidatId: prop.candidatId, candidat: prop.candidat,
+      type: prop.type, date: prop.date, status: "Rejected", motif: motif || undefined,
+    }]);
   };
 
   const validerToutesPropositions = async () => {
@@ -530,34 +504,35 @@ export function ExamenProvider({ children }) {
     for (const p of all) { await validerProposition(p.id); }
   };
 
-  const rejeterToutesPropositions = () => {
+  const rejeterToutesPropositions = async () => {
     const all = [...propositionsRef.current];
-    all.forEach(p => rejeterProposition(p.id));
+    for (const p of all) { await rejeterProposition(p.id); }
   };
 
   // ─────────────────────────────────────────────────────────────────────────
-  // ── Sessions d'examen (date/heure/lieu/catégorie, créées avant tout candidat) ──
+  // ── Sessions d'examen — désormais persistées via SessionExamen ───────────
   // ─────────────────────────────────────────────────────────────────────────
-
-  // Crée une session vide — aucun candidat pour l'instant.
-  // Apparaît immédiatement dans la liste des sessions (SessionsExamenList).
-  // `categoriePermis` : "Tous" (par défaut) = ouverte à toutes les catégories,
-  // sinon une catégorie précise (ex. "B") — utilisée pour filtrer les
-  // candidats proposables dans AjouterCandidatsModal.
-  const creerSessionExamen = ({ date, heure, lieu, categoriePermis }) => {
-    const nouvelleSession = {
-      id: `session-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  const creerSessionExamen = async ({ date, heure, lieu, categoriePermis }) => {
+    const payload = {
       date, heure, lieu: (lieu || "").trim(),
       categoriePermis: (categoriePermis || "Tous").trim() || "Tous",
-      createdAt: new Date().toISOString(),
     };
+    const result = await window.electron.createSessionExamen(payload);
+    if (!result?.success) {
+      console.error("Erreur création session:", result?.error);
+      return null;
+    }
+    const nouvelleSession = { id: String(result.id), ...payload };
     setSessionsExamens(prev => [...prev, nouvelleSession]);
     return nouvelleSession;
   };
 
-  // Supprime une session de la liste (les examens déjà créés dessus restent
-  // intacts dans examensList, seule la "vitrine" de la session disparaît).
-  const supprimerSessionExamen = (id) => {
+  const supprimerSessionExamen = async (id) => {
+    const result = await window.electron.deleteSessionExamen(id);
+    if (!result?.success) {
+      console.error("Erreur suppression session:", result?.error);
+      return;
+    }
     setSessionsExamens(prev => prev.filter(s => s.id !== id));
   };
 
@@ -567,9 +542,6 @@ export function ExamenProvider({ children }) {
   }) => {
     const cid = String(candidatId);
 
-    // ── Calcule le vrai nombre de séances effectuées par ce candidat pour
-    // ce type d'examen, pour affichage cohérent avec les propositions
-    // auto-générées (au lieu de laisser nbSeances à null). ──
     let nbSeances = null;
     try {
       const seances = await window.electron.getSeances();
@@ -578,20 +550,19 @@ export function ExamenProvider({ children }) {
       console.error("Erreur calcul nbSeances (ajouterExamenManuel):", err);
     }
 
+    const result = await window.electron.addExamen({
+      candidatId: cid, type, date, heure, lieu, categoriePermis, sessionId: sessionId || null,
+    });
+    if (!result?.success) {
+      console.error("Erreur ajout examen manuel:", result?.error);
+      return null;
+    }
+
     const nouvelExamen = {
-      id: `manuel-${cid}-${type}-${Date.now()}`,
-      candidatId: cid,
-      candidat,
-      email,
-      type,
-      date,
-      heure,
-      lieu,
-      status: "Scheduled",
-      autoGenerated: false,
-      nbSeances,
-      dateNaissance: dateNaissance || "",
-      categoriePermis: categoriePermis || "",
+      id: String(result.idInscription), idExamen: result.idExamen,
+      candidatId: cid, candidat, email, type, date, heure, lieu,
+      status: "Scheduled", nbSeances,
+      dateNaissance: dateNaissance || "", categoriePermis: categoriePermis || "",
       sessionId: sessionId || null,
     };
 
@@ -621,7 +592,7 @@ export function ExamenProvider({ children }) {
 
   return (
     <ExamenContext.Provider value={{
-      examensList, setExamensList,
+      examensList, setExamensList, isLoading,
       generateExamens, setExamenResult,
       retirerCandidat, updateExamen,
       ajouterExamenManuel,
