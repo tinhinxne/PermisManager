@@ -2356,9 +2356,12 @@ ipcMain.handle("get-examens-candidat", async (event, candidatId) => {
          e.heure           AS heure,
          e.lieu            AS lieu,
          e.categoriePermis AS categoriePermis,
-         e.idSession       AS idSession
+         e.idSession       AS idSession,
+         c.nom             AS candidatNom,
+         c.prenom          AS candidatPrenom
        FROM InscriptionExamen ie
-       JOIN Examen e ON ie.idExamen = e.idExamen
+       JOIN Examen e     ON ie.idExamen   = e.idExamen
+       JOIN Candidat c   ON ie.idCandidat = c.idCandidat
        WHERE ie.idCandidat = ?
        ORDER BY e.date ASC`,
       [candidatId],
@@ -2374,18 +2377,22 @@ ipcMain.handle("get-examens-candidat", async (event, candidatId) => {
           en_attente: "Scheduled", planifie: "Scheduled",
         };
 
-        const result = rows.map(r => ({
-          id:              String(r.id),
-          idExamen:        r.idExamen,
-          candidatId:      String(r.candidatId),
-          type:            TYPE_MAP[r.type?.toUpperCase()] || r.type,
-          status:          STATUS_MAP[r.resultat?.toLowerCase()] || STATUS_MAP[r.statut?.toLowerCase()] || "Scheduled",
-          date:            r.date ? new Date(r.date).toISOString().split("T")[0] : null,
-          heure:           r.heure ? String(r.heure).slice(0, 5) : null,
-          lieu:            r.lieu || null,
-          categoriePermis: r.categoriePermis || null,
-          idSession:       r.idSession || null,
-        }));
+        const result = rows.map(r => {
+          const nomComplet = [r.candidatPrenom, r.candidatNom].filter(Boolean).join(" ").trim();
+          return {
+            id:              String(r.id),
+            idExamen:        r.idExamen,
+            candidatId:      String(r.candidatId),
+            candidat:        nomComplet || `Candidat #${r.candidatId}`, // ← AJOUT
+            type:            TYPE_MAP[r.type?.toUpperCase()] || r.type,
+            status:          STATUS_MAP[r.resultat?.toLowerCase()] || STATUS_MAP[r.statut?.toLowerCase()] || "Scheduled",
+            date:            r.date ? new Date(r.date).toISOString().split("T")[0] : null,
+            heure:           r.heure ? String(r.heure).slice(0, 5) : null,
+            lieu:            r.lieu || null,
+            categoriePermis: r.categoriePermis || null,
+            sessionId:       r.idSession ? String(r.idSession) : null, // ← RENOMMÉ (était idSession)
+          };
+        });
 
         resolve(result);
       }
