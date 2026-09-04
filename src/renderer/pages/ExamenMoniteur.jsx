@@ -963,7 +963,7 @@ function ExamenTableMoniteur({
                   {/* Séances */}
                   <td style={td}>
                     <span style={{ background: "#f1f5f9", color: "#475569", padding: "2px 8px", borderRadius: 10, fontSize: 12, fontWeight: 600 }}>
-                      {examen.nbSeances || "—"} séances
+                     {examen.nbSeances ?? "—"} séances
                     </span>
                   </td>
 

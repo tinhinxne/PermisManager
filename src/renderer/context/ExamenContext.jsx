@@ -110,7 +110,7 @@ export function ExamenProvider({ children }) {
         });
         setCandidatsNomMap(nomMap);
 
-        if (!candidats?.length) {
+           if (!candidats?.length) {
           setExamensList([]); // ✅ vide réellement l'affichage si la DB n'a plus de candidats
         } else {
           const allExamens = await Promise.all(
@@ -118,7 +118,35 @@ export function ExamenProvider({ children }) {
               window.electron.getExamensCandidat(c.idCandidat).catch(() => [])
             )
           );
-          setExamensList(allExamens.flat()); // ✅ remplace, ne fusionne jamais avec un ancien état
+
+          // ── AJOUT : recalcule nbSeances pour chaque examen chargé depuis la
+          // DB, car cette valeur n'est pas persistée en base — sans ça, "—"
+          // s'affiche à chaque relancement de l'app. ──
+          let seances = [];
+          let nbCodeParCandidat = {};
+          try {
+            const [seancesRows, codeRows] = await Promise.all([
+              window.electron.getSeances().catch(() => []),
+              window.electron.getNbCodePresentCandidats().catch(() => []),
+            ]);
+            seances = seancesRows || [];
+            (codeRows || []).forEach(r => {
+              nbCodeParCandidat[String(r.idCandidat)] = Number(r.nb) || 0;
+            });
+          } catch (e) {
+            console.error("Erreur chargement séances/code pour nbSeances:", e);
+          }
+
+          const enrichedExamens = allExamens.flat().map(e => {
+            if (e.nbSeances != null) return e; // déjà présent, on ne touche pas
+            const cid = String(e.candidatId);
+            const nb = e.type === "Code"
+              ? (nbCodeParCandidat[cid] || 0)
+              : countSeancesPourType(seances, cid, e.type);
+            return { ...e, nbSeances: nb };
+          });
+
+          setExamensList(enrichedExamens); // ✅ remplace, ne fusionne jamais avec un ancien état
         }
 
         if (window.electron?.getSessionsExamens) {
