@@ -72,6 +72,21 @@ function parseExamDate(dateStr) {
   const d = new Date(normalized + "T00:00:00");
   return isNaN(d) ? null : d;
 }
+
+// ── AJOUT (correctif) : combine date + heure de l'examen en un vrai
+// Date/heure exploitable, au lieu de ne comparer que la date mise à
+// minuit. Sans ça, un examen prévu à 16h était considéré "passé" dès
+// 00h01 le jour même. Si l'heure est absente/mal formée, on retombe sur
+// minuit (comportement précédent) pour ne rien casser sur d'anciennes
+// données sans heure enregistrée. ──
+function getExamDateTime(dateStr, heureStr) {
+  if (!dateStr) return null;
+  const normalized = String(dateStr).replace(/\//g, "-").slice(0, 10);
+  const heure = heureStr && /^\d{1,2}:\d{2}/.test(String(heureStr)) ? String(heureStr).slice(0, 5) : "00:00";
+  const d = new Date(`${normalized}T${heure}:00`);
+  return isNaN(d) ? null : d;
+}
+
 function formatWhatsAppUrl(telephone, message) {
   if (!telephone) return null;
   let numero = telephone.replace(/\D/g, "");
@@ -909,9 +924,12 @@ function ExamenTableMoniteur({
               const absenceTooLate =
                 examen.status === "Scheduled" && diff !== null && diff <= ABSENCE_CUTOFF_DAYS && diff >= 0;
 
-              const today = new Date(); today.setHours(0, 0, 0, 0);
-              const examDate = new Date((examen.date || "") + "T00:00:00");
-              const isPast = !isNaN(examDate) && examDate <= today;
+              // ── CORRECTIF : on compare désormais la date ET l'heure de
+              // l'examen à l'instant présent, au lieu de comparer uniquement
+              // la date à minuit. Avant, un examen à 16h était marqué
+              // "passé" dès 00h01 le jour même. ──
+              const examDateTime = getExamDateTime(examen.date, examen.heure);
+              const isPast = examDateTime !== null && examDateTime <= new Date();
 
               return (
                 <motion.tr
@@ -1382,12 +1400,18 @@ const {
     if (!CAN_TOGGLE_STATUS) return;
     const examen = examensList.find((x) => x.id === id);
     if (!examen) return;
-    const today    = new Date(); today.setHours(0, 0, 0, 0);
-    const examDate = new Date((examen.date || "") + "T00:00:00");
-    if (!isNaN(examDate) && examDate > today) {
+
+    // ── CORRECTIF : on tient compte de l'heure de l'examen, pas seulement
+    // de la date. Avant, l'examen était jugé "pas encore passé" jusqu'à
+    // minuit du jour J même s'il avait eu lieu à 8h du matin — mais aussi,
+    // à l'inverse, jugé "passé" dès 00h01 alors qu'il n'aurait lieu qu'à
+    // 16h. Les deux cas sont corrigés en comparant date+heure à l'instant
+    // présent. ──
+    const examDateTime = getExamDateTime(examen.date, examen.heure);
+    if (examDateTime && examDateTime > new Date()) {
       setAlertInfo({
         icon: "📅", title: "Examen pas encore passé", color: "#f97316",
-        message: `Cet examen est programmé pour le ${examen.date}. Vous ne pouvez modifier le résultat qu'à partir de cette date.`,
+        message: `Cet examen est programmé pour le ${examen.date} à ${examen.heure}. Vous ne pouvez modifier le résultat qu'à partir de cette date et cette heure.`,
       });
       return;
     }

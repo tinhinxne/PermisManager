@@ -72,6 +72,18 @@ function parseExamDate(dateStr) {
   const d = new Date(normalized + "T00:00:00");
   return isNaN(d) ? null : d;
 }
+
+// ── AJOUT : construit un objet Date combinant la date ET l'heure de
+// l'examen (au lieu de tronquer à minuit), pour que le statut "passé"
+// et le blocage de saisie du résultat respectent l'heure réelle prévue. ──
+function parseExamDateTime(dateStr, heureStr) {
+  if (!dateStr) return null;
+  const normalizedDate = String(dateStr).replace(/\//g, "-").slice(0, 10);
+  const heure = (heureStr && /^\d{2}:\d{2}/.test(heureStr)) ? heureStr.slice(0, 5) : "00:00";
+  const d = new Date(`${normalizedDate}T${heure}:00`);
+  return isNaN(d) ? null : d;
+}
+
 function formatWhatsAppUrl(telephone, message) {
   if (!telephone) return null;
   let numero = telephone.replace(/\D/g, "");
@@ -436,9 +448,14 @@ function ExamenTable({ rows, isAdmin, perms, onRowClick, onResultClick, onRemove
           <AnimatePresence mode="popLayout">
             {rows.length > 0 ? rows.map((examen, i) => {
               const st = STATUS_CONFIG[examen.status];
-              const today = new Date(); today.setHours(0, 0, 0, 0);
-              const examDate = new Date((examen.date || "") + "T00:00:00");
-              const isPast = !isNaN(examDate) && examDate <= today;
+              // ── CORRECTIF : on compare la date + l'HEURE de l'examen à
+              // l'instant présent (et non plus la date seule tronquée à
+              // minuit). Avant ce correctif, un examen prévu aujourd'hui à
+              // 16h était marqué "passé" dès 00h00, alors qu'il n'avait pas
+              // encore eu lieu. ──
+              const now           = new Date();
+              const examDateTime  = parseExamDateTime(examen.date, examen.heure);
+              const isPast        = !!examDateTime && examDateTime <= now;
               const diff = getDiffDays(examen.date);
               const canDeclareAbsence = examen.status === "Scheduled" && diff !== null && diff > ABSENCE_CUTOFF_DAYS;
               const absenceTooLate    = examen.status === "Scheduled" && diff !== null && diff <= ABSENCE_CUTOFF_DAYS && diff >= 0;
@@ -1369,10 +1386,19 @@ const Examens = () => {
     if (!perms.CAN_TOGGLE_STATUS) return;
     const examen = examensList.find((x) => x.id === id);
     if (!examen) return;
-    const today    = new Date(); today.setHours(0, 0, 0, 0);
-    const examDate = new Date((examen.date || "") + "T00:00:00");
-    if (!isNaN(examDate) && examDate > today) {
-      setAlertInfo({ icon: "📅", title: "Examen pas encore passé", color: "#f97316", message: `Cet examen est programmé pour le ${examen.date}. Vous ne pouvez modifier le résultat qu'à partir de cette date.` });
+    // ── CORRECTIF : on compare la date + l'heure de l'examen à l'instant
+    // présent (au lieu de comparer uniquement la date tronquée à minuit).
+    // Avant, un examen prévu aujourd'hui à 16h pouvait être évalué dès le
+    // matin ; désormais on bloque tant que l'heure prévue n'est pas passée. ──
+    const now           = new Date();
+    const examDateTime  = parseExamDateTime(examen.date, examen.heure);
+    if (examDateTime && examDateTime > now) {
+      setAlertInfo({
+        icon: "📅",
+        title: "Examen pas encore passé",
+        color: "#f97316",
+        message: `Cet examen est programmé pour le ${examen.date} à ${examen.heure}. Vous ne pouvez modifier le résultat qu'à partir de cette heure.`,
+      });
       return;
     }
     setResultModalExamen(examen);
