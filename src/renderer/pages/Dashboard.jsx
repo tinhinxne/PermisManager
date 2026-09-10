@@ -105,8 +105,8 @@ useEffect(() => {
 const [seenIds, setSeenIds] = useState(new Set());
 const unseenCount = notifications.filter(n => !seenIds.has(n.id)).length;
   // Examens à venir = status "Scheduled", triés par date
-  const examensAVenir = examensList
-    .filter(e => e.status === "Scheduled")
+    const examensAVenirTous = examensList.filter(e => e.status === "Scheduled");
+  const examensAVenir = [...examensAVenirTous]
     .sort((a, b) => new Date(a.date) - new Date(b.date))
     .slice(0, 5);
 
@@ -158,8 +158,8 @@ const unseenCount = notifications.filter(n => !seenIds.has(n.id)).length;
     },
     {
       label: "Examens à venir",
-      val: loading ? "…" : String(examensAVenir.length),
-      trend: examensAVenir.length > 0 ? `Prochain : ${examensAVenir[0]?.date ?? "—"}` : "Aucun programmé",
+      val: loading ? "…" : String(examensAVenirTous.length),
+      trend: examensAVenirTous.length > 0 ? `Prochain : ${examensAVenir[0]?.date ?? "—"}` : "Aucun programmé",
       color: "red",
       icon: <FiCalendar />
     },

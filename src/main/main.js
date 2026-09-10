@@ -2178,6 +2178,8 @@ ipcMain.handle("get-seances-mois", async () => {
       FROM Seance
       WHERE MONTH(date) = MONTH(CURDATE())
         AND YEAR(date) = YEAR(CURDATE())
+        AND date <= CURDATE()
+        AND statut != 'annulée'
       GROUP BY DAY(date)
       ORDER BY DAY(date) ASC
     `;
