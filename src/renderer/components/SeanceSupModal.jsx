@@ -82,7 +82,7 @@ const SeanceSupModal = ({ onClose, onAddPayment, prefillCandidat }) => {
   const [remarque,   setRemarque]   = useState("");
   const [errors,     setErrors]     = useState({});
 
-  const total = nbSeances * (parseFloat(prixSeance) || 0);
+  const total = (Number(nbSeances) || 0) * (parseFloat(prixSeance) || 0);
   const [submitted, setSubmitted] = useState(false);
 
   // ── Ajout / édition d'une personne externe (permis obtenu hors de l'auto-école)
@@ -140,7 +140,9 @@ const compteur = {};
 setSeancesParCand(compteur);
 
        // Éligibles : candidat ayant atteint le nombre de séances créneau+circulation
-        // défini dans Paramètres, OU personne externe (permis obtenu hors auto-école).
+        // défini dans Paramètres, ayant réussi son examen de Circulation (indépendamment
+        // du nombre de séances effectuées — même logique que dans l'Agenda), OU personne
+        // externe (permis obtenu hors auto-école).
     const countFormation = (candidatId, categoriePermis) => {
   return (allSeances || []).filter(s => {
     const type = normaliserType(s.type);
@@ -160,18 +162,38 @@ setSeancesParCand(compteur);
   }).length;
 };
 
+// ── AJOUT : réussite de l'examen Circulation, même logique que dans
+// l'Agenda (AgendaPage / AgendaMoniteur) — un candidat peut avoir réussi
+// son examen de Circulation avant d'avoir atteint le seuil de séances,
+// il doit malgré tout apparaître ici comme éligible aux séances sup.
+// On n'accepte le match de catégorie que si les deux catégories sont
+// renseignées et différentes ; un examen ancien sans catégorie enregistrée
+// est accepté par défaut pour ne pas casser l'historique existant.
+const aReussiCirculation = (candidatId, categoriePermis) => {
+  return (examensList || []).some(e => {
+    if (String(e.candidatId) !== String(candidatId)) return false;
+    if (e.type !== "Circulation" || e.status !== "Passed") return false;
+    const examCat = (e.categoriePermis || e.categorie || e.categorie_permis || "")
+      .toString().trim().toUpperCase();
+    return !examCat || !categoriePermis || examCat === categoriePermis;
+  });
+};
+
         console.log("=== DEBUG ÉLIGIBILITÉ SÉANCE SUP === seuil:", seuil);
         (allCandidats || []).forEach(c => {
           const id  = c.idCandidat || c.id;
           const cat = (c.categoriePermis || c.categorie || c.categorie_permis || "B").toString().trim().toUpperCase();
           const count = countFormation(id, cat);
-          console.log(`${c.prenom} ${c.nom}`, { id, catCalculee: cat, nbSeancesComptees: count, seuilRequis: seuil, externe: !!c.externe });
+          console.log(`${c.prenom} ${c.nom}`, {
+            id, catCalculee: cat, nbSeancesComptees: count, seuilRequis: seuil,
+            externe: !!c.externe, aReussiCirc: aReussiCirculation(id, cat),
+          });
         });
 
         const eligibles = (allCandidats || []).filter(c => {
           const id  = c.idCandidat || c.id;
           const cat = (c.categoriePermis || c.categorie || c.categorie_permis || "B").toString().trim().toUpperCase();
-          return c.externe || countFormation(id, cat) >= seuil;
+          return c.externe || countFormation(id, cat) >= seuil || aReussiCirculation(id, cat);
         });
 
         setCandidats(eligibles);
@@ -191,7 +213,7 @@ setSeancesParCand(compteur);
       }
     }
     load();
-  }, [prefillCandidat]);
+  }, [prefillCandidat, examensList]);
 
   const candidatsFiltres = candidats.filter(c =>
     `${c.prenom} ${c.nom}`.toLowerCase().includes(searchQuery.toLowerCase())
@@ -353,12 +375,6 @@ setSeancesParCand(compteur);
   const seancesCandidat = selected ? (seancesParCand[selected.idCandidat || selected.id] || []) : [];
   const nbTotal = seancesCandidat.length;
 
-  // Stats types pour le badge candidat sélectionné
-  const typesCandidat = seancesCandidat.map(s => normaliserType(s.type));
-  const nbCode        = typesCandidat.filter(t => t === "code").length;
-  const nbCreneau     = typesCandidat.filter(t => t === "creneau").length;
-  const nbCirc        = typesCandidat.filter(t => t === "circulation").length;
-
   const inpS = {
     width: "100%", boxSizing: "border-box",
     padding: "10px 12px", border: "1.5px solid #e2e8f0", borderRadius: 9,
@@ -505,7 +521,6 @@ setSeancesParCand(compteur);
                     const id  = c.idCandidat || c.id;
                     const nb  = (seancesParCand[id] || []).length;
                     const credit = getCredit(id);
-                    const types = (seancesParCand[id] || []).map(s => normaliserType(s.type));
                     const isConfirming = confirmDeleteId === id;
                     return (
                       <div
@@ -549,11 +564,8 @@ setSeancesParCand(compteur);
                                   Personne externe · {c.categoriePermis || "B"}
                                 </div>
                               ) : (
-                                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                  <span>{nb} séances effectuées</span>
-                                  <span>· 🚦 {types.filter(t => t === "code").length} code</span>
-                                  <span>· 🅿️ {types.filter(t => t === "creneau").length} créneau</span>
-                                  <span>· 🚗 {types.filter(t => t === "circulation").length} circ.</span>
+                                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+                                  🎓 {nb} séances effectuées
                                 </div>
                               )}
                             </div>
@@ -706,17 +718,10 @@ setSeancesParCand(compteur);
                         🆕 Personne externe — permis {selected.categoriePermis || "B"} obtenu hors de notre auto-école
                       </div>
                     ) : (
-                      <>
-                        <div style={{ fontSize: 12, color: "#a16207", marginTop: 6, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                          <span>📋 {nbTotal} séances effectuées</span>
-                          <span style={{ fontWeight: 700 }}>🎓 crédit actuel : {getCredit(selected.idCandidat || selected.id)}</span>
-                        </div>
-                        <div style={{ fontSize: 11, color: "#a16207", marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <span style={{ background: "#dbeafe", color: "#1d4ed8", padding: "2px 9px", borderRadius: 10, fontWeight: 600 }}>🚦 {nbCode} code</span>
-                          <span style={{ background: "#fef3c7", color: "#92400e", padding: "2px 9px", borderRadius: 10, fontWeight: 600 }}>🅿️ {nbCreneau} créneau</span>
-                          <span style={{ background: "#dcfce7", color: "#166534", padding: "2px 9px", borderRadius: 10, fontWeight: 600 }}>🚗 {nbCirc} circ.</span>
-                        </div>
-                      </>
+                      <div style={{ fontSize: 12, color: "#a16207", marginTop: 6, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        <span>🎓 {nbTotal} séances effectuées</span>
+                        <span style={{ fontWeight: 700 }}>· crédit actuel : {getCredit(selected.idCandidat || selected.id)}</span>
+                      </div>
                     )}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, marginLeft: 8 }}>
@@ -751,7 +756,17 @@ setSeancesParCand(compteur);
                 <label style={{ fontSize: 11, color: "#64748b", fontWeight: 600, display: "block", marginBottom: 4 }}>Nombre de séances *</label>
                 <input
                   type="number" min={1} value={nbSeances} className="ssm-input"
-                  onChange={e => { setNbSeances(Math.max(1, parseInt(e.target.value) || 1)); setErrors(p => ({ ...p, nbSeances: "" })); }}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (val === "") {
+                      setNbSeances("");
+                    } else {
+                      const parsed = parseInt(val, 10);
+                      setNbSeances(isNaN(parsed) ? "" : Math.max(1, parsed));
+                    }
+                    setErrors(p => ({ ...p, nbSeances: "" }));
+                  }}
+                  onBlur={() => { if (nbSeances === "" || Number(nbSeances) < 1) setNbSeances(1); }}
                   style={{ ...inpS, border: `1.5px solid ${errors.nbSeances ? "#ef4444" : "#e2e8f0"}` }}
                 />
                 {errors.nbSeances && <p style={errStyle}>{errors.nbSeances}</p>}

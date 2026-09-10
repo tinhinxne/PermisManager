@@ -2153,23 +2153,23 @@ const candidatId = _formData.candidatIds?.[0];
 if (candidatId) {
   const nomCandidat = sessionObj.name || "Ce candidat";
 
-  const allerPayer = () => {
-    showToast(`💳 Aucun crédit — redirection vers le paiement pour ${nomCandidat}.`, "info");
-    navigate("/payments", {
-      state: { openSeanceSup: true, candidatId, candidatName: nomCandidat },
-    });
+  // ── Ne redirige plus automatiquement — juste un avertissement.
+  // L'admin peut cliquer "Aller au paiement" depuis la modale s'il le
+  // souhaite, mais on ne l'arrache plus de l'Agenda après création.
+  const avertirPaiementRequis = () => {
+    showToast(
+      `💳 Séance créée — aucun crédit restant pour ${nomCandidat}. Pensez à enregistrer le paiement depuis le module Paiements.`,
+      "info"
+    );
   };
 
   if (_formData.estExterne) {
-    // Personne externe : toujours hors forfait, elle n'a jamais de séances
-    // "présente" enregistrées chez nous, donc on ne peut pas se fier au
-    // compteur de séances — on vérifie directement le crédit.
     const credit = getCredit(candidatId);
     if (credit > 0) {
       const resteApres = consumeCredit(candidatId);
       showToast(`🎓 Séance supplémentaire créée — crédit restant : ${resteApres}.`, "info");
     } else {
-      allerPayer();
+      avertirPaiementRequis();
     }
   } else {
     const compteApres = countSeancesFormation(freshSessions, candidatId, _formData.categoriePermis);
@@ -2183,7 +2183,7 @@ if (candidatId) {
         const resteApres = consumeCredit(candidatId);
         showToast(`🎓 Séance supplémentaire créée — crédit restant : ${resteApres}.`, "info");
       } else {
-        allerPayer();
+        avertirPaiementRequis();
       }
     }
   }

@@ -1965,44 +1965,44 @@ const isDateBloquee = useCallback((dateStr) => {
     // de séances "présente" comptabilisées chez nous — on vérifie donc le
     // crédit directement plutôt que de compter les séances pour eux.
     const candidatId = _formData.candidatIds?.[0];
-    if (candidatId) {
-      const nomCandidat = sessionObj.name || "Ce candidat";
+if (candidatId) {
+  const nomCandidat = sessionObj.name || "Ce candidat";
 
-      const allerPayer = () => {
-        showToast(`💳 Aucun crédit — redirection vers le paiement pour ${nomCandidat}.`, "info");
-        navigate("/moniteur/paiements", {
-          state: { openSeanceSup: true, candidatId, candidatName: nomCandidat },
-        });
-      };
+  // ── Ne redirige plus automatiquement — juste un avertissement.
+  // Le moniteur peut cliquer "Aller au paiement" depuis la modale s'il
+  // le souhaite, mais on ne le sort plus de l'Agenda après création.
+  const avertirPaiementRequis = () => {
+    showToast(
+      `💳 Séance créée — aucun crédit restant pour ${nomCandidat}. Le paiement doit être enregistré depuis le module Paiements.`,
+      "info"
+    );
+  };
 
-      if (_formData.estExterne) {
-        const credit = getCredit(candidatId);
-        if (credit > 0) {
-          const resteApres = consumeCredit(candidatId);
-          showToast(`🎓 Séance supplémentaire créée — crédit restant : ${resteApres}.`, "info");
-        } else {
-          allerPayer();
-        }
+  if (_formData.estExterne) {
+    const credit = getCredit(candidatId);
+    if (credit > 0) {
+      const resteApres = consumeCredit(candidatId);
+      showToast(`🎓 Séance supplémentaire créée — crédit restant : ${resteApres}.`, "info");
+    } else {
+      avertirPaiementRequis();
+    }
+  } else {
+    const compteApres = countSeancesFormation(freshSessions, candidatId, _formData.categoriePermis);
+    const vientDeFranchirLeSeuil = compteApres === nbSeancesMax;
+
+    if (vientDeFranchirLeSeuil) {
+      setMilestoneCandidat({ candidatId, nom: nomCandidat });
+    } else if (_formData.permisObtenu) {
+      const credit = getCredit(candidatId);
+      if (credit > 0) {
+        const resteApres = consumeCredit(candidatId);
+        showToast(`🎓 Séance supplémentaire créée — crédit restant : ${resteApres}.`, "info");
       } else {
-        // On utilise freshSessions (juste récupéré ci-dessus), pas `sessions`
-        // qui reste l'ancien tableau dans cette fermeture tant que React
-        // n'a pas re-render le composant.
-        const compteApres = countSeancesFormation(freshSessions, candidatId, _formData.categoriePermis);
-        const vientDeFranchirLeSeuil = compteApres === nbSeancesMax;
-
-        if (vientDeFranchirLeSeuil) {
-          setMilestoneCandidat({ candidatId, nom: nomCandidat });
-        } else if (_formData.permisObtenu) {
-          const credit = getCredit(candidatId);
-          if (credit > 0) {
-            const resteApres = consumeCredit(candidatId);
-            showToast(`🎓 Séance supplémentaire créée — crédit restant : ${resteApres}.`, "info");
-          } else {
-            allerPayer();
-          }
-        }
+        avertirPaiementRequis();
       }
     }
+  }
+}
   } else throw new Error(result?.message || "Erreur.");
 }
       
