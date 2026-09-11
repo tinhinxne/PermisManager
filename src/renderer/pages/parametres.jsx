@@ -105,14 +105,15 @@ const PERM_GROUPS = [
       { key: "CAN_ADD_PAYMENT", Icon: Receipt, label: "Enregistrer un paiement" },
     ],
   },
-  {
+ {
   id: "examens",
   Icon: ClipboardCheck,
   label: "Examens",
   desc: "Résultats des sessions d'examen",
   color: "#854F0B", bg: "#FAEEDA", textColor: "#633806", border: "#EF9F27",
   perms: [
-    { key: "CAN_TOGGLE_STATUS",          Icon: PenLine,   label: "Modifier le résultat d'un examen" },
+    { key: "CAN_TOGGLE_STATUS",          Icon: PenLine,       label: "Modifier le résultat d'un examen" },
+    { key: "CAN_ADD_EXAMEN_SESSION",     Icon: CalendarPlus,  label: "Créer un jour d'examen (session)" },
     { key: "CAN_EXPORT_LISTE_CANDIDATS", Icon: FileSpreadsheet, label: "Générer قائمة المترشحين (PDF)" },
   ],
 },
