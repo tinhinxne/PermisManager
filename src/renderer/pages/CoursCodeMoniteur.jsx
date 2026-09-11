@@ -146,6 +146,90 @@ function formatWhatsAppUrl(telephone, message) {
   return `https://wa.me/${numero}?text=${encodeURIComponent(message)}`;
 }
 
+// ── HORAIRES / CONFLITS DE PLANNING ─────────────────────────────────────────
+// Convertit "HH:MM" en minutes depuis minuit
+function toMinutes(hhmm) {
+  if (!hhmm) return 0;
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + (m || 0);
+}
+
+function minutesToHHMM(totalMin) {
+  const h = String(Math.floor(totalMin / 60)).padStart(2, "0");
+  const m = String(totalMin % 60).padStart(2, "0");
+  return `${h}:${m}`;
+}
+
+// Calcule l'heure de fin d'une séance (heure début + durée en heures)
+function heureFinSeance(heure, duree) {
+  const fin = toMinutes(heure?.slice(0, 5)) + Math.round((parseFloat(duree) || 0) * 60);
+  return minutesToHHMM(fin);
+}
+
+// Renvoie les séances du même moniteur qui chevauchent réellement le créneau demandé
+function getConflitsMoniteur(moniteurId, date, heure, duree, seances, excludeId = null) {
+  if (!moniteurId || !date || !heure || !Array.isArray(seances)) return [];
+  const debut = toMinutes(heure);
+  const fin = debut + Math.round((parseFloat(duree) || 0) * 60);
+  return seances.filter(s => {
+    if (excludeId != null && s.id === excludeId) return false;
+    if (String(s.moniteur_id) !== String(moniteurId)) return false;
+    if (s.date !== date) return false;
+    const sDebut = toMinutes(s.heure?.slice(0, 5));
+    const sFin = sDebut + Math.round((parseFloat(s.duree) || 0) * 60);
+    return debut < sFin && sDebut < fin;
+  });
+}
+
+// Trouve la première heure disponible pour ce moniteur à cette date (à partir de 08:00)
+function prochaineHeureDisponible(moniteurId, date, duree, seances, excludeId = null, heureDebutJournee = "08:00") {
+  const dureeMin = Math.round((parseFloat(duree) || 0) * 60);
+  if (!moniteurId || !date || !Array.isArray(seances)) return null;
+
+  const seancesJour = seances
+    .filter(s => String(s.moniteur_id) === String(moniteurId) && s.date === date && s.id !== excludeId)
+    .map(s => {
+      const d = toMinutes(s.heure?.slice(0, 5));
+      return { debut: d, fin: d + Math.round((parseFloat(s.duree) || 0) * 60) };
+    })
+    .sort((a, b) => a.debut - b.debut);
+
+  let candidat = toMinutes(heureDebutJournee);
+  for (const s of seancesJour) {
+    if (candidat + dureeMin <= s.debut) break;
+    if (candidat < s.fin) candidat = s.fin;
+  }
+  return minutesToHHMM(candidat);
+}
+
+// Liste toutes les dates d'occurrence d'une série
+function getDatesSerie(dateDebut, dateFin, jours) {
+  if (!dateDebut || !dateFin || !jours?.length) return [];
+  const JOURS_MAP = { Dim:0, Lun:1, Mar:2, Mer:3, Jeu:4, Ven:5, Sam:6 };
+  const idx = jours.map(j => JOURS_MAP[j]);
+  let cur = new Date(dateDebut + "T12:00:00");
+  const fin = new Date(dateFin + "T12:00:00");
+  const dates = [];
+  let safety = 0;
+  while (cur <= fin && safety < 5000) {
+    if (idx.includes(cur.getDay())) dates.push(toLocalISO(cur));
+    cur.setDate(cur.getDate() + 1);
+    safety++;
+  }
+  return dates;
+}
+
+// Pour une série : calcule TOUS les conflits, occurrence par occurrence
+function getConflitsSerie(moniteurId, dateDebut, dateFin, jours, heure, duree, seances, excludeId = null) {
+  const dates = getDatesSerie(dateDebut, dateFin, jours);
+  const conflits = [];
+  for (const date of dates) {
+    const c = getConflitsMoniteur(moniteurId, date, heure, duree, seances, excludeId);
+    if (c.length > 0) conflits.push({ date, conflits: c });
+  }
+  return conflits;
+}
+
 // ── TOAST ─────────────────────────────────────────────────────────────────────
 function Toast({ message, type, onDone }) {
   useEffect(() => {
@@ -227,8 +311,46 @@ function AlertModal({ icon, title, message, color = "#ef4444", onClose }) {
   );
 }
 
+// ── ALERTE CONFLIT DE PLANNING (inline dans le formulaire) ──────────────────
+function ConflitPlanningAlert({ conflits, suggestion, onUseSuggestion }) {
+  if (!conflits || conflits.length === 0) return null;
+  return (
+    <div style={{
+      gridColumn: "1 / -1",
+      display:"flex", flexDirection:"column", gap:7,
+      padding:"11px 13px", borderRadius:10,
+      background:"#fef2f2", border:"1px solid #fca5a5",
+    }}>
+      <div style={{ display:"flex", alignItems:"center", gap:7, fontSize:"0.78rem", color:"#dc2626", fontWeight:700 }}>
+        <AlertCircle size={14}/> Vous avez déjà une séance sur ce créneau
+      </div>
+      <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+        {conflits.map(c => (
+          <div key={c.id} style={{ fontSize:"0.72rem", color:"#b91c1c" }}>
+            Séance existante de {c.heure?.slice(0,5)} à {heureFinSeance(c.heure, c.duree)}
+          </div>
+        ))}
+      </div>
+      {suggestion && (
+        <button
+          type="button"
+          onClick={() => onUseSuggestion(suggestion)}
+          style={{
+            alignSelf:"flex-start", marginTop:2, padding:"6px 12px", borderRadius:7,
+            border:"1px solid #dc2626", background:"#fff", color:"#dc2626",
+            fontFamily:"'Poppins',sans-serif", fontSize:"0.72rem", fontWeight:700, cursor:"pointer",
+            display:"flex", alignItems:"center", gap:6,
+          }}
+        >
+          <Clock size={12}/> Utiliser le prochain créneau libre → {suggestion}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── CREATE / EDIT MODAL (moniteur — pas de choix de moniteur) ────────────────
-function CreateCoursCodeModal({ onClose, onSave, currentUser, editing, saving }) {
+function CreateCoursCodeModal({ onClose, onSave, currentUser, seances, editing, saving }) {
   const [mode, setMode] = useState("unique"); // "unique" | "serie"
   const [alertInfo, setAlertInfo] = useState(null);
   const [dureeCustom, setDureeCustom] = useState(false);
@@ -270,6 +392,27 @@ function CreateCoursCodeModal({ onClose, onSave, currentUser, editing, saving })
     jours: p.jours.includes(j) ? p.jours.filter(d => d !== j) : [...p.jours, j],
   }));
 
+  const listeSeances = Array.isArray(seances) ? seances : [];
+  const monId = currentUser?.id;
+
+  // ── Détection des conflits horaires (mode unique) — contre MES propres séances ──
+  const conflitsUnique = (mode === "unique" && monId && form.date && form.heure)
+    ? getConflitsMoniteur(monId, form.date, form.heure, form.duree, listeSeances, editing?.id)
+    : [];
+
+  const suggestionUnique = (mode === "unique" && conflitsUnique.length > 0)
+    ? prochaineHeureDisponible(monId, form.date, form.duree, listeSeances, editing?.id)
+    : null;
+
+  // ── Détection des conflits horaires (mode série) ────────────────────────
+  const conflitsSerie = (mode === "serie" && monId && serie.dateDebut && serie.dateFin && serie.jours.length > 0 && form.heure)
+    ? getConflitsSerie(monId, serie.dateDebut, serie.dateFin, serie.jours, form.heure, form.duree, listeSeances, editing?.id)
+    : [];
+
+  const suggestionSerie = (mode === "serie" && conflitsSerie.length > 0)
+    ? prochaineHeureDisponible(monId, conflitsSerie[0].date, form.duree, listeSeances, editing?.id)
+    : null;
+
   const inpS = {
     width:"100%", boxSizing:"border-box",
     background:"#fff", border:"1px solid #cbd5e1",
@@ -289,6 +432,17 @@ function CreateCoursCodeModal({ onClose, onSave, currentUser, editing, saving })
   const handleSubmit = () => {
     if (mode === "unique") {
       if (!form.date || !form.heure) return;
+
+      if (conflitsUnique.length > 0) {
+        setAlertInfo({
+          icon: "⛔",
+          title: "Créneau indisponible",
+          message: `Vous avez déjà une séance le ${formatDateCourt(form.date)} de ${conflitsUnique[0].heure?.slice(0,5)} à ${heureFinSeance(conflitsUnique[0].heure, conflitsUnique[0].duree)}. Choisissez un autre horaire${suggestionUnique ? ` — par exemple ${suggestionUnique}` : ""}.`,
+          color: "#ef4444",
+        });
+        return;
+      }
+
       onSave({
         mode: "unique",
         data: {
@@ -306,6 +460,18 @@ function CreateCoursCodeModal({ onClose, onSave, currentUser, editing, saving })
         setAlertInfo({ icon:"📅", title:"Récurrence incomplète", message:"Veuillez renseigner une date de fin et sélectionner au moins un jour de la semaine.", color:"#ef4444" });
         return;
       }
+
+      if (conflitsSerie.length > 0) {
+        const premier = conflitsSerie[0];
+        setAlertInfo({
+          icon: "⛔",
+          title: "Conflits détectés dans la série",
+          message: `${conflitsSerie.length} occurrence(s) de cette série chevauchent une séance que vous avez déjà — par exemple le ${formatDateCourt(premier.date)} (conflit avec ${premier.conflits[0].heure?.slice(0,5)}–${heureFinSeance(premier.conflits[0].heure, premier.conflits[0].duree)}). Ajustez l'heure ou les jours de la série.`,
+          color: "#ef4444",
+        });
+        return;
+      }
+
       onSave({
         mode: "serie",
         data: {
@@ -404,16 +570,25 @@ function CreateCoursCodeModal({ onClose, onSave, currentUser, editing, saving })
           )}
 
           {mode === "unique" ? (
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
-              <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
-                <label style={labelS}>Date <span style={{ color:"#ef4444" }}>*</span></label>
-                <input type="date" style={inpS} value={form.date} onChange={e => set("date", e.target.value)} />
+            <>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+                <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+                  <label style={labelS}>Date <span style={{ color:"#ef4444" }}>*</span></label>
+                  <input type="date" style={inpS} value={form.date} onChange={e => set("date", e.target.value)} />
+                </div>
+                <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+                  <label style={labelS}>Heure <span style={{ color:"#ef4444" }}>*</span></label>
+                  <input type="time" style={inpS} value={form.heure} onChange={e => set("heure", e.target.value)} />
+                </div>
               </div>
-              <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
-                <label style={labelS}>Heure <span style={{ color:"#ef4444" }}>*</span></label>
-                <input type="time" style={inpS} value={form.heure} onChange={e => set("heure", e.target.value)} />
-              </div>
-            </div>
+
+              {/* ── ALERTE CONFLIT DE PLANNING (mode unique) ── */}
+              <ConflitPlanningAlert
+                conflits={conflitsUnique}
+                suggestion={suggestionUnique}
+                onUseSuggestion={(h) => set("heure", h)}
+              />
+            </>
           ) : (
             <>
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
@@ -458,6 +633,40 @@ function CreateCoursCodeModal({ onClose, onSave, currentUser, editing, saving })
                 <label style={labelS}>Heure <span style={{ color:"#ef4444" }}>*</span></label>
                 <input type="time" style={{ ...inpS, maxWidth:160 }} value={form.heure} onChange={e => set("heure", e.target.value)} />
               </div>
+
+              {/* ── ALERTE CONFLITS DE PLANNING (mode série) ── */}
+              {conflitsSerie.length > 0 && (
+                <div style={{
+                  display:"flex", flexDirection:"column", gap:7,
+                  padding:"11px 13px", borderRadius:10,
+                  background:"#fef2f2", border:"1px solid #fca5a5",
+                }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:7, fontSize:"0.78rem", color:"#dc2626", fontWeight:700 }}>
+                    <AlertCircle size={14}/> {conflitsSerie.length} occurrence(s) en conflit avec vos séances
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:3, maxHeight:110, overflowY:"auto" }}>
+                    {conflitsSerie.map(({ date, conflits }) => (
+                      <div key={date} style={{ fontSize:"0.72rem", color:"#b91c1c" }}>
+                        {formatDateCourt(date)} — déjà occupé {conflits[0].heure?.slice(0,5)}–{heureFinSeance(conflits[0].heure, conflits[0].duree)}
+                      </div>
+                    ))}
+                  </div>
+                  {suggestionSerie && (
+                    <button
+                      type="button"
+                      onClick={() => set("heure", suggestionSerie)}
+                      style={{
+                        alignSelf:"flex-start", marginTop:2, padding:"6px 12px", borderRadius:7,
+                        border:"1px solid #dc2626", background:"#fff", color:"#dc2626",
+                        fontFamily:"'Poppins',sans-serif", fontSize:"0.72rem", fontWeight:700, cursor:"pointer",
+                        display:"flex", alignItems:"center", gap:6,
+                      }}
+                    >
+                      <Clock size={12}/> Essayer {suggestionSerie} (1ère occurrence en conflit)
+                    </button>
+                  )}
+                </div>
+              )}
             </>
           )}
 
@@ -1011,7 +1220,7 @@ function CoursCard({ seance, onManage, onEdit, onDelete, canManage, isOwn }) {
           )}
         </div>
         <div style={{ display:"flex", gap:14, fontSize:"0.75rem", color:"#64748b", flexWrap:"wrap" }}>
-          <span>🕐 {seance.heure?.slice(0,5)} ({formatDureeLabel(seance.duree)})</span>
+          <span>🕐 {seance.heure?.slice(0,5)} – {heureFinSeance(seance.heure, seance.duree)} ({formatDureeLabel(seance.duree)})</span>
           <span>👥 {seance.nbInscrits ?? 0} inscrit{(seance.nbInscrits ?? 0) !== 1 ? "s" : ""}</span>
         </div>
         {seance.notes && <div style={{ fontSize:"0.72rem", color:"#94a3b8", marginTop:4 }}>📋 {seance.notes}</div>}
@@ -1121,8 +1330,6 @@ export default function CoursCodeMoniteur() {
   const [showPast, setShowPast] = useState(false);
 
   // ── Vue "Progression par candidat" ────────────────────────────────────────
-  // Si CAN_VIEW_ALL_COURS_CODE est true → tous les candidats de l'auto-école
-  // (comme côté admin). Sinon → uniquement les candidats de MES cours.
   const [activeView, setActiveView] = useState("cours"); // "cours" | "progression"
   const [progression, setProgression] = useState([]);
   const [loadingProgression, setLoadingProgression] = useState(false);
@@ -1147,13 +1354,11 @@ export default function CoursCodeMoniteur() {
     setLoadingProgression(true);
     try {
       if (CAN_VIEW_ALL_COURS_CODE) {
-        // Permission globale → tous les candidats de l'auto-école
         if (window.electron?.getProgressionCode) {
           const rows = await window.electron.getProgressionCode();
           setProgression(Array.isArray(rows) ? rows : []);
         }
       } else {
-        // Sinon → uniquement les candidats de mes propres cours
         if (window.electron?.getProgressionCodeMoniteur) {
           const rows = await window.electron.getProgressionCodeMoniteur(currentUserId);
           setProgression(Array.isArray(rows) ? rows : []);
@@ -1524,6 +1729,7 @@ export default function CoursCodeMoniteur() {
           onClose={() => { setShowCreate(false); setEditing(null); }}
           onSave={handleSave}
           currentUser={currentUser}
+          seances={seances}
           editing={editing}
           saving={saving}
         />
