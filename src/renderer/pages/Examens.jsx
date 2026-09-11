@@ -295,121 +295,7 @@ function AlertModal({ icon, title, message, color = "#ef4444", onClose }) {
 // affichées DIRECTEMENT dans la page (plus de popup) avec
 // Valider / Rejeter ligne par ligne, comme une vraie table.
 // ─────────────────────────────────────────────
-function PropositionsSection({ propositions, canReview, onValider, onRejeter, onValiderTout, onRejeterTout }) {
-  const [busyId, setBusyId]   = useState(null);
-  const [busyAll, setBusyAll] = useState(false);
 
-  if (!propositions || propositions.length === 0) return null;
-
-  const handleValider = async (id) => {
-    setBusyId(id);
-    try { await onValider(id); } finally { setBusyId(null); }
-  };
-
-  const handleValiderTout = async () => {
-    if (!window.confirm(`Valider les ${propositions.length} proposition(s) ? Elles rejoindront la liste des examens programmés et les candidats seront notifiés.`)) return;
-    setBusyAll(true);
-    try { await onValiderTout(); } finally { setBusyAll(false); }
-  };
-
-  const handleRejeterTout = () => {
-    if (!window.confirm(`Rejeter les ${propositions.length} proposition(s) ? Elles seront re-proposées automatiquement après le délai configuré.`)) return;
-    onRejeterTout();
-  };
-
-  return (
-    <div style={{ marginTop: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ background: "#fff7ed", color: "#c2410c", width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <FaBell />
-          </div>
-          <div>
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#1e293b" }}>Propositions à valider</h3>
-            <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>{propositions.length} candidat(s) éligible(s) — accepte ou refuse directement ici</p>
-          </div>
-        </div>
-
-        {canReview && (
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleRejeterTout} disabled={busyAll} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #fca5a5", background: "#fff", color: "#b91c1c", cursor: "pointer", fontWeight: 600, fontSize: 12.5 }}>
-              Tout rejeter
-            </button>
-            <button onClick={handleValiderTout} disabled={busyAll} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#16a34a", color: "#fff", cursor: "pointer", fontWeight: 600, fontSize: 12.5, opacity: busyAll ? 0.7 : 1 }}>
-              {busyAll ? "Validation..." : "Tout valider"}
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", boxShadow: "0 5px 15px rgba(0,0,0,0.05)", border: "1px solid #fed7aa" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ background: "#c2410c" }}>
-              <th style={{ padding: "12px 16px", textAlign: "left", color: "#fff", fontWeight: 600, fontSize: 13 }}>Candidat(e)</th>
-              <th style={{ padding: "12px 16px", textAlign: "left", color: "#fff", fontWeight: 600, fontSize: 13 }}>Type</th>
-              <th style={{ padding: "12px 16px", textAlign: "left", color: "#fff", fontWeight: 600, fontSize: 13 }}>Date proposée</th>
-              <th style={{ padding: "12px 16px", textAlign: "left", color: "#fff", fontWeight: 600, fontSize: 13 }}>Lieu</th>
-              <th style={{ padding: "12px 16px", textAlign: "left", color: "#fff", fontWeight: 600, fontSize: 13 }}>Séances</th>
-              <th style={{ padding: "12px 16px", textAlign: "left", color: "#fff", fontWeight: 600, fontSize: 13 }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <AnimatePresence mode="popLayout">
-              {propositions.map((p, i) => (
-                <motion.tr
-                  layout
-                  key={p.id}
-                  initial={{ opacity: 0, y: -6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, x: 40, scale: 0.97, transition: { duration: 0.25 } }}
-                  style={{ background: i % 2 === 0 ? "#fff" : "#FFFBF5" }}
-                >
-                  <td style={{ padding: "11px 16px", borderBottom: "1px solid #fed7aa55", fontSize: 13, fontWeight: 600, color: "#1F2937" }}>{p.candidat}</td>
-                  <td style={{ padding: "11px 16px", borderBottom: "1px solid #fed7aa55", fontSize: 13, color: "#1F2937" }}>{p.type}</td>
-                  <td style={{ padding: "11px 16px", borderBottom: "1px solid #fed7aa55", fontSize: 13, color: "#1F2937" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <FaCalendarDay style={{ color: "#c2410c", fontSize: 12 }} />
-                      {p.date} <span style={{ color: "#64748b", fontSize: 12 }}>{p.heure}</span>
-                    </div>
-                  </td>
-                  <td style={{ padding: "11px 16px", borderBottom: "1px solid #fed7aa55", fontSize: 13, color: "#1F2937" }}>{p.lieu}</td>
-                  <td style={{ padding: "11px 16px", borderBottom: "1px solid #fed7aa55", fontSize: 13, color: "#1F2937" }}>
-                    <span style={{ background: "#fff7ed", color: "#c2410c", padding: "2px 8px", borderRadius: 10, fontSize: 12, fontWeight: 600 }}>
-                      {p.nbSeances ?? "—"} séances
-                    </span>
-                  </td>
-                  <td style={{ padding: "11px 16px", borderBottom: "1px solid #fed7aa55" }}>
-                    {canReview ? (
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        <button
-                          onClick={() => handleValider(p.id)}
-                          disabled={busyId === p.id || busyAll}
-                          style={{ display: "flex", alignItems: "center", gap: 6, background: "#dcfce7", color: "#166534", border: "1px solid #86efac", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 }}
-                        >
-                          <FaThumbsUp style={{ fontSize: 11 }} /> Valider
-                        </button>
-                        <button
-                          onClick={() => onRejeter(p.id)}
-                          disabled={busyId === p.id || busyAll}
-                          style={{ display: "flex", alignItems: "center", gap: 6, background: "#fee2e2", color: "#991b1b", border: "1px solid #fca5a5", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600 }}
-                        >
-                          <FaThumbsDown style={{ fontSize: 11 }} /> Rejeter
-                        </button>
-                      </div>
-                    ) : (
-                      <span style={{ fontSize: 11.5, color: "#94a3b8", fontStyle: "italic" }}>Lecture seule</span>
-                    )}
-                  </td>
-                </motion.tr>
-              ))}
-            </AnimatePresence>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────────
 // Boutons styles
@@ -1189,12 +1075,10 @@ function FiltresBar({
 // Composant principal
 // ─────────────────────────────────────────────
 const Examens = () => {
- const {
+const {
     examensList, generateExamens, setExamenResult,
     retirerCandidat, candidatsReportes, EXAM_THRESHOLDS,
     ajouterExamenManuel,
-    propositions, validerProposition, rejeterProposition,
-    validerToutesPropositions, rejeterToutesPropositions,
     sessionsExamens, creerSessionExamen, supprimerSessionExamen,
   } = useExamenCtx();
   const { examRules, saveExamRules } = useExamenRulesCtx();
@@ -1206,8 +1090,7 @@ const Examens = () => {
     ? { CAN_ADD_SESSION: true, CAN_ADD_PAYMENT: true, CAN_TOGGLE_STATUS: true, CAN_REMOVE_CANDIDAT: true, CAN_VIEW_ALL_CANDIDATES: true, CAN_ADD_CANDIDAT: true, CAN_EXPORT_LISTE_CANDIDATS: true }
     : getPermissions(currentUser?.id);
 
-  // Qui a le droit de valider / rejeter une proposition
-  const canReview = isAdmin || perms.CAN_TOGGLE_STATUS;
+
 
   // ── state ──
   const [selectedExamen,    setSelectedExamen]    = useState(null);
@@ -1244,7 +1127,6 @@ const Examens = () => {
   const [activeTab,   setActiveTab]   = useState("sessions");
   // ── AJOUT : filtres et règles repliés par défaut pour alléger la vue ──
   const [showFilters, setShowFilters] = useState(false);
-  const [showRules,   setShowRules]   = useState(false);
 
   useEffect(() => {
     try {
@@ -1356,14 +1238,7 @@ const Examens = () => {
 
   // ── actions ──
   // ── Jours d'examen autorisés (édité directement sur cette page) ──
-  const toggleJourAutorise = (day) => {
-    if (!(isAdmin || perms.CAN_TOGGLE_STATUS)) return;
-    const current = examRules.joursAutorises || [];
-    const updated = current.includes(day)
-      ? current.filter(d => d !== day)
-      : [...current, day];
-    saveExamRules({ ...examRules, joursAutorises: updated });
-  };
+
 
   const handleAbsent = (id, e) => {
     e.stopPropagation();
@@ -1489,7 +1364,7 @@ const handleConfirmExport = async () => {
 
   // ── AJOUT : définition des onglets principaux, avec leurs compteurs ──
   const TABS = [
-    { key: "sessions",   label: "Sessions & propositions", icon: <FaCalendarPlus />, count: propositions.length, countColor: "#ea580c" },
+{ key: "sessions",   label: "Sessions", icon: <FaCalendarPlus />, count: 0, countColor: "#ea580c" },
     { key: "planifies",  label: "Programmés",              icon: <FaClock />,        count: scheduled.length,    countColor: "#1565c0" },
     { key: "historique", label: "Historique",               icon: <FaHistory />,      count: history.length,      countColor: "#6b21a8" },
     { key: "reportes",   label: "Reportés",                 icon: <FaSync />,         count: reportesEntries.length, countColor: "#a16207" },
@@ -1556,51 +1431,7 @@ const handleConfirmExport = async () => {
           </div>
         </div>
 
-        {/* ── Règles actives — repliées par défaut ── */}
-        <div style={{ marginBottom: 16 }}>
-          <button
-            onClick={() => setShowRules(v => !v)}
-            style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", cursor: "pointer", color: "#3b5bdb", fontSize: 12.5, fontWeight: 600, padding: "4px 0" }}
-          >
-            <FaInfoCircle />
-            Seuils : Code ≥{EXAM_THRESHOLDS.Code} · Créneau ≥{EXAM_THRESHOLDS.Créneau} · Circulation ≥{EXAM_THRESHOLDS.Circulation}
-            {showRules ? <FaChevronUp style={{ fontSize: 10 }} /> : <FaChevronDown style={{ fontSize: 10 }} />}
-          </button>
-
-          {showRules && (
-            <div style={{ background: "#f0f4ff", border: "1px solid #c7d7f5", borderRadius: 10, padding: "10px 16px", marginTop: 8, fontSize: 13, color: "#3b5bdb", display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-              <span>
-                Délai après échec : <strong>{examRules.delaiApresEchec}j</strong> ·
-                Max tentatives : <strong>{examRules.tentativesMax}</strong>
-              </span>
-
-              <span style={{ width: 1, height: 16, background: "#c7d7f5" }} />
-
-              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                <span style={{ fontWeight: 600 }}>Jours autorisés :</span>
-                {DAYS_OPTIONS.map(day => {
-                  const isSel = (examRules.joursAutorises || []).includes(day);
-                  return (
-                    <button
-                      key={day}
-                      onClick={() => toggleJourAutorise(day)}
-                      title={isSel ? `Retirer ${day}` : `Ajouter ${day}`}
-                      style={{
-                        padding: "3px 10px", borderRadius: 14, fontSize: 11.5, fontWeight: 600,
-                        cursor: "pointer", transition: "all 0.15s",
-                        border: `1px solid ${isSel ? "#3b5bdb" : "#c7d7f5"}`,
-                        background: isSel ? "#3b5bdb" : "#fff",
-                        color: isSel ? "#fff" : "#3b5bdb",
-                      }}
-                    >
-                      {day}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
+       
 
         {/* ── Stats — version compacte (surcharge inline du style .stat-card-modern) ── */}
         <div
@@ -1717,42 +1548,30 @@ const handleConfirmExport = async () => {
           {/* ══════════════════════════════════════════════
               ONGLET — Sessions & propositions
           ══════════════════════════════════════════════ */}
-          {activeTab === "sessions" && (
-            <div>
-              {sessionsExamens.length === 0 && propositions.length === 0 ? (
-                <div style={{ textAlign: "center", padding: 40, color: "#94a3b8", fontSize: 13.5 }}>
-                  Aucun jour d'examen créé et aucune proposition en attente.
-                  {(isAdmin || perms.CAN_TOGGLE_STATUS) && <> Cliquez sur « Ajouter un examen » pour créer une session.</>}
-                </div>
-              ) : (
-                <>
-                  <SessionsExamenList
-                    sessions={sessionsExamens}
-                    examensList={examensList}
-                    onAjouterCandidats={(s) => {
-                      const d = parseExamDate(s.date);
-                      const today = new Date(); today.setHours(0, 0, 0, 0);
-                      if (d && d < today) return; // session déjà passée — ne rien ouvrir
-                      setSessionPourAjout(s);
-                    }}
-                    onSupprimer={supprimerSessionExamen}
-                    canManage={isAdmin || perms.CAN_TOGGLE_STATUS}
-                  />
-
-                  <div id="propositions-section">
-                    <PropositionsSection
-                      propositions={propositions}
-                      canReview={canReview}
-                      onValider={validerProposition}
-                      onRejeter={rejeterProposition}
-                      onValiderTout={validerToutesPropositions}
-                      onRejeterTout={rejeterToutesPropositions}
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-          )}
+        
+{activeTab === "sessions" && (
+  <div>
+    {sessionsExamens.length === 0 ? (
+      <div style={{ textAlign: "center", padding: 40, color: "#94a3b8", fontSize: 13.5 }}>
+        Aucun jour d'examen créé.
+        {(isAdmin || perms.CAN_TOGGLE_STATUS) && <> Cliquez sur « Ajouter un examen » pour créer une session.</>}
+      </div>
+    ) : (
+      <SessionsExamenList
+        sessions={sessionsExamens}
+        examensList={examensList}
+        onAjouterCandidats={(s) => {
+          const d = parseExamDate(s.date);
+          const today = new Date(); today.setHours(0, 0, 0, 0);
+          if (d && d < today) return;
+          setSessionPourAjout(s);
+        }}
+        onSupprimer={supprimerSessionExamen}
+        canManage={isAdmin || perms.CAN_TOGGLE_STATUS}
+      />
+    )}
+  </div>
+)}
 
           {/* ══════════════════════════════════════════════
               ONGLET — Programmés

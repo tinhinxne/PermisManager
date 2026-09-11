@@ -885,6 +885,7 @@ function ExamenTableMoniteur({
   CAN_REMOVE_CANDIDAT,
   CAN_TOGGLE_STATUS,
   CAN_VIEW_ALL_CANDIDATES,
+  CAN_ADD_EXAMEN_SESSION,
   mesCandidatIds,
   onRowClick,
   onResultClick,
@@ -1181,20 +1182,22 @@ function FiltresBar({
 // Composant principal - Version Moniteur
 // ─────────────────────────────────────────────
 const ExamensMoniteur = () => {
+// après
 const {
     examensList, generateExamens, setExamenResult,
-    retirerCandidat, candidatsReportes, EXAM_THRESHOLDS,
+    retirerCandidat, candidatsReportes,
     ajouterExamenManuel,
     propositions, validerProposition, rejeterProposition,
     validerToutesPropositions, rejeterToutesPropositions,
     sessionsExamens, creerSessionExamen, supprimerSessionExamen,
   } = useExamenCtx();
-  const { examRules, saveExamRules } = useExamenRulesCtx();
   const { currentUser }  = useAuth();
-  const { CAN_VIEW_ALL_CANDIDATES, CAN_REMOVE_CANDIDAT, CAN_TOGGLE_STATUS, CAN_EXPORT_LISTE_CANDIDATS } = useMyPermissions();
+  const { CAN_VIEW_ALL_CANDIDATES, CAN_REMOVE_CANDIDAT, CAN_TOGGLE_STATUS, CAN_EXPORT_LISTE_CANDIDATS, CAN_ADD_EXAMEN_SESSION } = useMyPermissions();
 
-  // Seuls les moniteurs avec CAN_TOGGLE_STATUS gèrent les résultats / propositions / sessions
+  // Seuls les moniteurs avec CAN_TOGGLE_STATUS gèrent les résultats / propositions
   const canManageExamens = CAN_TOGGLE_STATUS;
+  // ── AJOUT : permission dédiée à la création de sessions d'examen ──
+  const canCreerSession = CAN_TOGGLE_STATUS || CAN_ADD_EXAMEN_SESSION;
 
   // ── state ──
   const [selectedExamen,      setSelectedExamen]      = useState(null);
@@ -1230,10 +1233,9 @@ const {
   // "planifies" → examens programmés
   // "historique"→ historique des résultats
   // "reportes"  → candidats reportés
-  const [activeTab,   setActiveTab]   = useState(canManageExamens ? "sessions" : "planifies");
+   const [activeTab,   setActiveTab]   = useState(canCreerSession ? "sessions" : "planifies");
   // ── AJOUT : règles, légende et filtres repliés par défaut ──
-  const [showRules,   setShowRules]   = useState(false);
-  const [showLegend,  setShowLegend]  = useState(false);
+ const [showLegend,  setShowLegend]  = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
@@ -1369,15 +1371,7 @@ const {
 
   const applyFilters = (list) => filterByDate(byType(byCategorie(list)));
 
-  // ── Jours d'examen autorisés (éditable directement sur cette page) ──
-  const toggleJourAutorise = (day) => {
-    if (!canManageExamens) return;
-    const current = examRules.joursAutorises || [];
-    const updated = current.includes(day)
-      ? current.filter(d => d !== day)
-      : [...current, day];
-    saveExamRules({ ...examRules, joursAutorises: updated });
-  };
+ 
 
   // ── segmentation ──
   const scheduled    = applyFilters(filteredBase.filter(e => e.status === "Scheduled"));
@@ -1518,7 +1512,7 @@ const {
   // ── AJOUT : onglets principaux, avec leurs compteurs. L'onglet
   // "Sessions & propositions" n'existe que pour ceux qui gèrent les examens. ──
   const TABS = [
-    ...(canManageExamens
+    ...(canCreerSession
       ? [{ key: "sessions", label: "Sessions & propositions", icon: <FaCalendarPlus />, count: propositionsVisibles.length, countColor: "#ea580c" }]
       : []),
     { key: "planifies",  label: "Programmés",  icon: <FaClock />,   count: scheduled.length,        countColor: "#1565c0" },
@@ -1591,15 +1585,21 @@ const {
               {CAN_EXPORT_LISTE_CANDIDATS ? <FaFilePdf /> : <FaLock size={12} />} قائمة المترشحين
             </button>
 
-            {/* Créer un jour d'examen — seulement avec la permission */}
-            {canManageExamens && (
-              <button
-                onClick={() => setShowCreerSessionModal(true)}
-                style={{ display: "flex", alignItems: "center", gap: 8, background: "#16a34a", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600 }}
-              >
-                <FaCalendarPlus /> Ajouter un examen
-              </button>
-            )}
+                            {/* Créer un jour d'examen — bouton toujours visible, désactivé sans la permission */}
+            <button
+              onClick={() => canCreerSession && setShowCreerSessionModal(true)}
+              disabled={!canCreerSession}
+              title={canCreerSession ? "" : "Permission requise — contactez l'admin"}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                background: canCreerSession ? "#16a34a" : "#cbd5e1",
+                color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10,
+                cursor: canCreerSession ? "pointer" : "not-allowed",
+                fontSize: 14, fontWeight: 600, opacity: canCreerSession ? 1 : 0.7,
+              }}
+            >
+              {canCreerSession ? <FaCalendarPlus /> : <FaLock size={12} />} Ajouter un examen
+            </button>
 
             {/* Regénérer — seulement avec la permission de gérer les examens */}
             {canManageExamens && (
@@ -1615,53 +1615,7 @@ const {
           </div>
         </div>
 
-        {/* ── Règles actives — repliées par défaut ── */}
-        <div style={{ marginBottom: 8 }}>
-          <button
-            onClick={() => setShowRules(v => !v)}
-            style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", cursor: "pointer", color: "#3b5bdb", fontSize: 12.5, fontWeight: 600, padding: "4px 0" }}
-          >
-            <FaInfoCircle />
-            Seuils : Code ≥{EXAM_THRESHOLDS.Code} · Créneau ≥{EXAM_THRESHOLDS.Créneau} · Circulation ≥{EXAM_THRESHOLDS.Circulation}
-            {showRules ? <FaChevronUp style={{ fontSize: 10 }} /> : <FaChevronDown style={{ fontSize: 10 }} />}
-          </button>
-
-          {showRules && (
-            <div style={{ background: "#f0f4ff", border: "1px solid #c7d7f5", borderRadius: 10, padding: "10px 16px", marginTop: 8, fontSize: 13, color: "#3b5bdb", display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-              <span>
-                Délai après échec : <strong>{examRules.delaiApresEchec}j</strong> ·
-                Tentatives max : <strong>{examRules.tentativesMax}</strong>
-              </span>
-
-              <span style={{ width: 1, height: 16, background: "#c7d7f5" }} />
-
-              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                <span style={{ fontWeight: 600 }}>Jours autorisés :</span>
-                {DAYS_OPTIONS.map(day => {
-                  const isSel = (examRules.joursAutorises || []).includes(day);
-                  return (
-                    <button
-                      key={day}
-                      onClick={() => toggleJourAutorise(day)}
-                      disabled={!canManageExamens}
-                      title={canManageExamens ? (isSel ? `Retirer ${day}` : `Ajouter ${day}`) : "Permission requise"}
-                      style={{
-                        padding: "3px 10px", borderRadius: 14, fontSize: 11.5, fontWeight: 600,
-                        cursor: canManageExamens ? "pointer" : "not-allowed", transition: "all 0.15s",
-                        border: `1px solid ${isSel ? "#3b5bdb" : "#c7d7f5"}`,
-                        background: isSel ? "#3b5bdb" : "#fff",
-                        color: isSel ? "#fff" : "#3b5bdb",
-                        opacity: canManageExamens ? 1 : 0.6,
-                      }}
-                    >
-                      {day}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
+       
 
         {/* ── Légende badge J-X — repliée par défaut ── */}
         <div style={{ marginBottom: 16 }}>
@@ -1796,7 +1750,7 @@ const {
           {/* ══════════════════════════════════════════════
               ONGLET — Sessions & propositions (permission requise)
           ══════════════════════════════════════════════ */}
-          {activeTab === "sessions" && canManageExamens && (
+          {activeTab === "sessions" && canCreerSession && (
             <div>
               {sessionsExamens.length === 0 && propositionsVisibles.length === 0 ? (
                 <div style={{ textAlign: "center", padding: 40, color: "#94a3b8", fontSize: 13.5 }}>
@@ -1814,7 +1768,7 @@ const {
                       setSessionPourAjout(s);
                     }}
                     onSupprimer={supprimerSessionExamen}
-                    canManage={canManageExamens}
+                    canManage={canCreerSession}
                   />
 
                   <div id="propositions-section">
@@ -2052,8 +2006,8 @@ const {
         <PermisObtenuModal candidatName={permisObtenuInfo.candidat} onClose={() => setPermisObtenuInfo(null)} />
       )}
 
-      {/* ── Créer une session (date/heure/lieu/catégorie) — seulement avec la permission ── */}
-      {canManageExamens && showCreerSessionModal && (
+        {/* ── Créer une session (date/heure/lieu/catégorie) — seulement avec la permission ── */}
+      {canCreerSession && showCreerSessionModal && (
         <CreerSessionModal
           onClose={() => setShowCreerSessionModal(false)}
           onConfirm={creerSessionExamen}
@@ -2062,7 +2016,7 @@ const {
       )}
 
       {/* ── Ajouter des candidats à une session existante — seulement avec la permission ── */}
-      {canManageExamens && sessionPourAjout && (
+      {canCreerSession && sessionPourAjout && (
         <AjouterCandidatsModal
           session={sessionPourAjout}
           candidats={candidatsFullList}
