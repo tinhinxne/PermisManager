@@ -521,6 +521,37 @@ ipcMain.handle("login", async (event, credentials) => {
     );
   });
 });
+ipcMain.handle("update-admin-password", async (event, { adminId, oldPassword, newPassword }) => {
+  return new Promise((resolve) => {
+    db.query(
+      "SELECT mot_de_passe FROM Utilisateur WHERE id = ? AND type_utilisateur = 'administrateur'",
+      [adminId],
+      (err, res) => {
+        if (err) return resolve({ success: false, message: "Erreur base de données." });
+        if (!res.length) return resolve({ success: false, message: "Administrateur introuvable." });
+
+        if (res[0].mot_de_passe !== oldPassword) {
+          return resolve({ success: false, message: "Ancien mot de passe incorrect." });
+        }
+        if (newPassword.length < 6) {
+          return resolve({ success: false, message: "Le nouveau mot de passe doit contenir au moins 6 caractères." });
+        }
+        if (newPassword === oldPassword) {
+          return resolve({ success: false, message: "Le nouveau mot de passe doit être différent de l'ancien." });
+        }
+
+        db.query(
+          "UPDATE Utilisateur SET mot_de_passe = ? WHERE id = ?",
+          [newPassword, adminId],
+          (err2) => {
+            if (err2) return resolve({ success: false, message: "Erreur lors de la mise à jour." });
+            resolve({ success: true });
+          }
+        );
+      }
+    );
+  });
+});
 
 ipcMain.handle("get-candidats-code-moniteur", async (event, moniteurId) => {
   return new Promise((resolve) => {

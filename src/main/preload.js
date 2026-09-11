@@ -2,6 +2,7 @@
   contextBridge.exposeInMainWorld('electron', {
   // Auth
   login: (creds) => ipcRenderer.invoke('login', creds),
+  updateAdminPassword: (data) => ipcRenderer.invoke("update-admin-password", data),
   
 
    // Candidats

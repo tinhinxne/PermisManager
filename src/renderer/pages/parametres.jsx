@@ -14,6 +14,7 @@ import {
 import { useRulesCtx }       from "../context/RulesContext";
 import { usePermissionsCtx } from "../context/PermissionsContext";
 import { useExamenRulesCtx } from "../context/ExamenRulesContext";
+import { useAuth }           from "../context/AuthContext";
 import ModalConges           from "../components/ModalConges";
 import { useLocation }       from "react-router-dom";
 
@@ -37,6 +38,34 @@ const Toggle = ({ value, onChange, color = "#534AB7" }) => (
       borderRadius: "50%", background: "#fff",
       transition: "left 0.18s",
     }} />
+  </div>
+);
+
+/* ─── Champ mot de passe réutilisable ────────────────────────────────────── */
+const PwdField = ({ label, value, onChange, show, onToggle, placeholder }) => (
+  <div style={{ marginBottom: 14 }}>
+    <label style={{ fontSize: 12, fontWeight: 600, color: "#475569", display: "block", marginBottom: 6 }}>
+      {label}
+    </label>
+    <div style={{ position: "relative" }}>
+      <input
+        type={show ? "text" : "password"}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          width: "100%", padding: "10px 42px 10px 14px", borderRadius: 10,
+          border: "1px solid #e2eaf6", fontSize: 14, outline: "none",
+          boxSizing: "border-box", background: "#f8faff", color: "#1e293b",
+        }}
+      />
+      <span
+        onClick={onToggle}
+        style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: "#94a3b8" }}
+      >
+        {show ? <EyeOff size={16} /> : <Eye size={16} />}
+      </span>
+    </div>
   </div>
 );
 
@@ -1007,10 +1036,149 @@ const handleSave = async () => {
   );
 };
 
+/* ─── Modal Mon mot de passe (Admin) ─────────────────────────────────────── */
+const ModalMotDePasseAdmin = ({ onClose }) => {
+  const { currentUser } = useAuth();
+
+  const [oldPwd,  setOldPwd]  = useState("");
+  const [newPwd,  setNewPwd]  = useState("");
+  const [confPwd, setConfPwd] = useState("");
+  const [showOld,  setShowOld]  = useState(false);
+  const [showNew,  setShowNew]  = useState(false);
+  const [showConf, setShowConf] = useState(false);
+  const [status, setStatus] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const getPasswordStrength = (pwd) => {
+    if (!pwd) return null;
+    if (pwd.length < 6)  return { label: "Trop court", color: "#ef4444", width: "25%" };
+    if (pwd.length < 10) return { label: "Moyen",      color: "#f59e0b", width: "55%" };
+    return                      { label: "Fort",        color: "#22c55e", width: "100%" };
+  };
+  const strength = getPasswordStrength(newPwd);
+
+  const handleSave = async () => {
+    setStatus(null);
+    if (!oldPwd || !newPwd || !confPwd)
+      return setStatus({ type: "error", message: "Veuillez remplir tous les champs." });
+    if (newPwd !== confPwd)
+      return setStatus({ type: "error", message: "Les nouveaux mots de passe ne correspondent pas." });
+    if (newPwd.length < 6)
+      return setStatus({ type: "error", message: "Le mot de passe doit contenir au moins 6 caractères." });
+    if (newPwd === oldPwd)
+      return setStatus({ type: "error", message: "Le nouveau mot de passe doit être différent de l'ancien." });
+
+    setSaving(true);
+    const result = await window.electron.updateAdminPassword({
+      adminId: currentUser.id,
+      oldPassword: oldPwd,
+      newPassword: newPwd,
+    });
+    setSaving(false);
+
+    if (result.success) {
+      setStatus({ type: "success", message: "Mot de passe modifié avec succès !" });
+      setOldPwd(""); setNewPwd(""); setConfPwd("");
+      setTimeout(() => onClose(), 1200);
+    } else {
+      setStatus({ type: "error", message: result.message || "Erreur inconnue." });
+    }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal new-modal">
+        <div className="new-modal-header">
+          <h2>Mon mot de passe</h2>
+          <span className="close" onClick={onClose}><X size={16}/></span>
+        </div>
+        <hr/>
+
+        <div style={{ marginTop: 14 }}>
+          <PwdField
+            label="Ancien mot de passe"
+            value={oldPwd} onChange={setOldPwd}
+            show={showOld} onToggle={() => setShowOld(p => !p)}
+            placeholder="Votre mot de passe actuel"
+          />
+          <PwdField
+            label="Nouveau mot de passe"
+            value={newPwd} onChange={setNewPwd}
+            show={showNew} onToggle={() => setShowNew(p => !p)}
+            placeholder="Minimum 6 caractères"
+          />
+
+          {/* Jauge de force */}
+          {newPwd && strength && (
+            <div style={{ marginBottom: 14, marginTop: -6 }}>
+              <div style={{ height: 4, borderRadius: 4, background: "#e2e8f0", overflow: "hidden" }}>
+                <div style={{
+                  height: "100%", borderRadius: 4,
+                  width: strength.width, background: strength.color,
+                  transition: "width 0.3s, background 0.3s",
+                }} />
+              </div>
+              <span style={{ fontSize: 11, color: strength.color, fontWeight: 600 }}>
+                {strength.label}
+              </span>
+            </div>
+          )}
+
+          <PwdField
+            label="Confirmer le nouveau mot de passe"
+            value={confPwd} onChange={setConfPwd}
+            show={showConf} onToggle={() => setShowConf(p => !p)}
+            placeholder="Répétez le nouveau mot de passe"
+          />
+
+          {/* Correspondance */}
+          {confPwd && newPwd && (
+            <div style={{
+              fontSize: 12, marginBottom: 12, marginTop: -4,
+              color: confPwd === newPwd ? "#22c55e" : "#ef4444",
+              display: "flex", alignItems: "center", gap: 5,
+            }}>
+              {confPwd === newPwd
+                ? <><Check size={13} /> Les mots de passe correspondent</>
+                : <><X size={13} /> Les mots de passe ne correspondent pas</>
+              }
+            </div>
+          )}
+
+          {status && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8, padding: "10px 14px",
+              borderRadius: 10, marginBottom: 6, fontSize: 13, fontWeight: 500,
+              background: status.type === "success" ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)",
+              border: `1px solid ${status.type === "success" ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"}`,
+              color: status.type === "success" ? "#166534" : "#dc2626",
+            }}>
+              {status.type === "success" ? <Check size={15}/> : <X size={15}/>}
+              {status.message}
+            </div>
+          )}
+        </div>
+
+        <div className="new-modal-footer">
+          <button className="btn cancel" onClick={onClose}><X size={13}/> Annuler</button>
+          <button
+            className="btn primary"
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {status?.type === "success" ? <><Check size={13}/> Sauvegardé !</> : saving ? "⏳..." : <><Save size={13}/> Sauvegarder</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 /* ─── Page Paramètres ────────────────────────────────────────────────────── */
 const Parametres = () => {
   const [activeModal,   setActiveModal]   = useState(null);
   const [savedSections, setSavedSections] = useState([]);
+  const [search, setSearch] = useState("");
   const location = useLocation();
 
   useEffect(() => {
@@ -1020,18 +1188,56 @@ const Parametres = () => {
   const sections = [
     { id:"inscription",   icon:<ClipboardList size={20}/>,              title:"Règles d'inscriptions",      description:"Conditions d'âge et documents requis",              accentColor:"#6c63ff" },
     { id:"examens",       icon:<BookOpen size={20}/>,                   title:"Règles des examens",          description:"Délais et tentatives max",                          accentColor:"#3b82f6" },
+    { id:"nbSeances",     icon:<CalendarPlus size={20}/>,               title:"Nombre de séances",           description:"Séances de conduite incluses par candidat",         accentColor:"#8b5cf6" },
     { id:"conges",        icon:<CalendarOff size={20}/>,                title:"Gestion des congés",          description:"Congé annuel auto-école & congés moniteurs",        accentColor:"#f97316" },
     { id:"moniteurs",     icon:<UserCog size={20}/>,                    title:"Permissions des moniteurs",   description:"Accès aux fonctionnalités par moniteur",            accentColor:"#8b5cf6" },
     { id:"prixFormation", icon:<Wallet size={20}/>,                     title:"Prix de la formation",        description:"Montant total du permis facturé aux candidats",     accentColor:"#0F6E56" },
     { id:"chargily",      icon:<span style={{ fontSize:18 }}>💳</span>, title:"Paiement en ligne",           description:"Configurer Chargily Pay — CIB / EDAHABIA",         accentColor:"#6c63ff" },
-     { id:"nbSeances",     icon:<CalendarPlus size={20}/>,               title:"Nombre de séances",           description:"Séances de conduite incluses par candidat",         accentColor:"#8b5cf6" },
+    { id:"motDePasse",    icon:<Lock size={20}/>,                       title:"Mon mot de passe",            description:"Modifier votre mot de passe administrateur",        accentColor:"#2b537e" },
   ];
+
+  // ── Regroupement des sections par thème pour alléger la page ──────────────
+  const GROUPS = [
+    {
+      id: "regles",
+      title: "Règles & fonctionnement",
+      description: "Inscriptions, examens, séances et congés",
+      sectionIds: ["inscription", "examens", "nbSeances", "conges"],
+    },
+    {
+      id: "equipe",
+      title: "Équipe",
+      description: "Accès et droits des moniteurs",
+      sectionIds: ["moniteurs"],
+    },
+    {
+      id: "finance",
+      title: "Paiements & tarifs",
+      description: "Prix de la formation et paiement en ligne",
+      sectionIds: ["prixFormation", "chargily"],
+    },
+    {
+      id: "compte",
+      title: "Mon compte",
+      description: "Sécurité de votre compte administrateur",
+      sectionIds: ["motDePasse"],
+    },
+  ];
+
+  // ── Raccourcis vers les réglages les plus consultés ────────────────────────
+  const QUICK_ACTIONS = ["motDePasse", "moniteurs", "conges", "prixFormation"];
 
   const openModal  = (id) => setActiveModal(id);
   const closeModal = () => {
     if (activeModal && !savedSections.includes(activeModal)) setSavedSections(p => [...p, activeModal]);
     setActiveModal(null);
   };
+
+  // ── Filtrage en direct par titre / description ─────────────────────────────
+  const q = search.trim().toLowerCase();
+  const matches = (s) => !q || s.title.toLowerCase().includes(q) || s.description.toLowerCase().includes(q);
+  const filteredSections = sections.filter(matches);
+  const filteredIds = new Set(filteredSections.map(s => s.id));
 
   return (
     <div className="container">
@@ -1041,24 +1247,93 @@ const Parametres = () => {
           <h1><img src={SmallCar} alt="" width={40}/> Tableau de contrôle de l'auto-école</h1>
           <p>Gérer les paramètres métier de votre établissement</p>
         </div>
-        <div className="card">
-          <div className="card-header"><h2>Paramètres</h2><p>Configurez les règles automatiques de votre système</p></div>
-          <div className="params-grid">
-            {sections.map(s => (
-              <div className="param-card" key={s.id} style={{ borderLeft:`4px solid ${s.accentColor}20` }}>
-                <div className="param-card-left">
-                  <div className="param-icon" style={{ color:s.accentColor, background:s.accentColor+"15" }}>{s.icon}</div>
-                  <div className="param-info"><h3>{s.title}</h3><p>{s.description}</p></div>
+
+        {/* ── Barre de recherche ── */}
+        <div style={{ position: "relative", marginBottom: 16 }}>
+          <Search size={15} color="#94a3b8" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }}/>
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Rechercher un réglage…"
+            style={{
+              width: "100%", padding: "11px 14px 11px 38px", borderRadius: 12,
+              border: "1px solid #e2e8f0", fontSize: 14, outline: "none",
+              background: "#fff", boxSizing: "border-box", color: "#0f172a",
+            }}
+          />
+          {search && (
+            <span
+              onClick={() => setSearch("")}
+              style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: "#94a3b8" }}
+            >
+              <X size={14}/>
+            </span>
+          )}
+        </div>
+
+        {/* ── Actions rapides ── */}
+        {!q && (
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
+            {QUICK_ACTIONS.map(id => {
+              const s = sections.find(sec => sec.id === id);
+              if (!s) return null;
+              return (
+                <button
+                  key={id}
+                  onClick={() => openModal(id)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "9px 14px", borderRadius: 10,
+                    border: `1px solid ${s.accentColor}30`,
+                    background: s.accentColor + "10",
+                    color: s.accentColor, fontSize: 13, fontWeight: 600,
+                    cursor: "pointer", transition: "background 0.15s",
+                  }}
+                >
+                  {React.cloneElement(s.icon, { size: 15 })}
+                  {s.title}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {q && filteredSections.length === 0 && (
+          <div style={{ textAlign: "center", color: "#94a3b8", padding: "30px 0", fontSize: 13 }}>
+            Aucun réglage ne correspond à « {search} »
+          </div>
+        )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          {GROUPS.map(group => {
+            const groupSections = sections.filter(s => group.sectionIds.includes(s.id) && filteredIds.has(s.id));
+            if (groupSections.length === 0) return null;
+            return (
+              <div className="card" key={group.id}>
+                <div className="card-header">
+                  <h2>{group.title}</h2>
+                  <p>{group.description}</p>
                 </div>
-                <div className="param-card-right">
-                  {savedSections.includes(s.id) && <span className="saved-badge"><Check size={12}/> Configuré</span>}
-                  <button className="btn-configurer" onClick={()=>openModal(s.id)} style={{ borderColor:s.accentColor+"40", color:s.accentColor }}>
-                    Configurer <ChevronRight size={14}/>
-                  </button>
+                <div className="params-grid">
+                  {groupSections.map(s => (
+                    <div className="param-card" key={s.id} style={{ borderLeft:`4px solid ${s.accentColor}20` }}>
+                      <div className="param-card-left">
+                        <div className="param-icon" style={{ color:s.accentColor, background:s.accentColor+"15" }}>{s.icon}</div>
+                        <div className="param-info"><h3>{s.title}</h3><p>{s.description}</p></div>
+                      </div>
+                      <div className="param-card-right">
+                        {savedSections.includes(s.id) && <span className="saved-badge"><Check size={12}/> Configuré</span>}
+                        <button className="btn-configurer" onClick={()=>openModal(s.id)} style={{ borderColor:s.accentColor+"40", color:s.accentColor }}>
+                          Configurer <ChevronRight size={14}/>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       </div>
 
@@ -1069,6 +1344,7 @@ const Parametres = () => {
       {activeModal === "prixFormation" && <ModalPrixFormation onClose={closeModal}/>}
       {activeModal === "nbSeances"     && <ModalNbSeances     onClose={closeModal}/>}
       {activeModal === "chargily"      && <ModalChargily      onClose={closeModal}/>}
+      {activeModal === "motDePasse"    && <ModalMotDePasseAdmin onClose={closeModal}/>}
     </div>
   );
 };
